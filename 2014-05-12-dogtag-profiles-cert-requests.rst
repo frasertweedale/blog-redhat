@@ -234,7 +234,7 @@ the Key Usage extension in a CSR is ignored.  The agent interface
 does allow adjustment of the Key Usage extension, however, and
 enforces sensible constraints, so no request submitted in the
 ``caServerCert`` profile will ever result in a certificate that
-could be used as in intermediate CA.
+could be used as an intermediate CA.
 
 We have seen that Dogtag ignores the Key Usage extension information
 present in a CSR, but in fact, Dogtag ignores *all* information in
