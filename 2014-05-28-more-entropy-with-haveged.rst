@@ -7,9 +7,9 @@ environments where little entropy is available, long delays can
 result.
 
 A side-note: on Linux, information about the amount of entropy
-available can be found under ``/proc/sys/kernel/``, along with other
-parameters of the kernel entropy device and a UUID source.  Be aware
-that other systems may not have this interface.
+available can be found under ``/proc/sys/kernel/random/``, along
+with other parameters of the kernel entropy device and a UUID
+source.  Be aware that other systems may not have this interface.
 
 So if you *are* running out of entropy, what can you do?  The
 haveged_ program exists to remedy this problem.  It implements a
