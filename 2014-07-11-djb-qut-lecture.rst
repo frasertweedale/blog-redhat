@@ -73,7 +73,7 @@ Distract users
 - Money gets spent on e.g. virus scanners or 2014 NIST framework
   compliance, instead of *building secure systems*.  2014 NIST
   definition of "protect" has 98 subcategories, none of which are
-  about making secure softare.
+  about making secure software.
 
 
 Distract programmers
