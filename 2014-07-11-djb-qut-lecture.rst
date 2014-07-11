@@ -188,14 +188,14 @@ Q&A: Identification of sources
 Q&A: Marking regions of file with different sources
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-- I asked a question about whether there was scope within definition
-  of *integrity policy #1* for marking *regions* of files with
-  different sources, rather than marking a contiguous file with all
-  sources.
+- I asked a question about whether there was scope within the
+  definition of *integrity policy #1* for marking *regions* of files
+  with different sources, rather than marking a contiguous file with
+  all sources.
 
 - Prof. Bernstein suggested that there is, but it would be better to
   change how we are representing that data and decompose it into
-  separated files, rather than adding complexity to the TCB.  A
+  separate files, rather than adding complexity to the TCB.  A
   salient point.
 
 
