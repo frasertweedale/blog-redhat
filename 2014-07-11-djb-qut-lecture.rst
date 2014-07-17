@@ -6,8 +6,8 @@ important part of my job as a developer on the `FreeIPA identity
 management`_ and `Dogtag PKI`_ projects here at Red Hat.  Last night
 I had the privilege of attending a lecture by the renowned Research
 Professor `Daniel J. Bernstein`_ at Queensland University of
-Technology entitled *Making sure software stays insecure*.  The
-abstract of his talk:
+Technology entitled *Making sure software stays insecure* (slides_).
+The abstract of his talk:
 
   We have to watch and listen to everything that people are doing so
   that we can catch terrorists, drug dealers, pedophiles, and
@@ -36,6 +36,7 @@ lecture.
 .. _FreeIPA identity management: http://www.freeipa.org/page/Main_Page
 .. _Dogtag PKI: http://pki.fedoraproject.org/wiki/PKI_Main_Page
 .. _Daniel J. Bernstein: http://cr.yp.to/djb.html
+.. _slides: http://cr.yp.to/talks.html#2014.07.10
 
 
 Lecture notes
