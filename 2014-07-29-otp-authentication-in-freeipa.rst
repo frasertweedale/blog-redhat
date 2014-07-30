@@ -204,21 +204,35 @@ Debugging the authentication problem
 
 At time of writing, I still haven't figured out the cause of my
 issue.  Binding directly to LDAP using an OTP token works every
-time, so it is definitely not an issue with the HOTP implementation.
-Executing ``kinit`` is flaky, so my attention is now turned to
+time, so it definitely was not an issue with the HOTP
+implementation.  Executing ``kinit`` directly fails about half the
+time, so the problem is likely to be with the KDC or with
 ``ipa-otpd``.
 
-By reconfiguring ``ipa-otpd`` to listen on a network socket as well
-as its standard UNIX domain socket, I will hopefully be able to use
-``radclient(1)`` (provided by the ``freeradius-utils`` package on
-Fedora) to send RADIUS access requests directly to ``ipa-otpd`` and
-observe its behaviour.  The ``dirsrv`` logs are sometimes showing
-concurrent BIND requests for the one principal, so this is a
-particular point of focus.
+When the failure occurs, the ``dirsrv`` access log shows two BIND
+operations for the principal (in the success case, there is only one
+BIND, as would be expected)::
 
-Hopefully I can get to the bottom of this issue soon.  I will update
-this post with my findings (or if there's enough to be said, a
-separate post.)
+  [30/Jul/2014:02:58:54 -0400] conn=23 op=4 BIND dn="uid=ftweedal,cn=users,cn=accounts,dc=ipa,dc=local" method=128 version=3
+  [30/Jul/2014:02:58:54 -0400] conn=23 op=4 RESULT err=0 tag=97 nentries=0 etime=0 dn="uid=bresc,cn=users,cn=accounts,dc=ipa,dc=local"
+  [30/Jul/2014:02:58:55 -0400] conn=37 op=4 BIND dn="uid=ftweedal,cn=users,cn=accounts,dc=ipa,dc=local" method=128 version=3
+  [30/Jul/2014:02:58:55 -0400] conn=37 op=4 RESULT err=49 tag=97 nentries=0 etime=0
+
+The first BIND operation succeeds, but for some reason, one second
+later, the KDC or ``ipa-otpd`` attempts to authenticate again.  It
+would make sense that the same credentials are used, and in that
+case the second BIND operation would fail (error code 49 means
+*invalid credentials*) due to the HOTP counter having been
+incremented in the database.
+
+By reconfiguring ``ipa-otpd`` to listen on a network socket as well
+as its standard UNIX domain socket, I will be able to use
+``radclient(1)`` (provided by the ``freeradius-utils`` package on
+Fedora) or some other RADIUS client to send access requests directly
+to ``ipa-otpd`` and observe the success rate.  Either ``ipa-otpd``
+or the KDC should be implicated and from there it will hopefully be
+straightforward to identify the exact cause and hone in on a
+solution.
 
 
 Concluding thoughts
@@ -231,24 +245,22 @@ plugin, a directory server plugin, *and* the ``ipa-otpd`` daemon!
 Was it necessary to have this many moving parts?
 
 The original `design proposal`_ explains many of the design
-decisions.  Without having read it in depth, I can certainly comment
-on some of the beneficial aspects of this design.
+decisions.  In particular, ``ipa-otpd`` is necessary for a couple of
+reasons.  The first is the fact that the MIT KDC supports only
+RADIUS servers for OTP validation, so for native OTP support we must
+have some component act as a RADIUS server.  Second, the KDC radius
+configuration is static, so configuration is simplified by having
+the KDC talk only to ``ipa-otpd`` for OTP validation.  It is also
+nice that ``ipa-otpd`` is the sole arbiter of whether to proxy a
+request to an external RADIUS server or to attempt an LDAP BIND.
 
-At a glance it seems that more hops take place in some situations
-than strictly necessary.  Couldn't the ``ipadb.so`` KDC plugin
-direct the KDC to the final RADIUS server for those principals
-configured for external RADIUS OTP validation, bypassing
-``ipa-otpd``?  Probably so, but to implement that would sacrifice
-the elegance of having ``ipa-otpd`` as the sole arbiter of whether
-to proxy a request to an external RADIUS server or to attempt an
-LDAP BIND.
-
-Furthermore, the above suggestion opens the possibility of the KDC
-talking to many other (RADIUS) servers, whereas in the accepted
-proposal the KDC only talks to ``ipa-otpd`` for OTP validation.
-This is arguably a better scenario since we have complete control
-over the implementation of ``ipa-otpd`` (this is not the case with
-the MIT KDC) and are therefore better placed to respond to
+What if the KDC could dynamically work out where to direct RADIUS
+packets for OTP validation?   It is not hard to conceieve of this,
+since it already dynamically learns whether a principal is
+configured for OTP by way of the ``ipadb.so`` plugin.  But even if
+this were possible, the current design arguably preferable since,
+unlike the KDC, we have full control over the implementation of
+``ipa-otpd``  and are therefore better placed to respond to
 performance or security concerns in this aspect of the OTP
 authentication flow.
 
