@@ -258,7 +258,7 @@ What if the KDC could dynamically work out where to direct RADIUS
 packets for OTP validation?   It is not hard to conceieve of this,
 since it already dynamically learns whether a principal is
 configured for OTP by way of the ``ipadb.so`` plugin.  But even if
-this were possible, the current design arguably preferable since,
+this were possible, the current design is arguably preferable since,
 unlike the KDC, we have full control over the implementation of
 ``ipa-otpd``  and are therefore better placed to respond to
 performance or security concerns in this aspect of the OTP
