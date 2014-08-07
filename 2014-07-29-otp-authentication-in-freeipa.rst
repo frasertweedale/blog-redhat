@@ -19,8 +19,7 @@ YubiKey with FreeIPA will follow, but first I wanted to post about
 how FreeIPA's native OTP support is implemented.  This deep dive was
 unfortunately the result of some issues I encountered, but I learned
 a lot in a short time and I can now share this information, so maybe
-it wasn't unfortunate after all.  Even though I still have a problem
-to solve!
+it wasn't unfortunate after all.
 
 .. _YubiKey: http://www.yubico.com/products/yubikey-hardware/yubikey/
 
@@ -214,7 +213,7 @@ operations for the principal (in the success case, there is only one
 BIND, as would be expected)::
 
   [30/Jul/2014:02:58:54 -0400] conn=23 op=4 BIND dn="uid=ftweedal,cn=users,cn=accounts,dc=ipa,dc=local" method=128 version=3
-  [30/Jul/2014:02:58:54 -0400] conn=23 op=4 RESULT err=0 tag=97 nentries=0 etime=0 dn="uid=bresc,cn=users,cn=accounts,dc=ipa,dc=local"
+  [30/Jul/2014:02:58:54 -0400] conn=23 op=4 RESULT err=0 tag=97 nentries=0 etime=0 dn="uid=ftweedal,cn=users,cn=accounts,dc=ipa,dc=local"
   [30/Jul/2014:02:58:55 -0400] conn=37 op=4 BIND dn="uid=ftweedal,cn=users,cn=accounts,dc=ipa,dc=local" method=128 version=3
   [30/Jul/2014:02:58:55 -0400] conn=37 op=4 RESULT err=49 tag=97 nentries=0 etime=0
 
@@ -225,14 +224,51 @@ case the second BIND operation would fail (error code 49 means
 *invalid credentials*) due to the HOTP counter having been
 incremented in the database.
 
-By reconfiguring ``ipa-otpd`` to listen on a network socket as well
-as its standard UNIX domain socket, I will be able to use
-``radclient(1)`` (provided by the ``freeradius-utils`` package on
-Fedora) or some other RADIUS client to send access requests directly
-to ``ipa-otpd`` and observe the success rate.  Either ``ipa-otpd``
-or the KDC should be implicated and from there it will hopefully be
-straightforward to identify the exact cause and hone in on a
-solution.
+``ipa-otpd`` does some logging via the systemd journal facility, so
+it was possible to observe its behaviour via
+``journalctl --follow /usr/libexec/ipa-otpd``.  The log output for a
+failed login showed two requests being send by the KDC, thus
+exonerating ``ipa-otpd``::
+
+  Aug 04 02:44:35 ipa-2.ipa.local ipa-otpd[3910]: ftweedal@IPA.LOCAL: request received
+  Aug 04 02:44:35 ipa-2.ipa.local ipa-otpd[3910]: ftweedal@IPA.LOCAL: user query start
+  Aug 04 02:44:35 ipa-2.ipa.local ipa-otpd[3910]: ftweedal@IPA.LOCAL: user query end: uid=ftweedal,cn=users,cn=accounts,dc=ipa,dc=local
+  Aug 04 02:44:35 ipa-2.ipa.local ipa-otpd[3910]: ftweedal@IPA.LOCAL: bind start: uid=ftweedal,cn=users,cn=accounts,dc=ipa,dc=local
+  Aug 04 02:44:36 ipa-2.ipa.local ipa-otpd[3935]: ftweedal@IPA.LOCAL: request received
+  Aug 04 02:44:36 ipa-2.ipa.local ipa-otpd[3935]: ftweedal@IPA.LOCAL: user query start
+  Aug 04 02:44:37 ipa-2.ipa.local ipa-otpd[3935]: ftweedal@IPA.LOCAL: user query end: uid=ftweedal,cn=users,cn=accounts,dc=ipa,dc=local
+  Aug 04 02:44:37 ipa-2.ipa.local ipa-otpd[3935]: ftweedal@IPA.LOCAL: bind start: uid=ftweedal,cn=users,cn=accounts,dc=ipa,dc=local
+  Aug 04 02:44:37 ipa-2.ipa.local ipa-otpd[3910]: ftweedal@IPA.LOCAL: bind end: success
+  Aug 04 02:44:37 ipa-2.ipa.local ipa-otpd[3910]: ftweedal@IPA.LOCAL: response sent: Access-Accept
+  Aug 04 02:44:38 ipa-2.ipa.local ipa-otpd[3935]: ftweedal@IPA.LOCAL: bind end: Invalid credentials
+  Aug 04 02:44:38 ipa-2.ipa.local ipa-otpd[3935]: ftweedal@IPA.LOCAL: response sent: Access-Reject
+
+The KDC log output likewise showed two ``KRB_AS_REQ`` requests
+coming from the client (i.e. ``kinit``) - one of these resulted in a
+ticket being issued, and the other resulted in a
+``KDC_ERR_PREAUTH_FAILED`` response.  Therefore, after all this
+investigation, the cause of the problem seems to be aggressive
+retry behaviour in ``kinit``.
+
+I had been testing with MIT Kerberos version 1.11.5 from the Fedora
+20 repositories.  A quick scan of the Kerberos commit log turned up
+some promising changes released in version 1.12.  Since the Fedora
+package for 1.11 includes a number of backports from 1.12 already, I
+backported the most promising change: one that relaxes the timeout
+if ``kinit`` connects to the KDC over TCP.  Unfortunately, this did
+not fix the issue.
+
+I was curious whether version the 1.12 client exhibited the same
+behaviour.  The Fedora 21 repositories have MIT Kerberos version
+1.12, so I installed a preview release and enrolled the host.  OTP
+authentication worked fine, so the change I backported to 1.11 was
+either the wrong change, or needed other changes to work properly.
+
+Since HOTP authentication in FreeIPA is somewhat discouraged due to
+the cost and other implications of counter synchronisation in a
+replicated environment, and since the problem seems to be rectified
+in MIT Kerberos 1.12, I was happy to conclude my investigations at
+this point.
 
 
 Concluding thoughts
