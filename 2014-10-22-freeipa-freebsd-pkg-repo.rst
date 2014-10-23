@@ -140,7 +140,7 @@ infrastructure.  When this feature is ready, a small effort should
 be undertaken to add a FreeIPA flavour to the ports tree, and ensure
 that the resultant packages are made available in the official
 package repository.  Once this is achieved, neither manual port
-builds nor the custom package repository will be required -
+builds nor the custom package repository will be required - \
 everything needed to configure FreeBSD as a FreeIPA client will be
 available to all FreeBSD users by default.
 
