@@ -127,9 +127,22 @@ back at 1.9.  The 1.9 release is a *long-term maintenance* (LTM)
 release, but any efforts to bring 1.12 to FreeBSD *alongside* 1.9
 would undoubtedly be appreciated by the port maintainer and users.
 
-In the longer term, a port of (or equivalent to)
-``ipa-client-install`` for FreeBSD is a worthwhile objective.  Most
-of the software needed for FreeIPA integration on FreeBSD is similar
-or identical to that used on GNU+Linux, but there are some
-differences.  It would be a time consuming task - lots of trial runs
-and testing - but probably not particularly difficult.
+A longer term goal should be a port of (or an equivalent to)
+``ipa-client-install`` for FreeBSD.  Most of the software needed for
+FreeIPA integration on FreeBSD is similar or identical to that used
+on GNU+Linux, but there are some differences.  It would be a time
+consuming task - lots of trial runs and testing - but probably not
+particularly difficult.
+
+In regards to the package repository, `work is underway`_ to add
+`support for package *flavours*`_ to the FreeBSD packaging
+infrastructure.  When this feature is ready, a small effort should
+be undertaken to add a FreeIPA flavour to the ports tree, and ensure
+that the resultant packages are made available in the official
+package repository.  Once this is achieved, neither manual port
+builds nor the custom package repository will be required -
+everything needed to configure FreeBSD as a FreeIPA client will be
+available to all FreeBSD users by default.
+
+.. _work is underway: http://blogs.freebsdish.org/portmgr/2014/09/01/the-ports-tree-is-now-stage-only/
+.. _support for package *flavours*: http://lists.freebsd.org/pipermail/freebsd-pkg/2014-September/000703.html
