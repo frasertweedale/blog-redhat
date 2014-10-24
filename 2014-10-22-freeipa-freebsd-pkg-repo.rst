@@ -22,12 +22,18 @@ forums.
 
 But before one can even begin configuring all these services, SSSD,
 Sudo and related software and dependencies must be installed.
-
 Unfortunately, as also outlined in the forum post, non-default port
 options and a certain ``make.conf`` variable must be set in order to
 build the software such that the system can be used as a FreeIPA
 client. Similarly, the official binary package repositories do not
 provide the packages in a suitable configuration.
+
+This post details how I built a custom binary package repository for
+FreeBSD and how administrators can use it to install exactly the
+right packages needed to operate as a FreeIPA client.  Not all
+FreeBSD administrators will want to take this path, but those who do
+will not have to worry about getting the ports built correctly, and
+will save some time since the packages come pre-built.
 
 
 Custom package repository
@@ -60,15 +66,22 @@ repository:
 .. _BSD Now: http://www.bsdnow.tv/
 .. _poudriere tutorial: http://www.bsdnow.tv/tutorials/poudriere
 
-The commands to enable the custom repository and install the
-required packages on a FreeBSD host appear below.  Note that these
-are *Bourne* shell commands; this script will not work in the
-FreeBSD default shell ``csh``.
+The repository is currently only being built for FreeBSD 10.0/amd64.
+10.1 is not far away; once it is released, I will build it for
+10.1/amd64 instead.  If anyone out there would like it built for 9.3
+and/or i386 I can do that too - just let me know!
+
+Assuming the custom repository is available for the release and
+architecture of the FreeBSD system, the following script will enable
+the repository and install the required packages.
 
 ::
 
-  # mkdir -p /usr/local/etc/pkg/repos
-  # cat >/usr/local/etc/pkg/repos/FreeIPA.conf <<"EOF"
+  #!/bin/sh
+  pkg install -y ca_root_nss
+  ln -s /usr/local/share/certs/ca-root-nss.crt /etc/ssl/cert.pem
+  mkdir -p /usr/local/etc/pkg/repos
+  cat >/usr/local/etc/pkg/repos/FreeIPA.conf <<"EOF"
   FreeIPA: {
     url: "https://frase.id.au/pkg/${ABI}_FreeIPA",
     signature_type: "pubkey",
@@ -76,9 +89,7 @@ FreeBSD default shell ``csh``.
     enabled: yes
   }
   EOF
-  # pkg install -y ca_root_nss
-  # ln -s /usr/local/share/certs/ca-root-nss.crt /etc/ssl/cert.pem
-  # cat >/usr/share/keys/pkg/FreeIPA.pem <<EOF
+  cat >/usr/share/keys/pkg/FreeIPA.pem <<EOF
   -----BEGIN PUBLIC KEY-----
   MIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEAopt0Lubb0ur+L+VzsP9k
   i4QrvQb/4gVlmr/d59lUsTr9cz5B5OtNLi+WMVcNh4EmmNIiWoVuQY4Wqjm2d1IA
@@ -94,23 +105,21 @@ FreeBSD default shell ``csh``.
   rO+Bwn10+9DZTupQ3c04lsUCAwEAAQ==
   -----END PUBLIC KEY-----
   EOF
-  # pkg update
-  # pkg install -r FreeIPA cyrus-sasl-gssapi sssd
+  pkg update
+  pkg install -r FreeIPA -y cyrus-sasl-gssapi sssd sudo
 
 Once the packages are installed from the custom repository,
-configuration can continue as indicated in the forum post.  At the
-moment, I am only maintaining one version of the custom repository,
-for FreeBSD 10.0.  10.1 is not far away; once it is released, I will
-build it for 10.1 instead.  If anyone out there would like it built
-for 9.3, I can do that too - just let me know!
+configuration can continue as indicated in the forum post.
 
 
 Future efforts
 --------------
 
+This post was concerned with package installation.  This is an
+important but relatively small part of setting up a FreeBSD client.
 There is more that can be done to make it easier to integrate
-non-GNU+Linux systems with FreeIPA.  I will conclude this post with
-some ideas along this trajectory.
+FreeBSD (and other non-GNU+Linux systems) with FreeIPA.  I will
+conclude this post with some ideas along this trajectory.
 
 Recent versions of FreeIPA include the ``ipa-advise`` tool, which
 explains how various legacy systems can be configured to some extent
