@@ -66,10 +66,10 @@ repository:
 .. _BSD Now: http://www.bsdnow.tv/
 .. _poudriere tutorial: http://www.bsdnow.tv/tutorials/poudriere
 
-The repository is currently only being built for FreeBSD 10.0/amd64.
-10.1 is not far away; once it is released, I will build it for
-10.1/amd64 instead.  If anyone out there would like it built for 9.3
-and/or i386 I can do that too - just let me know!
+The repository is currently being built for FreeBSD 10.0 (both amd64
+and i386.) 10.1 is not far away; once it is released I will build it
+for 10.1 instead.  If anyone out there would like it built for
+FreeBSD 9.3 I can do that too - just let me know!
 
 Assuming the custom repository is available for the release and
 architecture of the FreeBSD system, the following script will enable
