@@ -146,7 +146,7 @@ Creating an S/MIME profile
 We export the default profile to use as a starting point for the
 S/MIME profile::
 
-  % ipa certprofile-export --out smime.cfg caIPAserviceCert
+  % ipa certprofile-show --out smime.cfg caIPAserviceCert
 
 Inspecting the profile, we find the *Extended Key Usage* extension
 configuration containing the line::
@@ -240,8 +240,14 @@ certificate request::
   [ exts ]
   subjectAltName=email:alice@ipa.local
 
-We create and then inspect the CSR::
+We create and then inspect the CSR (the ``genrsa`` step can be
+skipped if you already have a key)::
 
+  % openssl genrsa -out key.pem 2048
+  Generating RSA private key, 2048 bit long modulus
+  .........................+++
+  ......+++
+  e is 65537 (0x10001)
   % openssl req -new -key key.pem -out alice.csr -config alice.conf
   % openssl req -text < alice.csr
   Certificate Request:
