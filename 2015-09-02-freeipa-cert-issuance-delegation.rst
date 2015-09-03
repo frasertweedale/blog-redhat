@@ -22,9 +22,14 @@ Self-service requests
 The simplest scenario is a principal using ``cert-request`` to
 request a certificate for itself as the certificate subject.  This
 action is permitted for user and host principals but the request is
-**still subject to CA ACLs**; if no ACL permits issuance for the
+**still subject to CA ACLs**; if no CA ACL permits issuance for the
 combination of subject principal and certificate profile, the
 request will fail.
+
+Implementation-wise, self-service works because there are directory
+server ACIs that permit bound principals to modify their own
+``userCertificate`` attribute; there is no explicit permission
+object.
 
 
 Hosts
@@ -40,7 +45,7 @@ hosts to write the ``userCertificate`` attribute when the
 ``managedby`` relationship exists, otherwise not.  In the IPA
 framework, we conduct a permission check to see if the bound
 (requesting) principal can write the subject principal's attribute.
-This is nicer (and probably faster) than stuffing around with the
+This is nicer (and probably faster) than interpreting the
 ``managedby`` attribute in the FreeIPA framework.
 
 If you are interested, the ACI rules look like this::
@@ -78,11 +83,12 @@ management:
 *Request Certificate with SubjectAltName*
   This permission allows a user (one who already has *Request
   Certificate* permission) to request a certificate with the
-  *subjectAltName* extension.  Regardless of this permission we
-  comprehensively validate the SAN extension whenever present in a
-  CSR (and always have), so I'm not sure why this exists as a
-  separate permission.  I proposed to remove this permission and
-  allow SAN by default but the conversation died.
+  *subjectAltName* extension (the check is skipped when the request
+  is self-service or initated by a host principal).  Regardless of
+  this permission we comprehensively validate the SAN extension
+  whenever present in a CSR (and always have), so I'm not sure why
+  this exists as a separate permission.  I proposed to remove this
+  permission and allow SAN by default but the conversation died.
 
 *Request Certificate ignoring CA ACLs* (new in FreeIPA 4.2)
   The main use case for this permission is where a certain profile
@@ -115,8 +121,12 @@ example: we want members of the ``user-cert-managers`` group to be
 able to issue certificates for users.  The SAN extension will be
 allowed, but CA ACLs may not be bypassed.
 
-We will use the ``ipa`` CLI program to implement this scenario, but
-it can also be done using the web UI.  Assuming we have a privileged
+It bears mention that there is a default privilege called
+*Certificate Administrators* that contains most of the certificate
+management permissions; for this example we will create a new
+privilege that contains *only* the required permissions.  We will
+use the ``ipa`` CLI program to implement this scenario, but it can
+also be done using the web UI.  Assuming we have a privileged
 Kerberos ticket, let's first create a new *privilege* and add to it
 the required permissions::
 
