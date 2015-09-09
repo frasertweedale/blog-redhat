@@ -1,0 +1,240 @@
+Automatic decryption of TLS private keys with Deo
+=================================================
+
+Deo_ is a protocol for *network-bound encryption* which provides for
+automatic decryption of secrets when a client is on a given network,
+and an implementation of the protocol.  Importantly, it is *not a
+key escrow service*.
+
+.. _Deo: https://github.com/npmccallum/deo
+
+The original use case for Deo was automatic decryption of encrypted
+disks, e.g. for servers in datacentres or employee laptops when
+inside the corporate firewall.  This provides convenience and time
+savings for operators but if disks are not on the secure network
+(e.g. due to warranty service or theft) they cannot be automatically
+decrypted.  A typical configuration will fall back to password-based
+decryption, so choosing a secure passphrase is still important.
+
+A high-level description of the protocol and specific details about
+the disk encryption use case including LUKS integration is found `on
+the FreeIPA wiki`_.  `Source code`_ is available at GitHub.
+
+.. _on the FreeIPA wiki: http://www.freeipa.org/page/Network_Bound_Disk_Encryption
+.. _Source code: https://github.com/npmccallum/deo
+
+In this post we will explore an alternative use case for Deo:
+automatic decryption of TLS keys.  Before we get to that, let's
+review how Deo works.
+
+Deo protocol
+------------
+
+The Deo server uses two sets of keys: one for TLS - providing
+privacy and authentication for the network connection - and the
+other for encryption and decryption of secrets.  All communication
+between client and server is protected by TLS.
+
+A client who wishes to encrypt a secret first asks the Deo server
+for its encryption certificate (which may be accompanied by
+intermediate certificates forming a chain to the trust root).  It
+then uses the public key to encrypt the secret and stores the
+resulting ciphertext along with some metadata.
+
+To decrypt the secret, the client transmits the stored ciphertext to
+the Deo server, which decrypts and returns the secret.
+
+Keen observers will note that the client must trust the server not
+to store, divulge or misuse the secret, which it learns during the
+decryption operation.  Nathaniel McCallum has made progress on a
+protocol that does not permit the server or eavesdroppers to learn
+the secret, strengthening the scheme against offline attacks, but
+this has not been implemented in Deo yet.
+
+
+TLS private keys in Deo
+-----------------------
+
+Anyone who has deployed TLS or administered web servers know that it
+is a nusiance to have to enter the passphrase to decrypt the private
+key(s) when starting or restarting the server.  If a server restarts
+unexpectedly and no operator is on hand to supply the passphrase, it
+cannot come up.  There are few secure technical solutions to this
+problem.  Disturbingly it is frequently suggested to store the
+private key in the clear.
+
+If a server offers the right configuration or interfaces, it should
+be possible to use Deo to automatically decrypt the secret keys
+including TLS private keys.  In this example we will use Deo to
+decrypt Apache httpd / mod_ssl keys.  The examples assume that a
+``deo-decryptd`` server is running at ``deo.ipa.local`` on the
+default port (5700).
+
+mod_ssl for Apache provides the ``SSLPassPhraseDialog`` directive.
+The default value ``builtin`` causes mod_ssl to prompt for the
+passphrase although on Fedora (and perhaps other ``systemd``-based
+OSes) the standard mod_ssl configuration uses a helper script
+to acquire the passphrase in a ``systemd``-friendly way::
+
+  SSLPassPhraseDialog exec:/usr/libexec/httpd-ssl-pass-dialog
+
+Let's see it in action::
+
+  [f22-4:~] ftweedal% sudo systemctl restart httpd
+  Enter SSL pass phrase for f22-4.ipa.local:443 (RSA) : ********
+
+If we look inside ``/usr/libexec/httpd-ssl-pass-dialog`` we see that
+the ``exec:...`` directive uses command line arguments to indicate
+the server and key type::
+
+  #!/bin/sh
+  exec /bin/systemd-ask-password "Enter SSL pass phrase for $1 ($2) : "
+
+Apache expects the script to print the passphrase on standard
+output.  We can write a passphrase helper that conforms to this
+interface but uses Deo to decrypt the passphrase, falling back to
+prompting if decryption fails or the Deo server is unavailable.  Deo
+ciphertext files will be stored under ``/etc/httpd/deo.d/`` (an
+arbitrary decision).  The complete helper script, which is saved as
+``/usr/libexec/httpd-deo-helper``, is::
+
+  #!/bin/sh
+  DEO_FILE="/etc/httpd/deo.d/$1"
+  [ -f "$DEO_FILE" ] && deo decrypt < "$DEO_FILE" && echo && exit
+  exec /bin/systemd-ask-password "Enter SSL pass phrase for $1 ($2) : "
+
+The behaviour of this script is:
+
+1. Check for the existence of a file in the ``deo.d/`` directory
+   relating to the server indicated in the first command argument.
+
+2. If the file exists, attempt to ``deo decrypt`` it and exit if
+   successful.
+
+3. If the file does not exist or if decryption fails, fall back to
+   ``systemd-ask-password``.
+
+We must also update the Apache configuration to use the new helper::
+
+  SSLPassPhraseDialog exec:/usr/libexec/httpd-deo-helper
+
+
+Next we need to create a Deo ciphertext file for each server.  The
+following shell command will read the passphrase (the same one used
+to encrypt the private key) from standard input, ``deo encrypt`` it
+and write it to the appropriate file in ``deo.d/``::
+
+  (stty -echo; read LINE; echo -n "$LINE") \
+    | deo encrypt -a /etc/ipa/ca.pem deo.ipa.local \
+    > /etc/httpd/deo.d/f22-4.ipa.local:443
+
+Finally, I had to apply appropriate SELinux labels to the
+``httpd-deo-helper`` script and ``deo.d/`` files and extend the
+policy to allow processes in the ``httpd_passwd_t`` domain to read
+Apache config files and talk over the network.  The labelling
+commands are::
+
+  % semanage fcontext -a -t httpd_passwd_exec_t /usr/libexec/httpd-deo-helper
+  % restorecon /usr/libexec/httpd-deo-helper
+  % restorecon -R /etc/httpd
+
+The SELinux *type enforcement* (TE) module source looks like::
+
+  policy_module(httpd_deo, 1.0.0)
+
+  require {
+          type httpd_passwd_t;
+          type httpd_config_t;
+          type unreserved_port_t;
+          class dir { search };
+          class file { read getattr open };
+          class tcp_socket { name_connect };
+  }
+
+  allow httpd_passwd_t httpd_config_t:dir search;
+  allow httpd_passwd_t httpd_config_t:file { read getattr open };
+  allow httpd_passwd_t unreserved_port_t:tcp_socket name_connect;
+
+
+Now that all of this is in place, when the Apache server starts, if
+the ``deo-decryptd`` server is accessible (and its certificates are
+still valid) the passphrase will be decrypted automatically and used
+to decrypt the private key; an operator does not need to provide it.
+Mission accomplished!
+
+
+Limitations
+-----------
+
+The encrypted secret is the same passphrase used to encrypt the key,
+so a good passphrase must be used.  There is no option to *only*
+support Deo decryption (although I guess that password fallback
+would usually be wanted anyway.) Support for using Deo on its own or
+in conjunction with non-password-based encryption methods
+necessarily results in more complicated designs that are not
+supported by mod_ssl's limited configurability in this regard.
+
+Our implementation is based on an ad-hoc design specific to Apache
+(e.g. the ``deo.d/`` directory and the naming convention of files
+therein.) The general design may be widely applicable but for other
+servers the details will differ (if they support the *helper*
+paradigm at all; see next section.)
+
+Finally, we have not implemented any plugins for Deo itself, unlike
+the disk encryption use case where there is a dedicated command
+(``deo cryptsetup``) for people to use.  In my opinion the design
+presented in this post is simple enough not to warrant it but if a
+common configuration layout was adopted by popular server software
+it might make sense to provide a plugin.
+
+
+What about { mod_nss , nginx , ... }?
+-------------------------------------
+
+The ability to do Deo decryption with mod_ssl hinges on the
+``SSLPassPhraseDialog`` directive and in particular its ability to
+execute a helper program and provide it with enough information to
+distinguish the target key.  mod_nss and nginx's ``ssl_module`` have
+directives to provide the password(s) in a flat file but no support
+for invoking helper programs.
+
+NSS works well with PKCS #11 modules so it might be possible to
+implement a module that uses Deo to decrypt key material.  This
+approach would benefit any other programs that use PKCS #11 but I
+have not yet looked closely at this option.
+
+The nginx code base is modern and clean and if the developers are
+receptive it would be worthwhile to add behaviour similar to
+Apache's ``SSLPassPhraseDialog``.
+
+For other servers, check the documentation.  If you wish to
+implement for Deo in a program that you work on - either directly or
+by invoking helper programs - you may find the following OpenSSL and
+NSS API documentation useful:
+
+- https://www.openssl.org/docs/manmaster/ssl/SSL_CTX_set_default_passwd_cb.html
+- https://developer.mozilla.org/en-US/docs/Mozilla/Projects/NSS/PKCS11_Functions#PK11_SetPasswordFunc
+
+
+Concluding notes
+----------------
+
+Deo emerged from disk encryption use cases but the protocol is
+useful in other contexts, including operator-less decryption of
+secrets used by network servers.  We examined a straightforward
+implementation of Deo-based automatic TLS private key decryption for
+Apache with mod_ssl and also saw that current versions of mod_nss
+(for Apache) and nginx don't support the underlying design.
+Supporting Deo decryption in a PKCS #11 module is an area for
+further investigation.
+
+Future revisions of the Deo protocol may offer better trust
+characteristics; it could be possible to prevent the server from
+learning the secret.  Use of Deo as a part of a larger escrow
+protocol is another area being explored.
+
+If you have questions or ideas about other uses for Deo, please
+start a conversation on the freeipa-users@redhat.com `mailing list`_
+or in ``#freeipa`` on Freenode, or raise an issue on GitHub.
+
+.. _mailing list: https://www.redhat.com/mailman/listinfo/freeipa-users
