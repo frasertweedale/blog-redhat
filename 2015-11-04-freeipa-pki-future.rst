@@ -136,7 +136,7 @@ supply config templates for other programs, or even create the whole
 CSR at once.  Or even make it part of the ``cert-request`` command,
 bypassing a number of steps!  The point is that there is currently a
 lot of busy-work around requesting certificates that is not
-necessary, and we can *all* certificate users time and pain by
+necessary, and we can save *all* certificate users time and pain by
 improving the process.
 
 .. _Ticket #4899: https://fedorahosted.org/freeipa/ticket/4899
@@ -183,14 +183,14 @@ Future of FreeIPA PKI: my vision
 --------------------------------
 
 There are still a number of issues that the improved architecture
-does not address.  The data in CSRs has to be *just right*.  There
-is no way to validate exotic or unknown extension data, limiting use
-cases or restricting user self-service and burdening certificate
-issuers with the responsibliity of getting it right.  There is no
-way to pull data in custom LDAP schema into certificates or even to
-automatically include data that we *know* is in the directory on
-certificates (e.g. email, KRB5PrincipalName or other kinds of
-alternative names).
+does not address.  The data in CSRs still have to be *just right*.
+There is no way to validate exotic or unknown extension data,
+limiting use cases or restricting user self-service and burdening
+certificate issuers with the responsiblity of getting it right.
+There is no way to pull data from custom LDAP schema into
+certificates or even to automatically include data that we *know* is
+in the directory on certificates (e.g. email, KRB5PrincipalName or
+other kinds of alternative names).
 
 The central concept of my vision for the future of FreeIPA's PKI is
 that Dogtag should read from LDAP all the data it needs to produce a
@@ -219,7 +219,7 @@ The architecture sketch now becomes::
   +-+--|---+-+
        |
        | 2. ipa cert-request
-       |    (KEY payload)
+       |    (PUBKEY payload)
        v
   +--------------+
   |   FreeIPA    |
@@ -230,7 +230,7 @@ The architecture sketch now becomes::
   +-+----|-----+-+                 +-----------+
          |                               ^
          | 3. Dogtag cert request        |
-         |    (KEY payload)              |
+         |    (PUBKEY payload)           |
          v                               |
   +--------------------+                 |
   |  Dogtag    +-------+                 |
@@ -249,8 +249,8 @@ observe the following advantages:
   with exotic extension data.
 
 - The profile reads the needed data (assuming it exists in standard
-  or custom schema), allowing this and other exotic extensions to be
-  easily supported.
+  or custom schema), allowing *IECUserRoles* or other exotic
+  extensions to be easily supported.
 
 - Because we are not accepting raw extension data that cannot be
   validated, user self-service can be allowed (appropriate write
