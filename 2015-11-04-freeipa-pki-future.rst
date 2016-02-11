@@ -23,7 +23,7 @@ framework (not Dogtag) enforces CA ACLs.
 
 Custom profiles support means that the PKI can be used for a huge
 number of use cases, but it is still up to the user or operator to
-provide a suitable PKCS #10 *certificate sigining request* (CSR).
+provide a suitable PKCS #10 *certificate signing request* (CSR).
 
 I am currently working on implementing support for lightweight
 sub-CAs in Dogtag and FreeIPA so that sub-CAs can be easily created
