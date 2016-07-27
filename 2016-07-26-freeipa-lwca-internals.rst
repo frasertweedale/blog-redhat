@@ -236,7 +236,7 @@ process is:
    service signing requests on that clone, and adds its own hostname
    to the CA's ``authorityKeyHost`` attribute.
 
-Some excepts of the CA debug log *on the clone* (not the server on
+Some excerpts of the CA debug log *on the clone* (not the server on
 which the sub-CA was first created) shows this process in action.
 The CA debug log is found at ``/var/log/pki/pki-tomcat/ca/debug``.
 Some irrelevant messages have been omitted.
@@ -253,7 +253,7 @@ Some irrelevant messages have been omitted.
   [25/Jul/2016:15:45:56][authorityMonitor]: Starting KeyRetrieverRunner thread
 
 Above we see the ``authorityMonitor`` thread observe the addition of
-a CA.  It add the CA to its internal map and attempts to initialise
+a CA.  It adds the CA to its internal map and attempts to initialise
 it, which fails because the key and certificate are not available,
 so it starts a ``KeyRetrieverRunner`` in a new thread.
 
