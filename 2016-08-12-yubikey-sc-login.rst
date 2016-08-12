@@ -24,7 +24,10 @@ factors in one: both *something I have* and *something I know*.
 The inability to extract the private key from a smart card also
 provides an advantage over software HOTP/TOTP tokens which, in the
 absense of other security measures such as encrypted filesystem on
-the mobile device, allow an attacker to extract the OTP seed.
+the mobile device, allow an attacker to extract the OTP seed.  And
+because public key cryptography is used, there is no OTP seed or
+password hash sitting on a server, waiting to be exfiltrated and
+subjected to offline attacks.
 
 For authentication applications, a smart card carries an X.509
 certificate alongside a private key.  A login application would read
