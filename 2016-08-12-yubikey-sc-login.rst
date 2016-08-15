@@ -129,7 +129,6 @@ Now ``yubico-piv-tool`` can see the card::
   Application version 1.0.4 found.
 
 
-https://developers.yubico.com/yubico-piv-tool/YubiKey_PIV_introduction.html
 Now we can initialise the YubiKey by setting a new *management key*,
 PIN and *PIN Unblocking Key (PUK)*.  As you can probably guess, the
 management key protects actions like generating keys and importing
@@ -268,7 +267,11 @@ Next, enable the OpenSC PKCS #11 module in the system NSS database::
       -add "OpenSC" -libfile opensc-pkcs11.so
 
 We also need to add the IPA CA cert to the system NSSDB.  This will
-allow SSSD to validate certificates from smart cards::
+allow SSSD to validate certificates from smart cards.  If smart card
+certificates are issued by a sub-CA or an external CA, import that
+CA's certificate instead.
+
+::
 
   # certutil -d /etc/ipa/nssdb -L -n 'IPA.LOCAL IPA CA' -a \
     | certutil -d /etc/pki/nssdb -A -n 'IPA.LOCAL IPA CA' -t 'CT,C,C'
