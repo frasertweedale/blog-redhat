@@ -153,7 +153,7 @@ similar way to the above, but I do not recommend it, nor am I
 motivated to work out a reliable way to do this, given that wildcard
 certificate are deprecated.  (By the time TLS libraries eventually
 remove support for treating the subject CN as a DNS-ID, I will have
-little sympathy for organisations that still haven't move away from
+little sympathy for organisations that still haven't moved away from
 wildcard certs).
 
 In conclusion: you shouldn't use wildcard certificates, and FreeIPA
