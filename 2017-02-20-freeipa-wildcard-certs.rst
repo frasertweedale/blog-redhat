@@ -39,6 +39,8 @@ use a profile for issuing wildcard certificates.
 Creating a wildcard certificate profile in FreeIPA
 --------------------------------------------------
 
+This procedure works on FreeIPA 4.2 (RHEL 7.2) and later.
+
 First, ``kinit admin`` and export an existing service certificate
 profile configuration to a file::
 
@@ -86,14 +88,6 @@ with the ``cloudapps.example.com`` host::
     ACL name: wildcard-hosts
     Enabled: TRUE
 
-  ftweedal% ipa caacl-add-ca wildcard-hosts --cas ipa
-    ACL name: wildcard-hosts
-    Enabled: TRUE
-    CAs: ipa
-  -------------------------
-  Number of members added 1
-  -------------------------
-
   ftweedal% ipa caacl-add-profile wildcard-hosts --certprofiles wildcard
     ACL name: wildcard-hosts
     Enabled: TRUE
@@ -112,6 +106,18 @@ with the ``cloudapps.example.com`` host::
   -------------------------
   Number of members added 1
   -------------------------
+
+An additional step is required in FreeIPA 4.4 (RHEL 7.3) and later
+(it does not apply to FreeIPA < 4.4)::
+
+  ftweedal% ipa caacl-add-ca wildcard-hosts --cas ipa
+    ACL name: wildcard-hosts
+    Enabled: TRUE
+    CAs: ipa
+  -------------------------
+  Number of members added 1
+  -------------------------
+
 
 Then create a CSR with subject ``CN=cloudapps.example.com`` (details
 omitted), and issue the certificate::
@@ -151,11 +157,11 @@ When it comes to wildcards in *Subject Alternative Name* DNS-IDs, it
 might be possible to configure a Dogtag profile to add this in a
 similar way to the above, but I do not recommend it, nor am I
 motivated to work out a reliable way to do this, given that wildcard
-certificate are deprecated.  (By the time TLS libraries eventually
+certificates are deprecated.  (By the time TLS libraries eventually
 remove support for treating the subject CN as a DNS-ID, I will have
 little sympathy for organisations that still haven't moved away from
 wildcard certs).
 
 In conclusion: you shouldn't use wildcard certificates, and FreeIPA
-has no special support for them, but if you really to, you can do it
-with a custom certificate profile.
+has no special support for them, but if you really need to, you can
+do it with a custom certificate profile.
