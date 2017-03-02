@@ -135,6 +135,17 @@ omitted), and issue the certificate::
     Serial number (hex): 0xB
 
 
+Alternatively, you can use Certmonger to request the certificate::
+
+  ftweedal% ipa-getcert request \
+    -d /etc/httpd/alias -p /etc/httpd/alias/pwdfile.txt \
+    -n wildcardCert \
+    -T wildcard
+
+This will request a certificate for the current host.  The ``-T``
+option specifies the profile to use.
+
+
 Discussion
 ----------
 
