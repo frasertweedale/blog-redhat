@@ -150,6 +150,41 @@ The remainder of this post is a short guide to configuring Active
 Directory Certificate Services, defining a custom CA profile, and
 submitting a CSR to issue a certificate.
 
+Renewing the certificate
+------------------------
+
+FreeIPA provides the ``ipa-cacert-manage renew`` command for
+renewing an externally-signed CA certificate.  Like installation
+with an externally-signed CA, this is a two-step procedure.  In the
+first step, the command prompts Certmonger to generate a new CSR for
+the CA certificate, and saves the CSR so that the administrator can
+submit it to the external CA.
+
+For renewing a certificate signed by AD CS, as in the installation
+case a template specifier extension is needed.  Therefore the
+``ipa-cacert-manage renew`` command has also learned the
+``--external-ca-profile`` option::
+
+  # ipa-cacert-manage renew --external-ca-type ms-cs \
+    --external-ca-profile MySubCA
+  Exporting CA certificate signing request, please wait
+  The next step is to get /var/lib/ipa/ca.csr signed by your CA and re-run ipa-cacert-manage as:
+  ipa-cacert-manage renew --external-cert-file=/path/to/signed_certificate --external-cert-file=/path/to/external_ca_certificate
+  The ipa-cacert-manage command was successful
+
+The the above example the CSR that was generated will contain a
+*version 1* template extension, using the name ``MySubCA``.  Like
+the installation commands, the *version 2* extension is also
+supported.
+
+This part of the feature requires some changes to Certmonger as well
+as FreeIPA.  At time of writing these changes haven't been merged.
+There is a `Certmonger pull request
+<https://pagure.io/certmonger/pull-request/81>`_ and a `Certmonger
+COPR build
+<https://copr.fedorainfracloud.org/coprs/ftweedal/certmonger-v2template/>`_
+if you'd like to test the feature.
+
 
 Appendix A: installing and configuring AD CS
 --------------------------------------------
