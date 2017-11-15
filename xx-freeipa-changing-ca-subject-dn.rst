@@ -185,8 +185,8 @@ Progress!  We now have a CA certificate with the desired Subject DN.
 The new certificate has the old (current) issuer DN.  We'll ignore
 that for now.
 
-Checking deployment health
-~~~~~~~~~~~~~~~~~~~~~~~~~~
+Checking server health
+~~~~~~~~~~~~~~~~~~~~~~
 
 Now I need to check the state of the deployment.  Did anything go
 wrong during renewal?  Is everything working?
@@ -421,6 +421,78 @@ At this point I make an educated guess that because there is already
 a certificate stored with the nickname ``IPA.LOCAL IPA CA``, it
 refuses to add *another* CA certificate with a different Subject DN
 under the same nickname.  So I will delete the certificates with
-this nickname from the NSSDBs and try again.
+this nickname from each of the NSSDBs, then try again.  For some
+reason the nickname appeared twice in each NSSDB::
+
+  [root@f27-2 ~]# certutil -d /etc/dirsrv/slapd-IPA-LOCAL -L
+
+  Certificate Nickname                                         Trust Attributes
+                                                               SSL,S/MIME,JAR/XPI
+
+  CN=alt-f27-2.ipa.local,O=Example Organization                u,u,u
+  CN=CA,O=Example Organization                                 C,,
+  IPA.LOCAL IPA CA                                             CT,C,C
+  IPA.LOCAL IPA CA                                             CT,C,C
+
+So for each NSSDB, the ``certutil`` command to delete the
+certificate had to be executed twice.  For the 389DS NSSDB, the
+command was::
+
+  [root@f27-2 ~]# certutil -d /etc/httpd/alias -D -n "IPA.LOCAL IPA CA"
+
+The commands for the other NSSDBs were similar.  With the
+problematic certificates removed, I tried running ``ipa-certupdate``
+again::
+
+  [root@f27-2 ~]# ipa-certupdate
+  trying https://f27-2.ipa.local/ipa/session/json
+  [try 1]: Forwarding 'ca_is_enabled/1' to json server 'https://f27-2.ipa.local/ipa/session/json'
+  [try 1]: Forwarding 'ca_find/1' to json server 'https://f27-2.ipa.local/ipa/session/json'
+  Systemwide CA database updated.
+  Systemwide CA database updated.
+  The ipa-certupdate command was successful
+  [root@f27-2 ~]# echo $?
+  0
+
+This time the command exited successfully.  ``certutil`` shows an
+``IPA.LOCAL IPA CA`` certificate in the database and that it is the
+new CA certificate::
+
+  [root@f27-2 ~]# certutil -d /etc/dirsrv/slapd-IPA-LOCAL -L
+
+  Certificate Nickname                                         Trust Attributes
+                                                               SSL,S/MIME,JAR/XPI
+
+  CN=alt-f27-2.ipa.local,O=Example Organization                u,u,u
+  CN=CA,O=Example Organization                                 C,,
+  CN=Certificate Authority,O=IPA.LOCAL 201711061603            CT,C,C
+  CN=Certificate Authority,O=IPA.LOCAL 201711061603            CT,C,C
+  IPA.LOCAL IPA CA                                             C,,
+  [root@f27-2 ~]# certutil -d /etc/dirsrv/slapd-IPA-LOCAL -L -n 'IPA.LOCAL IPA CA'
+  Certificate:
+      Data:
+          Version: 3 (0x2)
+          Serial Number: 11 (0xb)
+          Signature Algorithm: PKCS #1 SHA-256 With RSA Encryption
+          Issuer: "CN=Certificate Authority,O=IPA.LOCAL 201711061603"
+          Validity:
+              Not Before: Thu Nov 09 05:11:12 2017
+              Not After : Mon Nov 09 05:11:12 2037
+          Subject: "CN=IPA.LOCAL CA 2017.11.09"
+          ...
+
+I also confirmed that all of the old and new CA certificates are
+present in the ``/etc/ipa/ca.crt`` and
+``/etc/pki/ca-trust/source/ipa.p11-kit`` files.  So all the
+certificate databases now include the new CA certificate.
+
+Checking replica health
+~~~~~~~~~~~~~~~~~~~~~~~
 
 TODO
+
+
+Renewing the CA certificate (again)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+TODO (observe Issuer DN is the old CA subj DN).
