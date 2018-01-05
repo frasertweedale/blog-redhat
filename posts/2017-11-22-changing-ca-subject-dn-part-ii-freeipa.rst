@@ -17,7 +17,7 @@ purpose of this post is to explore how to do this in FreeIPA, and
 discuss the implications.
 
 This is a **long post**.  If you are really changing the CA subject
-DN, don't skip anything.  Otherwise don't feel back about skimming
+DN, don't skip anything.  Otherwise don't feel bad about skimming
 or jumping straight to the `discussion <#discussion>`_.  Even
 skimming the article will give you an idea of the steps involved,
 and how to repair the ensuing breakage.
