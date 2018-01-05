@@ -51,5 +51,5 @@ options and mechanically adjusting the ``pkispawn`` configuration.
 If you have use cases for large signing keys and/or NIST ECC keys or
 other algorithms, please do not hesitate to leave comments in the
 issues linked above, or get in touch with the FreeIPA team on the
-``freeipa-users@redhat.com`` mailing list or ``#freeipa`` on
+``freeipa-users@lists.fedorahosted.org`` mailing list or ``#freeipa`` on
 Freenode.

@@ -234,7 +234,5 @@ learning the secret.  Use of Deo as a part of a larger escrow
 protocol is another area being explored.
 
 If you have questions or ideas about other uses for Deo, please
-start a conversation on the freeipa-users@redhat.com `mailing list`_
+start a conversation on the ``freeipa-users@lists.fedorahosted.org`` mailing list
 or in ``#freeipa`` on Freenode, or raise an issue on GitHub.
-
-.. _mailing list: https://www.redhat.com/mailman/listinfo/freeipa-users
