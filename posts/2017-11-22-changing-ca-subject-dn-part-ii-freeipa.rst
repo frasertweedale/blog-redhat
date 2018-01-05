@@ -8,7 +8,7 @@ copye with the change.  I proposed some alternative approaches that
 avoid these problems: re-chaining the CA, and creating subordinate
 CAs.
 
-.. _previous post: /2017/11/changing-a-cas-subject-dn-part-i-dont-do-that/
+.. _previous post: 2017-11-20-changing-ca-subject-dn-part-i.html
 
 If you were thinking of changing your CA's Subject DN, I hope that I
 dissuaded you.  But if I failed, or you absolutely do need to change

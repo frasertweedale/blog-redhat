@@ -194,7 +194,7 @@ users.  We are gradually making steps toward this, but it is still a
 long way off.  I have discussed this utopian vision `in a previous
 post`_.
 
-.. _in a previous post: 2015/11/freeipa-pki-current-plans-and-a-future-vision/
+.. _in a previous post: 2015-11-04-freeipa-pki-future.html
 
 
 Configuring ``CommonNameToSANDefault``

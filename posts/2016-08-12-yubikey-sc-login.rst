@@ -295,7 +295,7 @@ log in as ``alice`` using the YubiKey NEO.  When logging in with the
 card inserted, instead of being prompted for a password, GDM prompts
 for the PIN.  Enter the pin, and it lets you in!
 
-.. image:: images/smartcard-login.png
+.. image:: ../images/smartcard-login.png
    :alt: Screenshot of login PIN prompt
    :width: 100%
 

@@ -111,7 +111,7 @@ trusted CA) and *ACME* (the protocol that powers it) for acquiring
 all the certificates you need without administrator or operator
 intervention.
 
-.. _an earlier post: 2017/02/wildcard-certificates-in-freeipa
-.. _the earlier post: 2017/02/wildcard-certificates-in-freeipa
+.. _an earlier post: 2017-02-20-freeipa-wildcard-certs.html
+.. _the earlier post: 2017-02-20-freeipa-wildcard-certs.html
 .. _RFC 2818: https://tools.ietf.org/html/rfc2818
 .. _RFC 6125: https://tools.ietf.org/html/rfc6125#section-7.2

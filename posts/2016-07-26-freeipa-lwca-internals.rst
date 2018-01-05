@@ -11,7 +11,7 @@
 FreeIPA Lightweight CA internals
 ================================
 
-In the preceding post, I explained the use cases for the FreeIPA
+In the `preceding post`_, I explained the use cases for the FreeIPA
 *lightweight sub-CAs* feature, how to manage CAs and use them to
 issue certificates, and current limitations.  In this post I detail
 some of the internals of how the feature works, including how
@@ -25,6 +25,7 @@ page, but we will look at the aspects that are covered from the
 perspective of the system administrator, i.e. *"what is happening on
 my systems?"*
 
+.. _preceding post: 2016-07-25-freeipa-subcas.html
 .. _on the design page: http://www.freeipa.org/page/V4/Sub-CAs
 
 

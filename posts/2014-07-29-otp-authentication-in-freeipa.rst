@@ -195,7 +195,7 @@ user credentials including the OTP value.  The dotted line and box
 show the alternative configuration where ``ipa-otpd`` proxies the
 token on to an external RADIUS server.
 
-.. image:: images/freeipa_otp_auth_flow.png
+.. image:: ../images/freeipa_otp_auth_flow.png
 
 
 Debugging the authentication problem

@@ -194,24 +194,24 @@ installation and configuration will take 10 to 15 minutes.  Open
 **Server Manager**, invoke the **Add Roles and Features Wizard** and
 select the AD CS **Certification Authority** role:
 
-.. image:: /wp-content/uploads/2017/08/ms-ca-installation.png
+.. image:: ../images/ms-ca/ms-ca-installation.png
 
 Proceed, and wait for the installation to complete...
 
-.. image:: /wp-content/uploads/2017/08/ms-ca-installation-progress.png
+.. image:: ../images/ms-ca/ms-ca-installation-progress.png
 
 After installation has finished, you will see **AD CS** in the
 Server Manager sidebar, and upon selecting it you will see a
 notification that **Configuration required for Active Directory
 Certificate Services**.
 
-.. image:: /wp-content/uploads/2017/08/ad-cs-configuration-required.png
+.. image:: ../images/ms-ca/ad-cs-configuration-required.png
 
 Click **More...**, and up will come the **All Servers Task Details**
 dialog showing that the **Post-deployment Configuration** action is
 pending.  Click the action to continue:
 
-.. image:: /wp-content/uploads/2017/08/ad-cs-post-deployment-configuration.png
+.. image:: ../images/ms-ca/ad-cs-post-deployment-configuration.png
 
 Now comes the **AD CS Configuration** assistant, which contains
 several steps.  Proceed past the **Specify credentials to configure
@@ -220,12 +220,12 @@ role services** step.
 In the **Select Role Services to configure** step, select
 **Certification Authority** then continue:
 
-.. image:: /wp-content/uploads/2017/08/ad-cs-post-deploy-2.png
+.. image:: ../images/ms-ca/ad-cs-post-deploy-2.png
 
 In the **Specify the setup type of the CA** step, choose
 **Enterprise CA** then continue:
 
-.. image:: /wp-content/uploads/2017/08/ad-cs-post-deploy-3-enterprise.png
+.. image:: ../images/ms-ca/ad-cs-post-deploy-3-enterprise.png
 
 The **Specify the type of the CA** step lets you choose whether the
 AD CS CA will be a root CA or chained to an external CA (just like
@@ -233,7 +233,7 @@ how FreeIPA lets you create root or subordinate CA!)  Installing AD
 CS as a Subordinate CA is outside the scope of this guide.  Choose
 **Root CA** and continue:
 
-.. image:: /wp-content/uploads/2017/08/ad-cs-post-deploy-4-root.png
+.. image:: ../images/ms-ca/ad-cs-post-deploy-4-root.png
 
 The next step lets you **Specify the type of the private key**.  You
 can use an existing private key or **Create a new private key**, the
@@ -243,7 +243,7 @@ The **Specify the cryptographic options** step lets you specify the
 **Key length** and **hash algorithm** for the signature.  Choose a
 key length of at least **2048** bits, and the **SHA-256** digest:
 
-.. image:: /wp-content/uploads/2017/08/ad-cs-post-deploy-6-algs.png
+.. image:: ../images/ms-ca/ad-cs-post-deploy-6-algs.png
 
 Next, **Specify the name of the CA**.  This sets the *Subject
 Distinguished Name* of the CA.  Accept defaults and continue.
@@ -252,7 +252,7 @@ The next step is to **Specify the validity period**.  CA
 certificates (especially root CAs) typically need a long validity
 period.  Choose a value like **5 Years**, then continue:
 
-.. image:: /wp-content/uploads/2017/08/ad-cs-post-deploy-8-validity.png
+.. image:: ../images/ms-ca/ad-cs-post-deploy-8-validity.png
 
 Accept defauts for the **Specify the database locations** step.
 
@@ -260,12 +260,12 @@ Finally, you will reach the **Confirmation** step, which summarises
 the chosen configuration options.  Review the settings then
 **Configure**:
 
-.. image:: /wp-content/uploads/2017/08/ad-cs-post-deploy-10-confirmation.png
+.. image:: ../images/ms-ca/ad-cs-post-deploy-10-confirmation.png
 
 The configuration will take a few moments, then the **Results** will
 be displayed:
 
-.. image:: /wp-content/uploads/2017/08/ad-cs-post-deploy-11-done.png
+.. image:: ../images/ms-ca/ad-cs-post-deploy-11-done.png
 
 AD CS is now configured and you can begin issuing certificates.
 
@@ -280,26 +280,26 @@ modifying it.
 To manage certificate templates, from **Server Manager** right-click
 the server and open the **Certification Authority** program:
 
-.. image:: /wp-content/uploads/2017/08/ad-cs-manage-1-open.png
+.. image:: ../images/ms-ca/ad-cs-manage-1-open.png
 
 In the sidebar tree view, *right-click* **Certificate Templates**
 then select **Manage**.
 
-.. image:: /wp-content/uploads/2017/08/ad-cs-manage-2-templates.png
+.. image:: ../images/ms-ca/ad-cs-manage-2-templates.png
 
 The **Certificate Templates Console** will open.  The default
 profile for sub-CAs has the Template Display Name *Subordinate
 Certification Authority*.  *Right-click* this template and choose
 **Duplicate Template**.
 
-.. image:: /wp-content/uploads/2017/08/ad-cs-manage-4-duplicate.png
+.. image:: ../images/ms-ca/ad-cs-manage-4-duplicate.png
 
 The new template is created and the **Properties of New Template**
 dialog appears, allowing the administrator to customise the
 template.  You can set a new **Template display name**, **Template
 name** and so on:
 
-.. image:: /wp-content/uploads/2017/08/ad-cs-manage-5-new-template.png
+.. image:: ../images/ms-ca/ad-cs-manage-5-new-template.png
 
 You can also change various aspects of certificate issuance
 including which extensions will appear on the issued certificate,
@@ -307,7 +307,7 @@ and the values of those extensions.  In the following screenshot, we
 see a new *Certificate Policies* OID being defined for addition to
 certificates issued via this template:
 
-.. image:: /wp-content/uploads/2017/08/ad-cs-manage-6-policy-ext.png
+.. image:: ../images/ms-ca/ad-cs-manage-6-policy-ext.png
 
 Also under **Extensions**, you can discover the OID for this
 template by looking at the **Certificate Template Information**
@@ -318,7 +318,7 @@ activate it for use with the AD CA.  Back in the **Certification
 Authority** management window, *right-click* **Certificate
 Templates** and select **Certificate Template to Issue**:
 
-.. image:: /wp-content/uploads/2017/08/ad-cs-manage-7-enable-template.png
+.. image:: ../images/ms-ca/ad-cs-manage-7-enable-template.png
 
 This will pop up the **Enable Certificate Templates** dialog,
 containing a list of templates available for use with the CA.
@@ -337,12 +337,12 @@ In the **Certification Authority** window, in the sidebar
 *right-click* the CA and select **All Tasks >> Submit new
 request...**:
 
-.. image:: /wp-content/uploads/2017/08/ad-cs-request-1-menu.png
+.. image:: ../images/ms-ca/ad-cs-request-1-menu.png
 
 This will bring up a file chooser dialog.  Find the CSR and **Open**
 it:
 
-.. image:: /wp-content/uploads/2017/08/ad-cs-request-2-choose-csr.png
+.. image:: ../images/ms-ca/ad-cs-request-2-choose-csr.png
 
 Assuming all went well (including the CSR indicating a known
 certificate template), the certificate is immediately issued and the

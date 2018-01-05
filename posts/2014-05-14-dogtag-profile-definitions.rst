@@ -19,7 +19,7 @@ context of a *profile*.  In this post we will look at how Dogtag
 profiles are defined and learn a little about how Dogtag uses them
 in the certificate enrolment process.
 
-.. _Previous post: https://blog-ftweedal.rhcloud.com/2014/05/dogtag-certificate-profiles-certificate-requests/
+.. _Previous post: 2014-05-12-dogtag-profiles-cert-requests.html
 
 Each instance of Dogtag or Certificate Server starts out with a
 default set of profiles; these are found in the Dogtag instance

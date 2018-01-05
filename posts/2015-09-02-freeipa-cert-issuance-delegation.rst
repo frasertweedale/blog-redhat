@@ -13,7 +13,7 @@ principal is allowed to request a certificate for the subject
 principal, and how to delegate the authority to issue certificates.
 
 .. _FreeIPA 4.2: http://www.freeipa.org/page/Releases/4.2.0
-.. _explained in a previous article: https://blog-ftweedal.rhcloud.com/2015/08/user-certificates-and-custom-profiles-with-freeipa-4-2/
+.. _explained in a previous article: 2015-08-06-freeipa-custom-certprofile.html
 
 
 Self-service requests

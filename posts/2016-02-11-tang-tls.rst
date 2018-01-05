@@ -5,7 +5,7 @@ In this post I continue the discussion of network-bound decryption
 and introduce *Tang* and *Clevis*, new unlock tools that supersede
 *Deo* (which was covered `in an earlier post`_).
 
-.. _in an earlier post: https://blog-ftweedal.rhcloud.com/2015/09/automatic-decryption-of-tls-private-keys-with-deo/
+.. _in an earlier post: 2015-09-09-deo-tls.html
 
 
 Deo is dead. Long live Tang.
@@ -58,7 +58,7 @@ been implemented in Clevis, but it is a high priority.
 By the way, if you were wondering about the terminology, a *clevis*,
 *clevis pin* and *tang* together form a kind of shackle.
 
-.. image:: images/clevis.jpg
+.. image:: ../images/clevis.jpg
 
 
 TLS private key decryption
