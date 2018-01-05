@@ -1,0 +1,119 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+    <head>
+        <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+        <title>Fraser's IdM Blog - Dogtag profile definitions</title>
+        <link rel="stylesheet" type="text/css" href="../css/default.css" />
+    </head>
+    <body>
+        <div id="header">
+            <div id="logo">
+                <a href="../">Fraser's IdM Blog</a>
+            </div>
+            <div id="navigation">
+                <a href="../">Home</a>
+                <a href="../archive.html">Archive</a>
+            </div>
+        </div>
+
+        <div id="content">
+            <h1 id="dogtag-profile-definitions">Dogtag profile definitions</h1>
+<p>In the <a href="2014-05-12-dogtag-profiles-cert-requests.html">previous post</a> I began an exploration of Dogtag’s <em>certificate profiles</em> feature by looking at the certificate request process and the relationship between PKCS #10 CSRs and Dogtag certificate enrolment requests, which are used to submit CSRs in the context of a <em>profile</em>. In this post we will look at how Dogtag profiles are defined and learn a little about how Dogtag uses them in the certificate enrolment process.</p>
+<p>Each instance of Dogtag or Certificate Server starts out with a default set of profiles; these are found in the Dogtag instance directory in <code>/var/lib/pki/&lt;instance-name&gt;/ca/profiles/ca/</code>. There are dozens of profiles but since we are already familiar with <code>caServerCert</code> let’s open up <code>caServerCert.cfg</code> and have a look:</p>
+<pre><code>desc=This certificate profile is for enrolling server certificates.
+visible=true
+enable=true
+enableBy=admin
+auth.class_id=
+name=Manual Server Certificate Enrollment
+input.list=i1,i2
+input.i1.class_id=certReqInputImpl
+input.i2.class_id=submitterInfoInputImpl
+output.list=o1
+output.o1.class_id=certOutputImpl
+policyset.list=serverCertSet
+policyset.serverCertSet.list=1,2,3,4,5,6,7,8
+policyset.serverCertSet.1.constraint.class_id=subjectNameConstraintImpl
+policyset.serverCertSet.1.constraint.name=Subject Name Constraint
+policyset.serverCertSet.1.constraint.params.pattern=.*CN=.*
+policyset.serverCertSet.1.constraint.params.accept=true
+policyset.serverCertSet.1.default.class_id=userSubjectNameDefaultImpl
+policyset.serverCertSet.1.default.name=Subject Name Default
+policyset.serverCertSet.1.default.params.name=
+policyset.serverCertSet.2.constraint.class_id=validityConstraintImpl
+policyset.serverCertSet.2.constraint.name=Validity Constraint
+policyset.serverCertSet.2.constraint.params.range=720
+policyset.serverCertSet.2.constraint.params.notBeforeCheck=false
+policyset.serverCertSet.2.constraint.params.notAfterCheck=false
+policyset.serverCertSet.2.default.class_id=validityDefaultImpl
+policyset.serverCertSet.2.default.name=Validity Default
+policyset.serverCertSet.2.default.params.range=720
+policyset.serverCertSet.2.default.params.startTime=0
+policyset.serverCertSet.3.constraint.class_id=keyConstraintImpl
+policyset.serverCertSet.3.constraint.name=Key Constraint
+policyset.serverCertSet.3.constraint.params.keyType=-
+policyset.serverCertSet.3.constraint.params.keyParameters=1024,2048,3072,4096,nistp256,nistp384,nistp521
+policyset.serverCertSet.3.default.class_id=userKeyDefaultImpl
+policyset.serverCertSet.3.default.name=Key Default
+... (on it goes, through to policyset.serverCertSet.8.*)</code></pre>
+<p>There is an obvious relationship between the profile configuration, the certificate enrolment request template retrieved via <code>pki cert-request-profile-show</code> and the behaviour of the CA when submitting or approving enrolment requests. For example, there are two inputs: one for a certificate request (PKCS #10 CSR) and one for submitter information. These are the same two inputs we had to fill out in the XML certificate enrolment request template. And there are constraint declarations; again, we have observed the effects of these declarations when non-conformant enrolment requests were rejected.</p>
+<p>Let’s break down the profile configuration. The top-level settings such as <code>name</code>, <code>desc</code> and <code>enable</code> are self-explanatory. Moving down, we see the <code>input.list</code> key specifying the list <code>i1,i2</code>, followed by keys <code>input.i1.class_id</code> and <code>input.i2.class_id</code>. This pattern of <code>foo.list=f1,f2,..</code> followed by <code>foo.f1...</code>, <code>foo.f2...</code>, and so on also occurs further down for <code>output</code> and <code>policyset</code>, and seems to provide a simple, deterministic way to read ordered declarations from the profile configuration.</p>
+<p>The <code>class_id</code> key also occurs in the output and policy set contexts. To what does its value refer? The file <code>/etc/pki/&lt;instance-name&gt;/ca/registry.cfg</code> holds the answer, mapping the values in the profile configuration to Java classes. These classes implement interfaces relevant to their role in the profile system: <code>IProfileInput</code>, <code>IProfileOutput</code>, <code>IPolicyConstraint</code> for inputs, outputs and policy constraints, and <code>IPolicyDefault</code> <em>and</em> <code>ICertInfoPolicyDefault</code> for policy defaults.</p>
+<p>Whilst inputs and outputs have no further configuration beyond the <code>class_id</code>, policy set constraints and defaults are parameterised, with each class offering named parameters that relate to its function. For example, <code>subjectNameConstraintImpl</code> has parameters <code>pattern</code> (a regular expression) and <code>accept</code> (boolean; I infer that this controls whether to accept or reject a CSR on match). When a profile is used, e.g. to generate an enrolment request template, submit an enrolment request, or to generate a certificate, Dogtag instantiates the classes according to the profile configuration and uses their behaviours to carry out the requested action - or to decide how or whether to carry it out.</p>
+<p>Armed with an understanding of how profiles are configured, let’s try and define a <em>new</em> profile. My first action was to simply copy <code>caServerCert.cfg</code> to <code>caServerCertTest.cfg</code> (ensuring the new file can be read by <code>pkiuser</code>). The <code>name</code> and <code>desc</code> values were changed and the subject name constraint pattern was updated to <code>.*CN=test.*</code> to make it easy to verify that the new profile is being used correctly. Let’s restart the server (the service name depends on the Dogtag instance name) and see if Dogtag has learned about the new profile:</p>
+<pre><code>$ sudo systemctl restart pki-tomcatd@pki-tomcat.service
+$ pki cert-request-profile-show caServerCertTest
+BadRequestException: Cannot provide enrollment template for profile `caServerCertTest`.  Profile not found</code></pre>
+<p>There must be more to configure. A thorough search turns up a few references to <code>caServerCert</code> in <code>/etc/pki/&lt;instance-name&gt;/ca/CS.cfg</code>:</p>
+<pre><code>...
+profile.caServerCert.class_id=caEnrollImpl
+profile.caServerCert.config=/var/lib/pki/&lt;instance-name&gt;/ca/profiles/ca/caServerCert.cfg
+...
+profile.list=caUserCert,caECUserCert,...,caServerCert,...
+...</code></pre>
+<p>We have found what appears to be the canonical list of profiles and furthermore can see that the full path to the profile is configurable and that each profile specifies a <code>class_id</code>. The <code>class_id</code> values that can be used here appear in the same <code>registry.cfg</code> we learned about above. The classes referred to implement the <code>IProfile</code> interface.</p>
+<p>After adding the <code>profile.caServerCertTest</code> configuration, appending <code>caServerCertTest</code> to <code>profile.list</code> and restarting Dogtag again, we can finally use our new profile:</p>
+<pre><code>$ pki cert-request-profile-show caServerCertTest
+--------------------------------------------------
+Enrollment Template for Profile &quot;caServerCertTest&quot;
+--------------------------------------------------
+  Profile ID: caServerCertTest
+  Renewal: false
+
+  Input ID: i1
+  Name: Certificate Request Input
+  Class: certReqInputImpl
+
+    Attribute Name: cert_request_type
+    Attribute Description: Certificate Request Type
+    Attribute Syntax: cert_request_type
+
+    Attribute Name: cert_request
+    Attribute Description: Certificate Request
+    Attribute Syntax: cert_request
+
+  Input ID: i2
+  Name: Requestor Information
+  Class: submitterInfoInputImpl
+
+    Attribute Name: requestor_name
+    Attribute Description: Requestor Name
+    Attribute Syntax: string
+
+    Attribute Name: requestor_email
+    Attribute Description: Requestor Email
+    Attribute Syntax: string
+
+    Attribute Name: requestor_phone
+    Attribute Description: Requestor Phone
+    Attribute Syntax: string</code></pre>
+<p>Adding the <code>--output &lt;filename&gt;</code> argument to the above command downloads the certificate enrolment request template for our new <code>caServerCertTest</code> profile. Using it to submit a CSR with a subject common name (CN) <em>not</em> starting with <code>test.</code> results in summary rejection as hoped, and submission succeeds when the CN does satisfy our constraint.</p>
+<p>In the next post we’ll dive into some code to look at how inputs, constraints and defaults are actually implemented, and perhaps implement one or two of our own.</p>
+        </div>
+        <div id="footer">
+            Generated by
+            <a href="http://jaspervdj.be/hakyll">Hakyll</a>
+        </div>
+    </body>
+</html>

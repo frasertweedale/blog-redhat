@@ -1,0 +1,144 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+    <head>
+        <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+        <title>Fraser's IdM Blog - Installing FreeIPA with an Active Directory subordinate CA</title>
+        <link rel="stylesheet" type="text/css" href="../css/default.css" />
+    </head>
+    <body>
+        <div id="header">
+            <div id="logo">
+                <a href="../">Fraser's IdM Blog</a>
+            </div>
+            <div id="navigation">
+                <a href="../">Home</a>
+                <a href="../archive.html">Archive</a>
+            </div>
+        </div>
+
+        <div id="content">
+            <h1 id="installing-freeipa-with-an-active-directory-subordinate-ca">Installing FreeIPA with an Active Directory subordinate CA</h1>
+<p>FreeIPA is often installed in enterprise environments for managing Unix and Linux hosts and services. Most commonly, enterprises use Microsoft <em>Active Directory</em> for managing users, Windows workstations and Windows servers. Often, Active Directory is deployed with <em>Active Directory Certificate Services (AD CS)</em> which provides a CA and certificate management capabilities. Likewise, FreeIPA includes the <em>Dogtag</em> CA, and when deploying FreeIPA in an enterprise using AD CS, it is often desired to make the FreeIPA CA a subordinate CA of the AD CS CA.</p>
+<p>In this blog post I’ll explain what is required to issue an AD sub-CA, and how to do it with FreeIPA, including a step-by-step guide to configuring AD CS.</p>
+<h2 id="ad-cs-certificate-template-overview">AD CS certificate template overview</h2>
+<p>AD CS has a concept of <em>certificate templates</em>, which define the characteristics an issued certificate shall have. The same concept exists in Dogtag and FreeIPA except that in those projects we call them <em>certificate profiles</em>, and the mechanism to select which template/profile to use when issuing a certificate is different.</p>
+<p>In AD CS, the template to use is indicated by an X.509 extension in the certificate signing request (CSR). The template specifier can be one of two extensions. The first, older extension has OID <code>1.3.6.1.4.1.311.20.2</code> and allows you to specify a template by name:</p>
+<pre><code>CertificateTemplateName ::= SEQUENCE {
+   Name            BMPString
+}</code></pre>
+<p>(Note that some documents specify <code>UTF8String</code> instead of <code>BMPString</code>. <code>BMPString</code> works and is used in practice. I am not actually sure if <code>UTF8String</code> even works.)</p>
+<p>The second, <em>Version 2</em> template specifier extension has OID <code>1.3.6.1.4.1.311.21.7</code> and allows you to specify a template by OID and version:</p>
+<pre><code>CertificateTemplate ::= SEQUENCE {
+    templateID              EncodedObjectID,
+    templateMajorVersion    TemplateVersion,
+    templateMinorVersion    TemplateVersion OPTIONAL
+}
+
+TemplateVersion ::= INTEGER (0..4294967295)</code></pre>
+<p>Note that some documents also show <code>templateMajorVersion</code> as optional, but it is actually required.</p>
+<p>When submitting a CSR for signing, AD CS looks for these extensions in the request, and uses the extension data to select the template to use.</p>
+<h2 id="external-ca-installation-in-freeipa">External CA installation in FreeIPA</h2>
+<p>FreeIPA supports installation with an externally signed CA certificate, via <code>ipa-server-install --external-ca</code> or (for existing CA-less installations <code>ipa-ca-install --external-ca</code>). The installation takes several steps. First, a key is generated and a CSR produced:</p>
+<pre><code>$ ipa-ca-install --external-ca
+
+Directory Manager (existing master) password: XXXXXXXX
+
+Configuring certificate server (pki-tomcatd). Estimated time: 3 minutes
+  [1/8]: configuring certificate server instance
+The next step is to get /root/ipa.csr signed by your CA and re-run /sbin/ipa-ca-install as:
+/sbin/ipa-ca-install --external-cert-file=/path/to/signed_certificate --external-cert-file=/path/to/external_ca_certificate</code></pre>
+<p>The installation program exits while the administrator submits the CSR to the external CA. After they receive the signed CA certificate, the administrator resumes the installation, giving the installation program the CA certificate and a chain of one or more certificates up to the root CA:</p>
+<pre><code>$ ipa-ca-install --external-cert-file ca.crt --external-cert-file ipa.crt
+Directory Manager (existing master) password: XXXXXXXX
+
+Configuring certificate server (pki-tomcatd). Estimated time: 3 minutes
+  [1/29]: configuring certificate server instance
+  ...
+  [29/29]: configuring certmonger renewal for lightweight CAs
+Done configuring certificate server (pki-tomcatd).</code></pre>
+<p>Recall, however, that if the external CA is AD CS, a CSR must bear one of the certificate template specifier extensions. There is an additional installation program option to add the template specifier:</p>
+<pre><code>$ ipa-ca-install --external-ca --external-ca-type=ms-cs</code></pre>
+<p>This adds a <em>name-based</em> template specifier to the CSR, with the name <code>SubCA</code> (this is the name of the default sub-CA template in AD CS).</p>
+<h2 id="specifying-an-alternative-ad-cs-template">Specifying an alternative AD CS template</h2>
+<p>Everything discussed so far is already part of FreeIPA. Until now, there is no way to specify a different template to use with AD CS.</p>
+<p>I have been working on a feature that allows an alternative AD CS template to be specified. Both kinds of template specifier extension are supported, via the new <code>--external-ca-profile</code> installation program option:</p>
+<pre><code>$ ipa-ca-install --external-ca --external-ca-type=ms-cs \
+  --external-ca-profile=1.3.6.1.4.1.311.21.8.8950086.10656446.2706058.12775672.480128.147.7130143.4405632:1</code></pre>
+<p>(Note: huge OIDs like the above are commonly used by Active Directory for installation-specific objects.)</p>
+<p>To specify a template by name, the <code>--external-ca-profile</code> value should be:</p>
+<pre><code>--external-ca-profile=NAME</code></pre>
+<p>To specify a template by OID, the OID and major version must be given, and optionally the minor version too:</p>
+<pre><code>--external-ca-profile=OID:MAJOR[:MINOR]</code></pre>
+<p>Like <code>--external-ca</code> and <code>--external-ca-type</code>, the new <code>--external-ca-profile</code> option is available with both <code>ipa-server-install</code> and <code>ipa-ca-install</code>.</p>
+<p>With this feature, it is now possible to specify an alternative or custom certificate template when using AD CS to sign the FreeIPA CA certificate. The feature has not yet been merged but there an <a href="https://github.com/freeipa/freeipa/pull/930">open pull request</a>. I have also made a <a href="https://copr.fedorainfracloud.org/coprs/ftweedal/freeipa-adcs-template/">COPR build</a> for anyone interested in testing the feature.</p>
+<p>The remainder of this post is a short guide to configuring Active Directory Certificate Services, defining a custom CA profile, and submitting a CSR to issue a certificate.</p>
+<h2 id="renewing-the-certificate">Renewing the certificate</h2>
+<p>FreeIPA provides the <code>ipa-cacert-manage renew</code> command for renewing an externally-signed CA certificate. Like installation with an externally-signed CA, this is a two-step procedure. In the first step, the command prompts Certmonger to generate a new CSR for the CA certificate, and saves the CSR so that the administrator can submit it to the external CA.</p>
+<p>For renewing a certificate signed by AD CS, as in the installation case a template specifier extension is needed. Therefore the <code>ipa-cacert-manage renew</code> command has also learned the <code>--external-ca-profile</code> option:</p>
+<pre><code># ipa-cacert-manage renew --external-ca-type ms-cs \
+  --external-ca-profile MySubCA
+Exporting CA certificate signing request, please wait
+The next step is to get /var/lib/ipa/ca.csr signed by your CA and re-run ipa-cacert-manage as:
+ipa-cacert-manage renew --external-cert-file=/path/to/signed_certificate --external-cert-file=/path/to/external_ca_certificate
+The ipa-cacert-manage command was successful</code></pre>
+<p>The the above example the CSR that was generated will contain a <em>version 1</em> template extension, using the name <code>MySubCA</code>. Like the installation commands, the <em>version 2</em> extension is also supported.</p>
+<p>This part of the feature requires some changes to Certmonger as well as FreeIPA. At time of writing these changes haven’t been merged. There is a <a href="https://pagure.io/certmonger/pull-request/81">Certmonger pull request</a> and a <a href="https://copr.fedorainfracloud.org/coprs/ftweedal/certmonger-v2template/">Certmonger COPR build</a> if you’d like to test the feature.</p>
+<h2 id="appendix-a-installing-and-configuring-ad-cs">Appendix A: installing and configuring AD CS</h2>
+<p>Assuming an existing installation of Active Directory, AD CS installation and configuration will take 10 to 15 minutes. Open <strong>Server Manager</strong>, invoke the <strong>Add Roles and Features Wizard</strong> and select the AD CS <strong>Certification Authority</strong> role:</p>
+<p><img src="../images/ms-ca/ms-ca-installation.png" alt="image" /></p>
+<p>Proceed, and wait for the installation to complete…</p>
+<p><img src="../images/ms-ca/ms-ca-installation-progress.png" alt="image" /></p>
+<p>After installation has finished, you will see <strong>AD CS</strong> in the Server Manager sidebar, and upon selecting it you will see a notification that <strong>Configuration required for Active Directory Certificate Services</strong>.</p>
+<p><img src="../images/ms-ca/ad-cs-configuration-required.png" alt="image" /></p>
+<p>Click <strong>More…</strong>, and up will come the <strong>All Servers Task Details</strong> dialog showing that the <strong>Post-deployment Configuration</strong> action is pending. Click the action to continue:</p>
+<p><img src="../images/ms-ca/ad-cs-post-deployment-configuration.png" alt="image" /></p>
+<p>Now comes the <strong>AD CS Configuration</strong> assistant, which contains several steps. Proceed past the <strong>Specify credentials to configure role services</strong> step.</p>
+<p>In the <strong>Select Role Services to configure</strong> step, select <strong>Certification Authority</strong> then continue:</p>
+<p><img src="../images/ms-ca/ad-cs-post-deploy-2.png" alt="image" /></p>
+<p>In the <strong>Specify the setup type of the CA</strong> step, choose <strong>Enterprise CA</strong> then continue:</p>
+<p><img src="../images/ms-ca/ad-cs-post-deploy-3-enterprise.png" alt="image" /></p>
+<p>The <strong>Specify the type of the CA</strong> step lets you choose whether the AD CS CA will be a root CA or chained to an external CA (just like how FreeIPA lets you create root or subordinate CA!) Installing AD CS as a Subordinate CA is outside the scope of this guide. Choose <strong>Root CA</strong> and continue:</p>
+<p><img src="../images/ms-ca/ad-cs-post-deploy-4-root.png" alt="image" /></p>
+<p>The next step lets you <strong>Specify the type of the private key</strong>. You can use an existing private key or <strong>Create a new private key</strong>, the continue.</p>
+<p>The <strong>Specify the cryptographic options</strong> step lets you specify the <strong>Key length</strong> and <strong>hash algorithm</strong> for the signature. Choose a key length of at least <strong>2048</strong> bits, and the <strong>SHA-256</strong> digest:</p>
+<p><img src="../images/ms-ca/ad-cs-post-deploy-6-algs.png" alt="image" /></p>
+<p>Next, <strong>Specify the name of the CA</strong>. This sets the <em>Subject Distinguished Name</em> of the CA. Accept defaults and continue.</p>
+<p>The next step is to <strong>Specify the validity period</strong>. CA certificates (especially root CAs) typically need a long validity period. Choose a value like <strong>5 Years</strong>, then continue:</p>
+<p><img src="../images/ms-ca/ad-cs-post-deploy-8-validity.png" alt="image" /></p>
+<p>Accept defauts for the <strong>Specify the database locations</strong> step.</p>
+<p>Finally, you will reach the <strong>Confirmation</strong> step, which summarises the chosen configuration options. Review the settings then <strong>Configure</strong>:</p>
+<p><img src="../images/ms-ca/ad-cs-post-deploy-10-confirmation.png" alt="image" /></p>
+<p>The configuration will take a few moments, then the <strong>Results</strong> will be displayed:</p>
+<p><img src="../images/ms-ca/ad-cs-post-deploy-11-done.png" alt="image" /></p>
+<p>AD CS is now configured and you can begin issuing certificates.</p>
+<h2 id="appendix-b-creating-a-custom-sub-ca-certificate-template">Appendix B: creating a custom sub-CA certificate template</h2>
+<p>In this section we look at how to create a new <em>certificate template</em> for sub-CAs by duplicating an existing template, then modifying it.</p>
+<p>To manage certificate templates, from <strong>Server Manager</strong> right-click the server and open the <strong>Certification Authority</strong> program:</p>
+<p><img src="../images/ms-ca/ad-cs-manage-1-open.png" alt="image" /></p>
+<p>In the sidebar tree view, <em>right-click</em> <strong>Certificate Templates</strong> then select <strong>Manage</strong>.</p>
+<p><img src="../images/ms-ca/ad-cs-manage-2-templates.png" alt="image" /></p>
+<p>The <strong>Certificate Templates Console</strong> will open. The default profile for sub-CAs has the Template Display Name <em>Subordinate Certification Authority</em>. <em>Right-click</em> this template and choose <strong>Duplicate Template</strong>.</p>
+<p><img src="../images/ms-ca/ad-cs-manage-4-duplicate.png" alt="image" /></p>
+<p>The new template is created and the <strong>Properties of New Template</strong> dialog appears, allowing the administrator to customise the template. You can set a new <strong>Template display name</strong>, <strong>Template name</strong> and so on:</p>
+<p><img src="../images/ms-ca/ad-cs-manage-5-new-template.png" alt="image" /></p>
+<p>You can also change various aspects of certificate issuance including which extensions will appear on the issued certificate, and the values of those extensions. In the following screenshot, we see a new <em>Certificate Policies</em> OID being defined for addition to certificates issued via this template:</p>
+<p><img src="../images/ms-ca/ad-cs-manage-6-policy-ext.png" alt="image" /></p>
+<p>Also under <strong>Extensions</strong>, you can discover the OID for this template by looking at the <strong>Certificate Template Information</strong> extension description.</p>
+<p>Finally, having defined the new certificate template, we have to activate it for use with the AD CA. Back in the <strong>Certification Authority</strong> management window, <em>right-click</em> <strong>Certificate Templates</strong> and select <strong>Certificate Template to Issue</strong>:</p>
+<p><img src="../images/ms-ca/ad-cs-manage-7-enable-template.png" alt="image" /></p>
+<p>This will pop up the <strong>Enable Certificate Templates</strong> dialog, containing a list of templates available for use with the CA. Select the new template and click <strong>OK</strong>. The new certificate template is now ready for use.</p>
+<h2 id="appendix-c-issuing-a-certificate">Appendix C: issuing a certificate</h2>
+<p>In this section we look at how to use AD CS to issue a certificate. It is assumed that the CSR to be signed exists and Active Directory can access it.</p>
+<p>In the <strong>Certification Authority</strong> window, in the sidebar <em>right-click</em> the CA and select <strong>All Tasks &gt;&gt; Submit new request…</strong>:</p>
+<p><img src="../images/ms-ca/ad-cs-request-1-menu.png" alt="image" /></p>
+<p>This will bring up a file chooser dialog. Find the CSR and <strong>Open</strong> it:</p>
+<p><img src="../images/ms-ca/ad-cs-request-2-choose-csr.png" alt="image" /></p>
+<p>Assuming all went well (including the CSR indicating a known certificate template), the certificate is immediately issued and the <strong>Save Certificate</strong> dialog appear, asking where to save the issued certificate.</p>
+        </div>
+        <div id="footer">
+            Generated by
+            <a href="http://jaspervdj.be/hakyll">Hakyll</a>
+        </div>
+    </body>
+</html>

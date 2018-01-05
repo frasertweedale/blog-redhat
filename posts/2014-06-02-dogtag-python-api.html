@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+    <head>
+        <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+        <title>Fraser's IdM Blog - Introduction to the Dogtag Python API</title>
+        <link rel="stylesheet" type="text/css" href="../css/default.css" />
+    </head>
+    <body>
+        <div id="header">
+            <div id="logo">
+                <a href="../">Fraser's IdM Blog</a>
+            </div>
+            <div id="navigation">
+                <a href="../">Home</a>
+                <a href="../archive.html">Archive</a>
+            </div>
+        </div>
+
+        <div id="content">
+            <h1 id="introduction-to-the-dogtag-python-api">Introduction to the Dogtag Python API</h1>
+<p>There is a Python binding to the Dogtag REST API under active development by Abhishek Koneru. I will be using this API to add support for Dogtag profiles in FreeIPA. This post serves as an introduction to the API, with a particular focus on the profile-related parts.</p>
+<p>Because it’s still in development, the API is subject to change. I think the overall structure of the API is fine so hopefully any changes will be minor. The API is well documented so if in doubt, check the docstrings (calling <code>help(&lt;module|class|object&gt;)</code> is a handy way to read the docs in the interactive Python interpreter).</p>
+<h2 id="pkiconnection">PKIConnection</h2>
+<p>The <code>pki.client.PKIConnection</code> class connects to a Dogtag instance and executes REST verbs on behalf of clients. Internally, it uses the excellent <a href="http://docs.python-requests.org/en/latest/">Requests</a> library.</p>
+<div class="sourceCode"><pre class="sourceCode python"><code class="sourceCode python"><span class="im">import</span> pki.client
+
+scheme <span class="op">=</span> <span class="st">'https'</span>
+host <span class="op">=</span> <span class="st">'localhost'</span>
+port <span class="op">=</span> <span class="st">'8443'</span>
+subsystem <span class="op">=</span> <span class="st">'ca'</span>
+conn <span class="op">=</span> pki.client.PKIConnection(scheme, host, port, subsystem)</code></pre></div>
+<p>For actions that require authentication, a client certificate is required, in PEM format. Client certificates are often distributed in the PKCS #12 format. In such case, the following command will convert a PKCS #12 client certificate to an unencrypted PEM certificate:</p>
+<pre><code>$ openssl pkcs12 -nodes -in cl_cert.p12 -out cl_cert.pem</code></pre>
+<p>After telling the <code>PKIConnection</code> where to find the client certificate, the connection object will be ready to use:</p>
+<div class="sourceCode"><pre class="sourceCode python"><code class="sourceCode python">conn.set_authentication_cert(<span class="st">&quot;/path/to/cl_cert.pem&quot;</span>)</code></pre></div>
+<h2 id="profileclient">ProfileClient</h2>
+<p>The <code>pki.profile.ProfileClient</code> class proxies the profiles-related REST resources.</p>
+<div class="sourceCode"><pre class="sourceCode python"><code class="sourceCode python"><span class="im">import</span> pki.profile
+
+profile_client <span class="op">=</span> pki.profile.ProfileClient(conn)
+profiles <span class="op">=</span> profile_client.list_profiles()
+<span class="cf">for</span> profile <span class="kw">in</span> profiles:
+  <span class="cf">pass</span>  <span class="co"># do stuff</span></code></pre></div>
+<p><code>list_profiles()</code> also takes optional <code>start</code> and <code>size</code> keyword arguments for pagination. For inspecting an individual profile, there is the <code>get_profile</code> method. But first let’s see what happens when we ask for a profile that doesn’t exist:</p>
+<pre><code>&gt;&gt;&gt; profile = profile_client.get_profile('nope')
+Traceback (most recent call last):
+  File &quot;&lt;stdin&gt;&quot;, line 1, in &lt;module&gt;
+  File &quot;pki/__init__.py&quot;, line 234, in handler
+    raise pki_exception
+  pki.ProfileNotFoundException: Profile ID nope not found</code></pre>
+<p>So there are nice, specific exception types. There’s a whole bunch of domain-specific exceptions, but I won’t list them here. Moving on, we can have a look at a profile that <em>does</em> exist:</p>
+<pre><code>&gt;&gt;&gt; profile = profile_client.get_profile('caServerCert')
+&gt;&gt;&gt;
+&gt;&gt;&gt; profile
+{'ProfileData': {'status': 'enabled', 'visible': True,
+'profile_id': u'caServerCert', 'name': u'Manual Server Certificate
+Enrollment', 'description': u'This certificate profile is for
+enrolling server certificates.'}}
+&gt;&gt;&gt;
+&gt;&gt;&gt; dir(profile)
+['Input', 'Output', 'PolicySets', '__class__', '__delattr__',
+'__dict__', '__doc__', '__fo rmat__', '__getattribute__',
+'__hash__', '__init__', '__module__', '__new__', '__reduce__' ,
+'__reduce_ex__', '__repr__', '__setattr__', '__sizeof__',
+'__str__', '__subclasshook__', '__weakref__', 'authenticator_id',
+'authorization_acl', 'class_id', 'description', 'enabl ed',
+'enabled_by', 'from_json', 'inputs', 'link', 'name', 'outputs',
+'policy _sets', 'profile_id', 'renewal', 'visible', 'xml_output']</code></pre>
+<p>The relevant attributes can be gleaned from above. At the moment, there’s not a whole lot you can do with a profile object, besides look at it. It contains some metadata about the profile and lists of its inputs, outputs and policies (defaults and constraints).</p>
+<p>There’s not much else to the profiles aspect of the API at this time. You can list profiles, inspect profiles, and enable/disable profiles, but you aren’t yet able to create new profiles or perform more advanced profile administration. Future work will (hopefully) add these capabilities.</p>
+<h2 id="certclient">CertClient</h2>
+<p>Although <code>pki.profile</code> on its own doesn’t currently offer a lot to the API end-user, some other modules do leverage the provided classes and methods in their own behaviours. <code>pki.cert</code> is one such module.</p>
+<div class="sourceCode"><pre class="sourceCode python"><code class="sourceCode python"><span class="im">import</span> pki.cert
+
+cert_client <span class="op">=</span> pki.cert.CertClient(conn)
+
+<span class="co"># enrol a certificate</span>
+inputs <span class="op">=</span> {
+  <span class="st">&quot;cert_request_type&quot;</span>: <span class="st">&quot;pkcs10&quot;</span>,
+  <span class="co">&quot;cert_request&quot;</span>: <span class="st">&quot;MIIBmDCC... (a PEM certificate request)&quot;</span>,
+  <span class="co">&quot;requestor_name&quot;</span>: <span class="st">&quot;John A. Citizen&quot;</span>,
+  <span class="co">&quot;requestor_email&quot;</span>: <span class="st">&quot;jcitizen@example.tld&quot;</span>,
+}
+enroll_req <span class="op">=</span> cert_client.create_enrollment_request(<span class="st">&quot;caServerCert&quot;</span>, inputs)
+req_infos <span class="op">=</span> cert_client.submit_enrollment_request(enroll_req)</code></pre></div>
+<p>The above instantiates a <code>CertClient</code> (reusing the connection object from before), creates a certificate enrollment request for the <code>caServerCert</code> profile (using the given inputs) and submits the certificate enrollment request. A certificate enrollment can actually involve multiple certificates, so the <code>req_infos</code> variable above contains a <code>CertRequestInfoCollection</code> object. Completing the enrollment involves iterating over this collection and approving each certificate request.</p>
+<div class="sourceCode"><pre class="sourceCode python"><code class="sourceCode python">certificates <span class="op">=</span> []
+<span class="cf">for</span> req_info <span class="kw">in</span> req_infos:
+  req_id <span class="op">=</span> req_info.request_id
+  cert_client.approve_request(req_id)
+  cert_id <span class="op">=</span> cert_client.get_request(req_id).cert_id
+  certificates.append(cert_client.get_cert(cert_id))</code></pre></div>
+<p>Assuming nothing went wrong, <code>certificates</code> now contains a <code>list</code> of <code>pki.cert.CertData</code> objects, but took quite a few operations to get from the enrollment request inputs to our actual certificate(s). Fortunately, the API provides a convenience method to take care of all these details:</p>
+<div class="sourceCode"><pre class="sourceCode python"><code class="sourceCode python">profile_id <span class="op">=</span> <span class="st">&quot;caServerCert&quot;</span>
+certificates <span class="op">=</span> cert_client.enroll_cert(profile_id, inputs)</code></pre></div>
+<p><code>enroll_cert</code> takes care of all the details and returns a list of <code>CertData</code> objects when it completes. If this particular process of certificate enrollment request generation, submission, approval and certificate retrieval turns out to be a common use case, this method will save a lot of typing, but it’s important to know how it works and what it does behind the scenes.</p>
+<p>Let’s now have a look at one of these <code>CertData</code> objects:</p>
+<pre><code>&gt;&gt;&gt; type(cert)
+&lt;class 'pki.cert.CertData'&gt;
+&gt;&gt;&gt;
+&gt;&gt;&gt; cert
+{'CertData': {'status': u'VALID', 'serial_number': u'0x17',
+'subject_dn': u'CN=TestServer,O=Red Hat Inc.,L=Raleigh,ST=NC,C=US'}}
+&gt;&gt;&gt;
+&gt;&gt;&gt; dir(cert)
+['__class__', '__delattr__', '__dict__', '__doc__', '__format__',
+'__getattribute__', '__hash__', '__init__', '__module__',
+'__new__', '__reduce__', '__reduce_ex__', '__repr__',
+'__setattr__', '__sizeof__', '__str__', '__subclasshook__',
+'__weakref__', 'encoded', 'from_json', 'issuer_dn', 'link',
+'nonce', 'not_after', 'not_before', 'pkcs7_cert_chain',
+'pretty_repr', 'serial_number', 'status', 'subject_dn']
+&gt;&gt;&gt;
+&gt;&gt;&gt; cert.encoded
+u'-----BEGIN CERTIFICATE-----\nMIIDFjCCA... (a PEM-encoded certificate)'</code></pre>
+<p>It has all the things you’d expect a data type representing a digital certificate to have.</p>
+<p>As you might expect, enrolling new certificates is not the only way to get at a <code>CertData</code> object. The <code>CertClient</code> API supports listing and searching certificates, revocation and more. It also supports the whole gamut of CA agent operations with respect to pending certificate requests. In addition to approving requests, requests can be reviewed, rejected, assigned to another agent, and so on.</p>
+<h2 id="conclusion">Conclusion</h2>
+<p>There are many details and features of the Dogtag Python API that were not covered in this post, but the most important details have been covered, and I hope I have conveyed a comprehension of the high-level organisation of the API and the common idioms.</p>
+<p>As mentioned at the beginning of this post, the API is not yet released and is subject to change, but feel free to <a href="https://git.fedorahosted.org/cgit/pki.git">have a look at the code</a> or begin experimenting with it. The Dogtag developers welcome feedback and <a href="http://www.redhat.com/mailman/listinfo/pki-devel">pki-devel mailing list</a> is the place to provide it.</p>
+        </div>
+        <div id="footer">
+            Generated by
+            <a href="http://jaspervdj.be/hakyll">Hakyll</a>
+        </div>
+    </body>
+</html>

@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+    <head>
+        <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+        <title>Fraser's IdM Blog - Wildcard SAN certificates in FreeIPA</title>
+        <link rel="stylesheet" type="text/css" href="../css/default.css" />
+    </head>
+    <body>
+        <div id="header">
+            <div id="logo">
+                <a href="../">Fraser's IdM Blog</a>
+            </div>
+            <div id="navigation">
+                <a href="../">Home</a>
+                <a href="../archive.html">Archive</a>
+            </div>
+        </div>
+
+        <div id="content">
+            <h1 id="wildcard-san-certificates-in-freeipa">Wildcard SAN certificates in FreeIPA</h1>
+<p>In <a href="2017-02-20-freeipa-wildcard-certs.html">an earlier post</a> I discussed how to make a certificate profile for wildcard certificates in FreeIPA, where the wildcard name appeared in the <em>Subject Common Name (CN)</em> (but not the <em>Subject Alternative Name (SAN)</em> extension). Apart from the technical details that post also explained that wildcard certificates are deprecated, <em>why</em> they are deprecated, and therefore why I was not particularly interested in pursuing a way to get wildcard DNS names into the SAN extension.</p>
+<p>But, as was portended long ago (more than 15 years, when <a href="https://tools.ietf.org/html/rfc2818">RFC 2818</a> was published) DNS name assertions via the CN field are deprecated, and finally some client software removed CN name processing support. The Chrome browser is first off the rank, but it won’t be the last!</p>
+<p>Unfortunately, programs that have typically used wildcard certificates (hosting services/platforms, PaaS, and sites with many subdomains) are mostly still using wildcard certificates, and FreeIPA still needs to support these programs. As much as I would like to say “just use <em>Let’s Encrypt</em> / ACME!”, it is not realistic for all of these programs to update in so short a time. Some may never be updated. So for now, wildcard DNS names in SAN is more than a “nice to have” - it is a <strong>requirement</strong> for a handful of valid use cases.</p>
+<h2 id="configuration">Configuration</h2>
+<p>Here is how to do it in FreeIPA. Most of the steps are the same as in <a href="2017-02-20-freeipa-wildcard-certs.html">the earlier post</a> so I will not repeat them here. The only substantive difference is in the Dogtag profile configuration.</p>
+<p>In the profile configuration, set the following directives (note that the key <code>serverCertSet</code> and the index <code>12</code> are indicative only; the index does not matter as long as it is different from the other profile policy components):</p>
+<pre><code>policyset.serverCertSet.12.constraint.class_id=noConstraintImpl
+policyset.serverCertSet.12.constraint.name=No Constraint
+policyset.serverCertSet.12.default.class_id=subjectAltNameExtDefaultImpl
+policyset.serverCertSet.12.default.name=Subject Alternative Name Extension Default
+policyset.serverCertSet.12.default.params.subjAltNameNumGNs=2
+policyset.serverCertSet.12.default.params.subjAltExtGNEnable_0=true
+policyset.serverCertSet.12.default.params.subjAltExtType_0=DNSName
+policyset.serverCertSet.12.default.params.subjAltExtPattern_0=*.$request.req_subject_name.cn$
+policyset.serverCertSet.12.default.params.subjAltExtGNEnable_1=true
+policyset.serverCertSet.12.default.params.subjAltExtType_1=DNSName
+policyset.serverCertSet.12.default.params.subjAltExtPattern_1=$request.req_subject_name.cn$</code></pre>
+<p>Also be sure to add the index to the directive containing the list of profile policies:</p>
+<pre><code>policyset.serverCertSet.list=1,2,3,4,5,6,7,8,9,10,11,12</code></pre>
+<p>This configuration will cause two SAN DNSName values to be added to the certificate - one using the CN from the CSR, and the other using the CN from the CSR preceded by a wildcard label.</p>
+<p>Finally, be aware that because the <code>subjectAltNameExtDefaultImpl</code> component adds the SAN extension to a certificate, it conflicts with the <code>userExtensionDefault</code> component when configured to copy the SAN extension from a CSR to the new certificate. This profile component will have a configuration like the following:</p>
+<pre><code>policyset.serverCertSet.11.constraint.class_id=noConstraintImpl
+policyset.serverCertSet.11.constraint.name=No Constraint
+policyset.serverCertSet.11.default.class_id=userExtensionDefaultImpl
+policyset.serverCertSet.11.default.name=User Supplied Extension Default
+policyset.serverCertSet.11.default.params.userExtOID=2.5.29.17</code></pre>
+<p>Again the numerical index is indicative only, but the OID is not; <code>2.5.29.17</code> is the OID for the SAN extension. If your starting profile configuration contains the same directives, <strong>remove them</strong> from the configuration, and remove the index from the policy list too:</p>
+<pre><code>policyset.serverCertSet.list=1,2,3,4,5,6,7,8,9,10,12</code></pre>
+<h2 id="discussion">Discussion</h2>
+<p>The profile containing the configuration outlined above will issue certificates with a wildcard DNS name in the SAN extension, alongside the DNS name from the CN. Mission accomplished; but note the following caveats.</p>
+<p>This configuration cannot contain the <code>userExtensionDefaultImpl</code> component, which copies the SAN extension from the CSR to the final certificate if present in the CSR, because any CSR that contains a SAN extension would cause Dogtag to attempt to add a second SAN extension to the certificate (this is an error). It would be better if the conflicting profile components somehow “merged” the SAN values, but this is not their current behaviour.</p>
+<p>Because we are not copying the SAN extension from the CSR, any SAN extension in the CSR get ignored by Dogtag - <em>but not by FreeIPA</em>; the FreeIPA CSR validation machinery always fully validates the subject alternative names it sees in a CSR, regardless of the Dogtag profile configuration.</p>
+<p>If you work on software or services that currently use wildcard certificates please start planning to move away from this. CN validation was deprecated for a long time and is finally being phased out; <strong>wildcard certificates are also deprecated</strong> (<a href="https://tools.ietf.org/html/rfc6125#section-7.2">RFC 6125</a>) and they too may eventually be phased out. Look at services and technologies like <em>Let’s Encrypt</em> (a free, automated, publicly trusted CA) and <em>ACME</em> (the protocol that powers it) for acquiring all the certificates you need without administrator or operator intervention.</p>
+        </div>
+        <div id="footer">
+            Generated by
+            <a href="http://jaspervdj.be/hakyll">Hakyll</a>
+        </div>
+    </body>
+</html>

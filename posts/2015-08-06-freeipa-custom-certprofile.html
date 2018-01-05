@@ -1,0 +1,263 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+    <head>
+        <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+        <title>Fraser's IdM Blog - User certificates and custom profiles with FreeIPA 4.2</title>
+        <link rel="stylesheet" type="text/css" href="../css/default.css" />
+    </head>
+    <body>
+        <div id="header">
+            <div id="logo">
+                <a href="../">Fraser's IdM Blog</a>
+            </div>
+            <div id="navigation">
+                <a href="../">Home</a>
+                <a href="../archive.html">Archive</a>
+            </div>
+        </div>
+
+        <div id="content">
+            <h1 id="user-certificates-and-custom-profiles-with-freeipa-4.2">User certificates and custom profiles with FreeIPA 4.2</h1>
+<p>The <a href="http://www.freeipa.org/page/Releases/4.2.0">FreeIPA 4.2</a> release introduces some long-awaited certificate management features: user certificates and custom certificate profiles. In this blog post, we will examine the background and motivations for these features, then carry out a real-world scenario where both these features are used: user S/MIME certificates for email protection.</p>
+<h2 id="custom-profiles">Custom profiles</h2>
+<p>FreeIPA uses the <a href="http://pki.fedoraproject.org/wiki/PKI_Main_Page">Dogtag Certificate System</a> PKI for issuance of X.509 certificates. Although Dogtag ships with many <em>certificate profiles</em>, and could be configured with profiles for almost any conceivable use case, FreeIPA only used a single profile for the issuance of certificates to service and host principals. (The name of this profile was <code>caIPAserviceCert</code>, but it hardcoded and not user-visible).</p>
+<p>The <code>caIPAserviceCert</code> profile was suitable for the standard TLS server authentication use case, but there are many use cases for which it was not suitable; especially those that require particular <em>Key Usage</em> or <em>Extended Key Usage</em> assertions or esoteric certificate extensions, to say nothing of client-oriented profiles.</p>
+<p>It was possible (and remains possible) to use the deployed Dogtag instance directly to accomplish almost any certificate management goal, but Dogtag lacks knowledge of the FreeIPA schema so the burden of validating requests falls entirely on administrators. This runs contrary to FreeIPA’s goal of easy administration and the expectations of users.</p>
+<p>The <code>certprofile-import</code> command allows new profiles to be imported into Dogtag, while <code>certprofile-mod</code>, <code>certprofile-del</code>, <code>certprofile-show</code> and <code>certprofile-find</code> do what they say on the label. Only profiles that are shipped as part of FreeIPA (at time of writing only <code>caIPAserviceCert</code>) or added via <code>certprofile-import</code> are visible to FreeIPA.</p>
+<p>An important per-profile configuration that affects FreeIPA is the <code>ipaCertprofileStoreIssued</code> attribute, which is exposed on the command line as <code>--store=BOOL</code>. This attribute tells the <code>cert-request</code> command what to do with certificates issued using that profile. If <code>TRUE</code>, certificates are added to the target principal’s <code>userCertificate</code> attribute; if <code>FALSE</code>, the issued certificate is delievered to the client in the command result but nothing is stored in the FreeIPA directory (though the certificate is still stored in Dogtag’s database). The option to <em>not</em> store issued certificates is desirable in uses cases that involve the issuance of many short-lived certificates.</p>
+<p>Finally, <code>cert-request</code> learned the <code>--profile-id</code> option to specify which profile to use. It is optional and defaults to <code>caIPAserviceCert</code>.</p>
+<h2 id="user-certificates">User certificates</h2>
+<p>Prior to FreeIPA 4.2 certificates could only be issued for host and service principals. The same capability now exists for user principals. Although <code>cert-request</code> treats user principals in substantially the same way as host or service principals there are a few important differences:</p>
+<ul>
+<li>The subject <em>Common Name</em> in the certificate request must match the FreeIPA user name.</li>
+<li>The subject email address (if present) must match one of the user’s email addresses.</li>
+<li>All Subject Alternative Name <em>rfc822Name</em> values must match one of the user’s email addresses.</li>
+<li>Like services and hosts, <em>KRB5PrincipalName</em> SAN is permitted if it matches the principal.</li>
+<li><em>dNSName</em> and other SAN types are prohibited.</li>
+</ul>
+<h2 id="ca-acls">CA ACLs</h2>
+<p>With support for custom certificate profiles, there must be a way to control which profiles can be used for issuing certificates to which principals. For example, if there was a profile for Puppet masters, it would be sensible to restrict use of that profile to hosts that are members of a some Puppet-related group. This is the purpose of <em>CA ACLs</em>.</p>
+<p>CA ACLs are created with the <code>caacl-add</code> command. Users and groups can be added or removed with the <code>caacl-add-user</code> and <code>caacl-remove-user</code> commands. Similarly, <code>caacl-{add,remove}-host</code> for hosts and hostgroups, and <code>caacl-{add,remove}-service</code>.</p>
+<p>If you are familiar with FreeIPA’s <em>Host-based Access Control</em> (HBAC) policy feature these commands might remind you of the <code>hbacrule</code> commands. That is no coincidence! The <code>hbcarule</code> commands were my guide for implementing the <code>caacl</code> commands, and the same underlying machinery - <code>libipa_hbac</code> via <code>pyhbac</code> - is used by both plugins to enforce their policies.</p>
+<h2 id="putting-it-all-together">Putting it all together</h2>
+<p>Let’s put these features to use with a realistic scenario. A certain group of users in your organisation must use S/MIME for securing their email communications. To use S/MIME, these users must be issued a certificate with <em>emailProtection</em> asserted in the Extended Key Usage certificate extension. Only the authorised users should be able to have such a certificate issued.</p>
+<p>To address this scenario we will:</p>
+<ol style="list-style-type: decimal">
+<li>create a new certificate profile for S/MIME certificates;</li>
+<li>create a group for S/MIME users and a CA ACL to allow members of that group access to the new profile;</li>
+<li>generate a signing request and issue a <code>cert-request</code> command using the new profile.</li>
+</ol>
+<p>Let’s begin.</p>
+<h3 id="creating-an-smime-profile">Creating an S/MIME profile</h3>
+<p>We export the default profile to use as a starting point for the S/MIME profile:</p>
+<pre><code>% ipa certprofile-show --out smime.cfg caIPAserviceCert</code></pre>
+<p>Inspecting the profile, we find the <em>Extended Key Usage</em> extension configuration containing the line:</p>
+<pre><code>policyset.serverCertSet.7.default.params.exKeyUsageOIDs=1.3.6.1.5.5.7.3.1,1.3.6.1.5.5.7.3.2</code></pre>
+<p>The <em>Extended Key Usage</em> extension is defined in <a href="http://tools.ietf.org/html/rfc5280#section-4.2.1.12">RFC 5280 §4.2.1.12</a>. The two OIDs in the default profile are for <em>TLS WWW server authentication</em> and <em>TLS WWW client authentication</em> respectively. For S/MIME, we need to assert the <em>Email protection</em> key usage, so we change this line to:</p>
+<pre><code>policyset.serverCertSet.7.default.params.exKeyUsageOIDs=1.3.6.1.5.5.7.3.4</code></pre>
+<p>We also remove the <code>profileId=caIPAserviceCert</code> and set an appropriate value for the <code>desc</code> and <code>name</code> fields. Now we can import the new profile:</p>
+<pre><code>% ipa certprofile-import smime --file smime.cfg \
+  --desc &quot;S/MIME certificates&quot; --store TRUE
+------------------------
+Imported profile &quot;smime&quot;
+------------------------
+Profile ID: smime
+Profile description: S/MIME certificates
+Store issued certificates: TRUE</code></pre>
+<h3 id="defining-the-ca-acl">Defining the CA ACL</h3>
+<p>We will define a new group for S/MIME users, and a CA ACL to allow users in that group access to the <code>smime</code> profile:</p>
+<pre><code>% ipa group-add smime_users
+-------------------------
+Added group &quot;smime_users&quot;
+-------------------------
+  Group name: smime_users
+  GID: 1148600006
+
+% ipa caacl-add smime_acl
+------------------------
+Added CA ACL &quot;smime_acl&quot;
+------------------------
+  ACL name: smime_acl
+  Enabled: TRUE
+
+% ipa caacl-add-user smime_acl --group smime_users
+  ACL name: smime_acl
+  Enabled: TRUE
+  User Groups: smime_users
+-------------------------
+Number of members added 1
+-------------------------
+
+% ipa caacl-add-profile smime_acl --certprofile smime
+  ACL name: smime_acl
+  Enabled: TRUE
+  Profiles: smime
+  User Groups: smime_users
+-------------------------
+Number of members added 1
+-------------------------</code></pre>
+<h3 id="creating-and-issuing-a-cert-request">Creating and issuing a cert request</h3>
+<p>Finally we need to create a PKCS #10 certificate signing request (CSR) and issue a certificate via the <code>cert-request</code> command. We will do this for the user <code>alice</code>. Because this certificate is for email protection Alice’s email address should be in the <em>Subject Alternative Name</em> (SAN) extension; we must include it in the CSR.</p>
+<p>The following OpenSSL config file can be used to generate the certificate request:</p>
+<pre><code>[ req ]
+prompt = no
+encrypt_key = no
+
+distinguished_name = dn
+req_extensions = exts
+
+[ dn ]
+commonName = &quot;alice&quot;
+
+[ exts ]
+subjectAltName=email:alice@ipa.local</code></pre>
+<p>We create and then inspect the CSR (the <code>genrsa</code> step can be skipped if you already have a key):</p>
+<pre><code>% openssl genrsa -out key.pem 2048
+Generating RSA private key, 2048 bit long modulus
+.........................+++
+......+++
+e is 65537 (0x10001)
+% openssl req -new -key key.pem -out alice.csr -config alice.conf
+% openssl req -text &lt; alice.csr
+Certificate Request:
+    Data:
+        Version: 0 (0x0)
+        Subject: CN=alice
+        Subject Public Key Info:
+            Public Key Algorithm: rsaEncryption
+                Public-Key: (1024 bit)
+                Modulus:
+                    00:da:62:61:b4:42:ee:bd:ff:e0:63:cb:ec:85:af:
+                    5d:40:ab:59:98:cf:a2:ad:2a:2d:30:c4:73:dc:28:
+                    92:45:d4:12:b2:fc:49:78:e2:03:42:d3:eb:69:4f:
+                    33:d2:0c:db:22:6c:19:63:46:46:52:4c:4a:bc:93:
+                    c6:1b:81:2b:8c:7b:5c:21:1d:5b:e5:5f:97:12:e3:
+                    2b:d5:1f:93:99:c9:42:5e:a1:88:77:b1:4f:97:e2:
+                    06:20:8b:eb:b7:0d:af:b8:7a:75:10:7a:0f:42:9b:
+                    28:55:4c:e3:12:9f:2a:97:92:ab:f6:53:26:51:32:
+                    88:f5:01:7f:e0:45:30:d9:51
+                Exponent: 65537 (0x10001)
+        Attributes:
+        Requested Extensions:
+            X509v3 Subject Alternative Name: 
+                email:alice@ipa.local
+    Signature Algorithm: sha1WithRSAEncryption
+         1d:e3:dc:a8:af:6c:42:55:40:1a:88:a3:1f:c3:b7:2b:01:3a:
+         8f:1f:80:b5:1c:de:80:53:f3:fc:61:91:16:03:3d:79:3a:4b:
+         ee:0d:c0:09:1a:d9:d7:40:6e:05:7a:43:c1:0b:26:0c:22:0e:
+         79:d1:b0:27:8d:9a:26:51:d5:1b:1b:46:e7:b5:03:97:51:ec:
+         53:ae:dd:52:85:d3:48:8a:ac:cc:c0:84:61:9a:97:2e:25:1b:
+         b1:f0:72:1f:73:94:3c:44:d5:12:1e:b5:b5:37:9b:57:5d:08:
+         d8:52:d4:e5:52:05:17:cc:5f:28:ad:ac:0c:4c:36:dc:33:c2:
+         11:6d
+-----BEGIN CERTIFICATE REQUEST-----
+MIIBfDCB5gIBADAQMQ4wDAYDVQQDDAVhbGljZTCBnzANBgkqhkiG9w0BAQEFAAOB
+jQAwgYkCgYEA2mJhtELuvf/gY8vsha9dQKtZmM+irSotMMRz3CiSRdQSsvxJeOID
+QtPraU8z0gzbImwZY0ZGUkxKvJPGG4ErjHtcIR1b5V+XEuMr1R+TmclCXqGId7FP
+l+IGIIvrtw2vuHp1EHoPQpsoVUzjEp8ql5Kr9lMmUTKI9QF/4EUw2VECAwEAAaAt
+MCsGCSqGSIb3DQEJDjEeMBwwGgYDVR0RBBMwEYEPYWxpY2VAaXBhLmxvY2FsMA0G
+CSqGSIb3DQEBBQUAA4GBAB3j3KivbEJVQBqIox/DtysBOo8fgLUc3oBT8/xhkRYD
+PXk6S+4NwAka2ddAbgV6Q8ELJgwiDnnRsCeNmiZR1RsbRue1A5dR7FOu3VKF00iK
+rMzAhGGaly4lG7Hwch9zlDxE1RIetbU3m1ddCNhS1OVSBRfMXyitrAxMNtwzwhFt
+-----END CERTIFICATE REQUEST-----</code></pre>
+<p>Observe that the common name is the user’s name <code>alice</code>, and that <code>alice@ipa.local</code> is present as an <em>rfc822Name</em> in the SAN extension.</p>
+<p>Now let’s request the certificate:</p>
+<pre><code>% ipa cert-request alice.req --principal alice --profile-id smime
+ipa: ERROR: Insufficient access: Principal 'alice' is not
+  permitted to use CA '.' with profile 'smime' for certificate
+  issuance.</code></pre>
+<p>Oops! The CA ACL policy prohibited this issuance because we forgot to add <code>alice</code> to the <code>smime_users</code> group. (The <code>not permitted to use CA '.'</code> part is a reference to the upcoming sub-CAs feature). Let’s add the user to the appropriate group and try again:</p>
+<pre><code>% ipa group-add-member smime_users --user alice
+  Group name: smime_users
+  GID: 1148600006
+  Member users: alice
+-------------------------
+Number of members added 1
+-------------------------
+
+% ipa cert-request alice.req --principal alice --profile-id smime
+  Certificate: MIIEJzCCAw+gAwIBAgIBEDANBgkqhkiG9w0BAQsFADBBMR...
+  Subject: CN=alice,O=IPA.LOCAL 201507271443
+  Issuer: CN=Certificate Authority,O=IPA.LOCAL 201507271443
+  Not Before: Thu Aug 06 04:09:10 2015 UTC
+  Not After: Sun Aug 06 04:09:10 2017 UTC
+  Fingerprint (MD5): 9f:8e:e0:a3:c6:37:e0:a4:a5:e4:6b:d9:14:66:67:dd
+  Fingerprint (SHA1): 57:6e:d5:07:8f:ef:d6:ac:36:b8:75:e0:6c:d7:4f:7d:f9:6c:ab:22
+  Serial number: 16
+  Serial number (hex): 0x10</code></pre>
+<p>Success! We can see that the certificate was added to the user’s <code>userCertificate</code> attribute, or export the certificate to inspect it (parts of the certificate are elided below) or import it into an email program:</p>
+<pre><code>% ipa user-show alice
+  User login: alice
+  First name: Alice
+  Last name: Able
+  Home directory: /home/alice
+  Login shell: /bin/sh
+  Email address: alice@ipa.local
+  UID: 1148600001
+  GID: 1148600001
+  Certificate: MIIEJzCCAw+gAwIBAgIBEDANBgkqhkiG9w0BAQsFADBBMR...
+  Account disabled: False
+  Password: True
+  Member of groups: smime_users, ipausers
+  Kerberos keys available: True
+
+% ipa cert-show 16 --out alice.pem &gt;/dev/null
+% openssl x509 -text &lt; alice.pem
+Certificate:
+    Data:
+        Version: 3 (0x2)
+        Serial Number: 16 (0x10)
+    Signature Algorithm: sha256WithRSAEncryption
+        Issuer: O=IPA.LOCAL 201507271443, CN=Certificate Authority
+        Validity
+            Not Before: Aug  6 04:09:10 2015 GMT
+            Not After : Aug  6 04:09:10 2017 GMT
+        Subject: O=IPA.LOCAL 201507271443, CN=alice
+        Subject Public Key Info:
+            Public Key Algorithm: rsaEncryption
+                Public-Key: (2048 bit)
+                Modulus:
+                    00:e2:1b:92:06:16:f7:27:c8:59:8b:45:93:60:84:
+                    ...
+                    34:6f
+                Exponent: 65537 (0x10001)
+        X509v3 extensions:
+            X509v3 Authority Key Identifier: 
+                keyid:CA:19:15:12:87:04:70:6E:81:7B:1D:8D:C6:4A:F6:A1:49:AA:0D:45
+
+            Authority Information Access: 
+                OCSP - URI:http://ipa-ca.ipa.local/ca/ocsp
+
+            X509v3 Key Usage: critical
+                Digital Signature, Non Repudiation, Key Encipherment, Data Encipherment
+            X509v3 Extended Key Usage: 
+                E-mail Protection
+            X509v3 CRL Distribution Points: 
+
+                Full Name:
+                  URI:http://ipa-ca.ipa.local/ipa/crl/MasterCRL.bin
+                CRL Issuer:
+                  DirName: O = ipaca, CN = Certificate Authority
+
+            X509v3 Subject Key Identifier: 
+                CE:A5:E3:B0:45:23:EC:B3:13:7C:BC:05:72:42:12:AD:9B:17:11:26
+            X509v3 Subject Alternative Name: 
+                email:alice@ipa.local
+    Signature Algorithm: sha256WithRSAEncryption
+         29:6a:99:84:8e:46:dc:0e:42:3d:b2:3e:fc:3f:c4:46:dc:44:
+         ...</code></pre>
+<h2 id="conclusion">Conclusion</h2>
+<p>The ability to define and control access to custom certificate profiles and the extension of FreeIPA’s certificate management features to user principals open the door to many use cases that were previously not supported. Although the certificate management features available in FreeIPA 4.2 are a big step forward, there are still several areas for improvement, outlined below.</p>
+<p>First, the Dogtag certificate profile format is obtuse. Documentation will make it bearable, but documentation is no substitute for good UX. An <em>interactive profile builder</em> would be a complex feature to implement but we might go there. Alternatively, a public, curated, searchable (even from FreeIPA’s web UI) repository of profiles for various use cases might be a better use of resources and would allow users and customers to help each other.</p>
+<p>Next, the ability to create and use sub-CAs is an oft-requested feature and important for <em>many</em> use cases. Work is ongoing to bring this to FreeIPA soon. See the <a href="http://www.freeipa.org/page/V4/Sub-CAs">Sub-CAs design page</a> for details.</p>
+<p>Thirdly, the FreeIPA framework currently has authority to perform all kinds of privileged operations on the Dogtag instance. This runs contrary to the framework philosophy which advocates for the framework only having the privileges of the current user, with ACIs (and CA ACLs) enforced in the backends (in this case Dogtag). <a href="https://fedorahosted.org/freeipa/ticket/5011">Ticket #5011</a> was filed to address this discrepancy.</p>
+<p>Finally, the request interface between FreeIPA and Dogtag is quite limited; the only substantive information conveyed is whatever is in the CSR. There is minimal capability for FreeIPA to convey additional data with a request, and any time we (or a user or customer) want to broaden the interface to support new kinds of data (e.g. esoteric certificate extensions containing values from custom attributes), changes would have to be made to both FreeIPA and Dogtag. This approach does not scale.</p>
+<p>I have a vision for how to address this final point in a future version of FreeIPA. It will be the subject of future blog posts, talks and eventually - hopefully - design proposals and patches! For now, I hope you have enjoyed this introduction to some of the new certificate management capabilities in FreeIPA 4.2 and find them useful. And remember that feedback, bug reports and help with development are always appreciated!</p>
+        </div>
+        <div id="footer">
+            Generated by
+            <a href="http://jaspervdj.be/hakyll">Hakyll</a>
+        </div>
+    </body>
+</html>
