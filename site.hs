@@ -20,9 +20,9 @@ main = hakyll $ do
   match "index.rst" $ do
     route $ setExtension "html"
     compile $ do
-      posts <- recentFirst =<< loadAll "posts/*.rst"
+      posts <- loadRecentPosts
       let homeContext =
-            listField "posts" context (pure $ take 5 posts)
+            listField "posts" context (pure posts)
             `mappend` constField "title" "Home"
             `mappend` context
       pandocCompiler
@@ -33,7 +33,7 @@ main = hakyll $ do
   create ["archive.html"] $ do
     route idRoute
     compile $ do
-      posts <- recentFirst =<< loadAll "posts/*.rst"
+      posts <- recentFirst =<< loadAll ("posts/*.rst" .&&. hasNoVersion)
       let archiveContext =
             listField "posts" context (pure posts)
             `mappend` constField "title" "Archive"
@@ -43,15 +43,33 @@ main = hakyll $ do
         >>= loadAndApplyTemplate "templates/default.html" archiveContext
         >>= relativizeUrls
 
+
+  -- a version of the posts to use for "recent posts" list
+  match "posts/*.rst" $ version "recent" $ do
+    route $ setExtension "html"
+    compile $
+      getResourceBody >>= saveSnapshot "source"
+
   match "posts/*.rst" $ do
     route $ setExtension "html"
     compile $ do
+      posts <- loadRecentPosts
+      let postContext =
+            listField "posts" context (pure posts)
+            `mappend` context
+
       getResourceBody >>= saveSnapshot "source"
       pandocCompiler
-        >>= loadAndApplyTemplate "templates/default.html" context
+        >>= loadAndApplyTemplate "templates/post.html" postContext
+        >>= loadAndApplyTemplate "templates/default.html" postContext
         >>= relativizeUrls
 
   match "templates/*" $ compile templateCompiler
+
+
+loadRecentPosts :: Compiler [Item String]
+loadRecentPosts =
+  fmap (take 5) . recentFirst =<< loadAll ("posts/*.rst" .&&. hasVersion "recent")
 
 
 context :: Context String

@@ -33,7 +33,15 @@ div#header #navigation a {
     text-transform: uppercase;
 }
 
-div#footer {
+#postFooter {
+    border-top: solid 2px black;
+    color: #555;
+    font-size: 12px;
+    margin-top: 30px;
+    padding: 12px 0px 12px 0px;
+}
+
+#footer {
     border-top: solid 2px black;
     color: #555;
     font-size: 12px;
