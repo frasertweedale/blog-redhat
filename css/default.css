@@ -3,6 +3,7 @@ body {
     font-size: 16px;
     margin: 0px auto 0px auto;
     width: 600px;
+    line-height: 1.5;
 }
 
 div#header {
@@ -41,6 +42,10 @@ div#footer {
     text-align: right;
 }
 
+#content img {
+    max-width: 100%;
+}
+
 h1 {
     font-size: 24px;
 }
@@ -67,3 +72,68 @@ td, th {
 th {
     border-top: 1px solid lightgrey;
 }
+
+p {
+    overflow-wrap: break-word;
+    hyphens: auto;
+}
+
+blockquote {
+    font-style: italic;
+}
+
+p code
+, h1 code
+, h2 code
+, h3 code
+, h4 code
+, h5 code
+, h6 code
+, dl code
+, ul code
+, ol code
+{
+    padding: 3px;
+    hyphens: none;
+}
+
+code {
+    background: #f0f0f0;
+    color: #3f3f3f;
+}
+
+pre {
+    background: #f0f0f0;
+    padding: 20px;
+    overflow: auto;
+}
+
+.sourceCode .im { color: mediumvioletred; } /* import */
+.sourceCode .kw { color: mediumvioletred; } /* keyword */
+.sourceCode .fu { color: mediumvioletred; } /* function */
+.sourceCode .cf { color: mediumvioletred; } /* control flow token */
+.sourceCode .op { color: mediumvioletred; } /* operator */
+.sourceCode .dt { color: blue; } /* data type */
+.sourceCode .va { color: blue; } /* variable */
+.sourceCode .bu { color: blue; } /* built-in */
+.sourceCode .ex { color: blue; } /* extension */
+.sourceCode .at { color: blue; } /* attribute token */
+.sourceCode .pp { color: brown; } /* preprocessor directive */
+.sourceCode .st { color: brown; } /* string */
+.sourceCode .vs { color: brown; } /* verbatim string */
+.sourceCode .ss { color: brown; } /* special string */
+.sourceCode .dv { color: brown; } /* decimal value */
+.sourceCode .bn { color: brown; } /* base n */
+.sourceCode .fl { color: brown; } /* float literal */
+.sourceCode .ch { color: brown; } /* char */
+.sourceCode .sc { color: red; } /* special char */
+.sourceCode .cn { color: brown; } /* constant */
+.sourceCode .co { color: darkgreen; } /* comment */
+.sourceCode .cv { color: green; } /* comment variable */
+.sourceCode .ot { color: blue; } /* other token */
+.sourceCode .do { color: darkgreen; } /* documentation token */
+.sourceCode .re { color: red; } /* region marker */
+.sourceCode .er { color: red; } /* error token */
+.sourceCode .an { color: red; } /* annotation */
+.sourceCode .wa { color: red; } /* warning */
+.sourceCode .in { color: red; } /* info */
