@@ -41,7 +41,21 @@ div#header #navigation a {
     padding: 12px 0px 12px 0px;
 }
 
+#postFooter #recent {
+    width: 50%;
+    float: left;
+    padding-right: 10px;
+}
+
+#postFooter #license {
+    margin-left: 50%;
+    width: 50%;
+    text-align: center;
+    padding: 10px;
+}
+
 #footer {
+    clear: both;
     border-top: solid 2px black;
     color: #555;
     font-size: 12px;
