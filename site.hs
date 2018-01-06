@@ -25,6 +25,10 @@ main = hakyll $ do
     route idRoute
     compile compressCssCompiler
 
+  match "*asc" $ do
+    route idRoute
+    compile copyFileCompiler
+
   match "index.rst" $ do
     route $ setExtension "html"
     compile $ do
