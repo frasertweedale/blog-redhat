@@ -1,12 +1,14 @@
 body {
     color: black;
     font-size: 16px;
+    font-family: sans-serif;
     margin: 0px auto 0px auto;
     width: 600px;
     line-height: 1.5;
 }
 
 div#header {
+    font-family: serif;
     border-bottom: 2px solid black;
     margin-bottom: 12px;
     padding: 12px 0px 12px 0px;
@@ -86,9 +88,19 @@ div#header #navigation a {
 h1 {
     font-size: 24px;
 }
-
 h2 {
     font-size: 20px;
+}
+h3 {
+    font-size: 16px;
+}
+h4 {
+    color: grey;
+    font-size: 16px;
+}
+
+h1, h2, h3, h4, h5, h6 {
+    font-family: serif;
 }
 
 div.info {
