@@ -7,6 +7,14 @@ import Text.Pandoc.Definition (Pandoc(..), Block(Header, Plain))
 import Hakyll
 
 
+blogTitle, blogDescription, blogAuthorName, blogAuthorEmail, blogRoot :: String
+blogTitle = "Fraser's IdM Blog"
+blogDescription = "Identity management, X.509, security, applied cryptography"
+blogAuthorName = "Fraser Tweedale"
+blogAuthorEmail = "frase@frase.id.au"
+blogRoot = "https://frasertweedale.github.io/blog-redhat"
+
+
 main :: IO ()
 main = hakyll $ do
   match "images/**" $ do
@@ -60,11 +68,22 @@ main = hakyll $ do
 
       getResourceBody >>= saveSnapshot "source"
       pandocCompiler
+        >>= saveSnapshot "content"
         >>= loadAndApplyTemplate "templates/post.html" postContext
         >>= loadAndApplyTemplate "templates/default.html" postContext
         >>= relativizeUrls
 
   match "templates/*" $ compile templateCompiler
+
+  create ["atom.xml"] $ do
+    route idRoute
+    compile $ do
+      let feedContext =
+            bodyField "description"
+            `mappend` context
+      posts <- loadAllSnapshots ("posts/*.rst" .&&. hasNoVersion) "content"
+        >>= fmap (take 10) . recentFirst
+      renderAtom feedConfiguration feedContext posts
 
 
 loadRecentPosts :: Compiler [Item String]
@@ -76,7 +95,7 @@ context :: Context String
 context =
   dateField "date" "%Y-%m-%d"
   `mappend` headerField "title" "source"
-  `mappend` constField "blogTitle" "Fraser's IdM Blog"
+  `mappend` constField "blogTitle" blogTitle
   `mappend` defaultContext
 
 
@@ -105,3 +124,13 @@ headerField key snap = field key $ \item -> do
     firstHeader' [] = Nothing
     firstHeader' (Header _ _ ys : _) = Just (Pandoc mempty [Plain ys])
     firstHeader' (_ : xs) = firstHeader' xs
+
+
+feedConfiguration :: FeedConfiguration
+feedConfiguration = FeedConfiguration
+  { feedTitle = blogTitle
+  , feedDescription = blogDescription
+  , feedAuthorName = blogAuthorName
+  , feedAuthorEmail = blogAuthorEmail
+  , feedRoot = blogRoot
+  }
