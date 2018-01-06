@@ -79,7 +79,7 @@ div#header #navigation a {
     max-width: 100%;
 }
 
-#postContent p:last-child::after {
+#postContent > p:last-child::after {
     content: " ∎";
 }
 
