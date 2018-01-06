@@ -54,6 +54,10 @@ div#header #navigation a {
     max-width: 100%;
 }
 
+#postContent p:last-child::after {
+    content: " ∎";
+}
+
 h1 {
     font-size: 24px;
 }
