@@ -47,6 +47,10 @@ div#header #navigation a {
     padding-right: 10px;
 }
 
+#recent ul {
+    padding-left: 20px;
+}
+
 #postFooter #recentLinks {
     text-align: center;
 }
