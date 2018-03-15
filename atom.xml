@@ -8,8 +8,108 @@
         <name>Fraser Tweedale</name>
         <email>frase@frase.id.au</email>
     </author>
-    <updated>2017-11-22T00:00:00Z</updated>
+    <updated>2018-03-15T00:00:00Z</updated>
     <entry>
+    <title>DN attribute value encoding in X.509</title>
+    <link href="https://frasertweedale.github.io/blog-redhat/posts/2018-03-15-x509-dn-attribute-encoding.html" />
+    <id>https://frasertweedale.github.io/blog-redhat/posts/2018-03-15-x509-dn-attribute-encoding.html</id>
+    <published>2018-03-15T00:00:00Z</published>
+    <updated>2018-03-15T00:00:00Z</updated>
+    <summary type="html"><![CDATA[<h1 id="dn-attribute-value-encoding-in-x.509">DN attribute value encoding in X.509</h1>
+<p>X.509 certificates use the X.500 <em>Distinguished Name (DN)</em> data type to represent issuer and subject names. X.500 names may contain a variety of fields including <em>CommonName</em>, <em>OrganizationName</em>, <em>Country</em> and so on. This post discusses how these values are encoded and compared, and problematic circumstances that can arise.</p>
+<h2 id="asn.1-string-types-and-encodings">ASN.1 string types and encodings</h2>
+<p>ASN.1 offers a large number of string types, including:</p>
+<ul>
+<li><code>NumericString</code></li>
+<li><code>PrintableString</code></li>
+<li><code>IA5String</code></li>
+<li><code>UTF8String</code></li>
+<li><code>BMPString</code></li>
+<li>…several others</li>
+</ul>
+<p>When serialising an ASN.1 object, each of these string types has a different tag. Some of the types have a shared representation for serialisation but differ in which characters they allow. For example, <code>NumericString</code> and <code>PrintableString</code> are both represented in DER using one byte per character. But <code>NumericString</code> only allows digits (<code>0</code>–<code>9</code>) and <code>SPACE</code>, whereas <code>PrintableString</code> admits the full set of ASCII printable characters. In contrast, <code>BMPString</code> uses two bytes to represent each character; it is equivalent to UTF-16BE. <code>UTF8String</code>, unsurprisingly, uses UTF-8.</p>
+<h2 id="asn.1-string-types-for-x.509-name-attributes">ASN.1 string types for X.509 name attributes</h2>
+<p>Each of the various X.509 name attribute types uses a specific ASN.1 string type. Some types have a size constraint. For example:</p>
+<pre><code>X520countryName      ::= PrintableString (SIZE (2))
+DomainComponent      ::= IA5String
+X520CommonName       ::= DirectoryName (SIZE (1..64))
+X520OrganizationName ::= DirectoryName (SIZE (1..64))</code></pre>
+<p>Hold on, what is <code>DirectoryName</code>? It is not a universal ASN.1 type; it is specified as a sum of string types:</p>
+<pre><code>DirectoryName ::= CHOICE {
+    teletexString     TeletexString,
+    printableString   PrintableString,
+    universalString   UniversalString,
+    utf8String        UTF8String,
+    bmpString         BMPString }</code></pre>
+<p>Note that a size constraint on <code>DirectoryName</code> propagates to each of the cases. The constraint gives a maximum length in <em>characters</em>, not bytes.</p>
+<p>Most X.509 attribute types use <code>DirectoryName</code>, including <em>common name (CN)</em>, <em>organization name (O)</em>, <em>organizational unit (OU)</em>, <em>locality (L)</em>, <em>state or province name (ST)</em>. For these attribute types, which encoding should be used? <a href="">RFC 5280 §4.1.2.6</a> provides some guidance:</p>
+<pre><code>The DirectoryString type is defined as a choice of PrintableString,
+TeletexString, BMPString, UTF8String, and UniversalString.  CAs
+conforming to this profile MUST use either the PrintableString or
+UTF8String encoding of DirectoryString, with two exceptions.</code></pre>
+<p>The current version of X.509 only allows <code>PrintableString</code> and <code>UTF8String</code>. Earlier versions allowed any of the types in <code>DirectoryString</code>. The <em>exceptions</em> mentioned are grandfather clauses that permit the use of the now-prohibited types in environments that were already using them.</p>
+<p>So for strings containing non-ASCII code points <code>UTF8String</code> is the only type you can use. But for ASCII-only strings, there is still a choice, and the RFC does not make a recommendation on which to use. Both are common in practice.</p>
+<p>This poses an interesting question. Suppose two encoded DNs have the same attributes in the same order, but differ in the string encodings used. Are they the same DN?</p>
+<h2 id="comparing-dns">Comparing DNs</h2>
+<p><a href="https://tools.ietf.org/html/rfc5280#section-7.1">RFC 5280 §7.1</a> outlines the procedure for comparing DNs. To compare strings you must convert them to Unicode, translate or drop some special-purpose characters, and perform case folding and normalisation. The resulting strings are then compared case-insensitively. According to this rule, DNs that use different string encodings but are otherwise the same are <strong>equal</strong>.</p>
+<p>But the situation is more complex in practice. Earlier versions of X.509 required only binary comparison of DNs. For example, <a href="https://tools.ietf.org/html/rfc3280">RFC 3280</a> states:</p>
+<pre><code>Conforming implementations are REQUIRED to implement the following
+name comparison rules:
+
+   (a)  attribute values encoded in different types (e.g.,
+   PrintableString and BMPString) MAY be assumed to represent
+   different strings;
+
+   (b) attribute values in types other than PrintableString are case
+   sensitive (this permits matching of attribute values as binary
+   objects);
+
+   (c)  attribute values in PrintableString are not case sensitive
+   (e.g., &quot;Marianne Swanson&quot; is the same as &quot;MARIANNE SWANSON&quot;); and
+
+   (d)  attribute values in PrintableString are compared after
+   removing leading and trailing white space and converting internal
+   substrings of one or more consecutive white space characters to a
+   single space.</code></pre>
+<p>Futhermore, RFC 5280 and earlier versions of X.509 state:</p>
+<pre><code>The X.500 series of specifications defines rules for comparing
+distinguished names that require comparison of strings without regard
+to case, character set, multi-character white space substring, or
+leading and trailing white space.  This specification relaxes these
+requirements, requiring support for binary comparison at a minimum.</code></pre>
+<p>This is a contradiction. The above states that binary comparison of DNs is acceptable, but other sections require a more sophisticated comparison algorithm. The combination of this contradiction, historical considerations and (no doubt) programmer laziness means that many X.509 implementations only perform <strong>binary comparison</strong> of DNs.</p>
+<h2 id="how-cas-should-handle-dn-attribute-encoding">How CAs should handle DN attribute encoding</h2>
+<p>To ease certification path construction with clients that only perform binary matching of DNs, RFC 5280 states the following requirement:</p>
+<pre><code>When the subject of the certificate is a CA, the subject
+field MUST be encoded in the same way as it is encoded in the
+issuer field (Section 4.1.2.4) in all certificates issued by
+the subject CA.  Thus, if the subject CA encodes attributes
+in the issuer fields of certificates that it issues using the
+TeletexString, BMPString, or UniversalString encodings, then
+the subject field of certificates issued to that CA MUST use
+the same encoding.</code></pre>
+<p>This is confusing wording, but in practical terms there are two requirements:</p>
+<ol style="list-style-type: decimal">
+<li>The Issuer DN on a certificate must be byte-identical to the Subject DN of the CA that issued it.</li>
+<li>The attribute encodings in a CA’s Subject DN must not change (e.g. when the CA certificate gets renewed).</li>
+</ol>
+<p>If a CA violates either of these requirements breakage will ensue. Programs that do binary DN comparison will be unable to construct a certification path to the CA.</p>
+<p>For <em>end-entity</em> (or <em>leaf</em>) certificates, the subject DN is not use in any links of the certification path. Changing the subject attribute encoding when renewing an end-entity certificate will not break validation. But it could still confuse some programs that only do binary comparison of DNs (e.g. they might display two distinct subjects).</p>
+<h2 id="processing-certificate-requests">Processing certificate requests</h2>
+<p>What about when processing certificate requests—should CAs respect the attribute encodings in the CSR? In my experience, CA programs are prone to issuing certificates with the subject encoded differently from how it was encoded in the CSR. CAs may do various kinds of validation, substitution or addition of subject name attributes. Or they may enforce the use of a particular encoding regardless of the encoding in the CSR.</p>
+<p>Is this a problem? It depends on the client program. In my experience most programs can handle this situation. Problems mainly arise when the issuer or subject encoding changes <em>upon renewal</em> (for the reasons discussed above).</p>
+<p>If a CSR-versus-certificate encoding mismatch does cause a problem for you, you may have to create a new CSR with the attributes encoding you expect the CA to use for the certificate. In many programs this is not straightforward, if it is possible at all. If you control the CA you might be able to configure it to use particular encodings for string attributes, or to respect the encodings in the CSR. The options available and how to configure them vary among CA programs.</p>
+<h2 id="recap">Recap</h2>
+<p>X.509 requires the use of either <code>PrintableString</code> or <code>UTF8String</code> for most DN attribute types. Strings consisting of printable 7-bit ASCII characters can be represented using either encoding. This ambiguity can lead to problems in certification path construction.</p>
+<p>Formally, two DNs that have the same attributes and values are the same DN, regardless of the string encodings used. But there are many programs that only perform binary matching of DNs. To avoid causing problems for such programs a CA:</p>
+<ul>
+<li><em>must</em> ensure that the Issuer DN field on all certificates it issues is identical to its own Subject DN;</li>
+<li><em>must</em> ensure that Subject DN attribute encodings on CA certificates it issues to a given subject do not change upon renewal;</li>
+<li><em>should</em> ensure that Subject DN attribute encodings on end-entity certificates it issues to a given subject do not change upon renewal.</li>
+</ul>
+<p>CAs will often issue certificates with values encoded differently from how they were presented in the CSR. This usually does not cause problems. But if it does cause problems, you might be able to configure the client program to produce a CSR with different attribute encodings. If you control the CA you may be able to configure it to have a different treatment for attribute encodings. How to do these things was beyond the scope of this article.</p>]]></summary>
+</entry>
+<entry>
     <title>Changing a CA’s Subject DN; Part II: FreeIPA</title>
     <link href="https://frasertweedale.github.io/blog-redhat/posts/2017-11-22-changing-ca-subject-dn-part-ii-freeipa.html" />
     <id>https://frasertweedale.github.io/blog-redhat/posts/2017-11-22-changing-ca-subject-dn-part-ii-freeipa.html</id>
@@ -1052,150 +1152,6 @@ Number of members added 1
 <pre><code>policyset.serverCertSet.1.default.params.name=CN=*.$request.req_subject_name.cn$, o=EXAMPLE.COM</code></pre>
 <p>When it comes to wildcards in <em>Subject Alternative Name</em> DNS-IDs, it might be possible to configure a Dogtag profile to add this in a similar way to the above, but I do not recommend it, nor am I motivated to work out a reliable way to do this, given that wildcard certificates are deprecated. (By the time TLS libraries eventually remove support for treating the subject CN as a DNS-ID, I will have little sympathy for organisations that still haven’t moved away from wildcard certs).</p>
 <p>In conclusion: you shouldn’t use wildcard certificates, and FreeIPA has no special support for them, but if you really need to, you can do it with a custom certificate profile.</p>]]></summary>
-</entry>
-<entry>
-    <title>Smart card login with YubiKey NEO</title>
-    <link href="https://frasertweedale.github.io/blog-redhat/posts/2016-08-12-yubikey-sc-login.html" />
-    <id>https://frasertweedale.github.io/blog-redhat/posts/2016-08-12-yubikey-sc-login.html</id>
-    <published>2016-08-12T00:00:00Z</published>
-    <updated>2016-08-12T00:00:00Z</updated>
-    <summary type="html"><![CDATA[<h1 id="smart-card-login-with-yubikey-neo">Smart card login with YubiKey NEO</h1>
-<p>In this post I give an overview of smart cards and their potential advantages, and share my adventures in using a Yubico <a href="https://www.yubico.com/products/yubikey-hardware/yubikey-neo/">YubiKey NEO</a> device for smart card authentication with <a href="https://www.freeipa.org/page/Main_Page">FreeIPA</a> and <a href="https://fedorahosted.org/sssd/">SSSD</a>.</p>
-<h2 id="smart-card-overview">Smart card overview</h2>
-<p><a href="https://en.wikipedia.org/wiki/Smart_card">Smart cards</a> with cryptographic processors and secure key storage (private key generated on-device and cannot be extracted) are an increasingly popular technology for secure system and service login, as well as for signing and encryption applications (e.g. code signing, OpenPGP). They may offer a security advantage over traditional passwords because private key operations typically require the user to enter a PIN. Therefore the smart card is two factors in one: both <em>something I have</em> and <em>something I know</em>.</p>
-<p>The inability to extract the private key from a smart card also provides an advantage over software HOTP/TOTP tokens which, in the absense of other security measures such as encrypted filesystem on the mobile device, allow an attacker to extract the OTP seed. And because public key cryptography is used, there is no OTP seed or password hash sitting on a server, waiting to be exfiltrated and subjected to offline attacks.</p>
-<p>For authentication applications, a smart card carries an X.509 certificate alongside a private key. A login application would read the certificate from the card and validate it against trusted CAs (e.g. a company’s CA for issuing smart cards). Typically an OCSP or CRL check would also be performed. The login application then challenges the card to sign a nonce, and validates the signature with the public key from the certificate. A valid signature attests that the bearer of the smart card is indeed the subject of the certificate. Finally, the certificate is then mapped to a user either by looking for an exact certificate match or by extracting information about the user from the certificate.</p>
-<h2 id="test-environment">Test environment</h2>
-<p>In my smart card investigations I had a FreeIPA server with a single Fedora 24 desktop host enrolled. <code>alice</code> was the user I tested with. To begin with, she had no certificates and used her password to log in.</p>
-<p>I was doing all of my testing on virtual machines, so I had to enable USB passthrough for the YubiKey device. This is straightforward but you have to ensure the IOMMU is enabled in both BIOS and kernel (for Intel CPUs add <code>intel_iommu=on</code> to the kernel command line in GRUB).</p>
-<p>In <code>virt-manager</code>, after you have created the VM (it doesn’t need to be running) you can <em>Add Hardware</em> in the <em>Details</em> view, then choose the YubiKey NEO device. There are no doubt <code>virsh</code> incantations or other ways to establish the passthrough.</p>
-<p>Finally, on the <em>host</em> I stopped the <code>pcscd</code> smart card daemon to prevent it from interfering with passthrough:</p>
-<pre><code># systemctl stop pcscd.service pcscd.socket</code></pre>
-<h2 id="provisioning-the-yubikey">Provisioning the YubiKey</h2>
-<p>For general smart card provisioning steps, I recommend <a href="https://blog-nkinder.rhcloud.com/?p=179">Nathan Kinder’s post</a> on the topic. But the YubiKey NEO is <em>special</em> with its own steps to follow! First install the <code>ykpers</code> and <code>yubico-piv-tool</code> packages:</p>
-<pre><code>sudo dnf install -y ykpers yubico-piv-tool</code></pre>
-<p>If we run <code>yubico-piv-tool</code> to find out the version of the PIV applet, we run into a problem because a new YubiKey comes configured in OTP mode:</p>
-<pre><code>[dhcp-40-8:~] ftweedal% yubico-piv-tool -a version
-Failed to connect to reader.</code></pre>
-<p>The YubiKey NEO supports a variety of operation modes, including hybrid modes:</p>
-<pre><code>0    OTP device only.
-1    CCID device only.
-2    OTP/CCID composite device.
-3    U2F device only.
-4    OTP/U2F composite device.
-5    U2F/CCID composite device.
-6    OTP/U2F/CCID composite device.</code></pre>
-<p>(You can also add <code>80</code> to any of the modes to configure <em>touch to eject</em>, or <em>touch to switch modes</em> for hybrid modes).</p>
-<p>We need to put the YubiKey into CCID (<em>Chip Card Interface Device</em>, a standard USB protocol for smart cards) mode. I originally configured the YubiKey in mode <code>86</code> but could not get the card to work properly with USB passthrough to the virtual machine. Whether this was caused by the eject behaviour or the fact that it was a hybrid mode I do not know, but reconfiguring it to mode <code>1</code> (CCID only) allowed me to use the card on the guest.</p>
-<pre><code>[dhcp-40-8:~] ftweedal% ykpersonalize -m 1
-Firmware version 3.4.6 Touch level 1541 Program sequence 1
-
-The USB mode will be set to: 0x1
-
-Commit? (y/n) [n]: y</code></pre>
-<p>Now <code>yubico-piv-tool</code> can see the card:</p>
-<pre><code>[dhcp-40-8:~] ftweedal% yubico-piv-tool -a version
-Application version 1.0.4 found.</code></pre>
-<p>Now we can initialise the YubiKey by setting a new <em>management key</em>, PIN and <em>PIN Unblocking Key (PUK)</em>. As you can probably guess, the management key protects actions like generating keys and importing certificates, the PIN protects private key operations in regular use, the the PUK is kind of in between, allowing the PIN to be reset if the maximum attempts are exceeded. The current (default) PIN and PUK need to be given in order to reset them.</p>
-<pre><code>% KEY=`dd if=/dev/random bs=1 count=24 2&gt;/dev/null | hexdump -v -e &#39;/1 &quot;%02X&quot;&#39;`
-% echo $KEY
-CC044321D49AC1FC40146AD049830DB09C5AFF05CD843766
-% yubico-piv-tool -a set-mgm-key -n $KEY
-Successfully set new management key.
-
-% PIN=`dd if=/dev/random bs=1 count=6 2&gt;/dev/null | hexdump -v -e &#39;/1 &quot;%u&quot;&#39;|cut -c1-6`
-% echo $PIN
-167246
-% yubico-piv-tool -a change-pin -P 123456 -N $PIN
-Successfully changed the pin code.
-
-% PUK=`dd if=/dev/random bs=1 count=6 2&gt;/dev/null | hexdump -v -e &#39;/1 &quot;%u&quot;&#39;|cut -c1-8`
-% echo $PUK
-24985117
-% yubico-piv-tool -a change-puk -P 12345678 -N $PUK
-Successfully changed the puk code.</code></pre>
-<p>Next we must generate a private/public keypair on the smart card. Various slots are available for different purposes, with different PIN-checking behaviour. The <a href="https://developers.yubico.com/PIV/Introduction/Certificate_slots.html">Certificate slots</a> page on the Yubico wiki gives the full details. We will use slot <code>9e</code> which is for <em>Card Authentication</em> (PIN is not needed for private key operations). It is necessary to provide the management key on the command line, but the program also prompts for it (I’m not sure why this is the case).</p>
-<pre><code>% yubico-piv-tool -k $KEY -a generate -s 9e
-Enter management key: CC044321D49AC1FC40146AD049830DB09C5AFF05CD843766
------BEGIN PUBLIC KEY-----
-MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEApT5tb99jr7qA8zN66Dbl
-fu/Jh+F0nZvp7FXZRJQH12KgEeX4Lzu1S10b1HQ0lpHZWcqPQh2wbHaC8U7uYSLW
-LqsjmFeJrskAerVAAH8v+tzy6DKlJKaLjAt8qWEJ1UWf5stJO3r9RD6Z80rOYPXT
-MsKxmsb22v5lbvZTa0mILQeP2e6m4rwPKluQrODYkQkQcYIfedQggmYwo7Cxl5Lu
-smtes1/FeUlJ+DG3mga3TrZd1Fb+wDJqQU3ghLul9qLNdPYyxdwDKSWkIOt5UusZ
-2A8qECKZ8Wzv0IGI0bReSZYHKjhdm4aMMNubtKDuem/nUwBebRHFGU8zXTSFXeAd
-gQIDAQAB
------END PUBLIC KEY-----
-Successfully generated a new private key.</code></pre>
-<p>We then use this key to create a <em>certificate signing request (CSR)</em> via <code>yubico-piv-tool</code>. Although slot <code>9e</code> does not require the PIN, other slots do require it, so I’ve included the <code>verify-pin</code> action for completeness:</p>
-<pre><code>% yubico-piv-tool -a verify-pin \
-    -a request-certificate -s 9e -S &quot;/CN=alice/&quot;
-Enter PIN: 167246
-Successfully verified PIN.
-Please paste the public key...
------BEGIN PUBLIC KEY-----
-MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEApT5tb99jr7qA8zN66Dbl
-fu/Jh+F0nZvp7FXZRJQH12KgEeX4Lzu1S10b1HQ0lpHZWcqPQh2wbHaC8U7uYSLW
-LqsjmFeJrskAerVAAH8v+tzy6DKlJKaLjAt8qWEJ1UWf5stJO3r9RD6Z80rOYPXT
-MsKxmsb22v5lbvZTa0mILQeP2e6m4rwPKluQrODYkQkQcYIfedQggmYwo7Cxl5Lu
-smtes1/FeUlJ+DG3mga3TrZd1Fb+wDJqQU3ghLul9qLNdPYyxdwDKSWkIOt5UusZ
-2A8qECKZ8Wzv0IGI0bReSZYHKjhdm4aMMNubtKDuem/nUwBebRHFGU8zXTSFXeAd
-gQIDAQAB
------END PUBLIC KEY-----
------BEGIN CERTIFICATE REQUEST-----
-MIICUzCCAT0CAQAwEDEOMAwGA1UEAwwFYWxpY2UwggEiMA0GCSqGSIb3DQEBAQUA
-A4IBDwAwggEKAoIBAQClPm1v32OvuoDzM3roNuV+78mH4XSdm+nsVdlElAfXYqAR
-5fgvO7VLXRvUdDSWkdlZyo9CHbBsdoLxTu5hItYuqyOYV4muyQB6tUAAfy/63PLo
-MqUkpouMC3ypYQnVRZ/my0k7ev1EPpnzSs5g9dMywrGaxvba/mVu9lNrSYgtB4/Z
-7qbivA8qW5Cs4NiRCRBxgh951CCCZjCjsLGXku6ya16zX8V5SUn4MbeaBrdOtl3U
-Vv7AMmpBTeCEu6X2os109jLF3AMpJaQg63lS6xnYDyoQIpnxbO/QgYjRtF5Jlgcq
-OF2bhoww25u0oO56b+dTAF5tEcUZTzNdNIVd4B2BAgMBAAGgADALBgkqhkiG9w0B
-AQsDggEBADvyL13ayXRDWmRJ1dSi4lE9l128fy3Lt/1XoAC1D+000hWkXOPA+K8j
-gR/Yg99K9v3U2wm6wtk2taEeogc4TebVawXezjw/hu4wq2sta3zVVJC9+yRrUeai
-P+Gvj0KNesXK5MyHGpeiPb3SA/2GYYK04suM6a1vpA+sBvrca39klpgBrYY0N/9s
-VE4gBBNhQa9jN8E9VMQXEPxYVH1tDrp7bRxg6V5spJb2oit6H+7Pe7xSC95ByCXw
-Msprhk+B2nkrVaco5R/ZOG0jZdMOMOJXCuTbWKOaCDEN5hsLNdua6uBpiDCJ5v1I
-l0Xmf53DC7jceF/XgZ0LUzbGzTDcr3o=
------END CERTIFICATE REQUEST-----</code></pre>
-<p><code>yubico-piv-tool -a request-certificate</code> is not very flexible; for example, it cannot create a CSR with <em>request extensions</em> such as including the user’s email address or Kerberos principal name in the <em>Subject Alternative Name</em> extension. For such non-trivial use cases, <code>openssl req</code> or other programs can be used instead, with a PKCS #11 module providing acesss to the smart card’s signing capability. <a href="https://blog-nkinder.rhcloud.com/?p=179">Nathan Kinder’s post</a> provides full details.</p>
-<p>With CSR in hand, <code>alice</code> can now request a certificate from the IPA CA. I have covered this procedure in previous articles so I’ll skip it here, except to add that it is necessary to use a profile that saves the newly issued certificate to the subject’s <code>userCertificate</code> LDAP attribute. This is how SSSD matches certificates in smart cards with users.</p>
-<p>Once we have the certificate (in file <code>alice.pem</code>) we can import it onto the card:</p>
-<pre><code>% yubico-piv-tool -k $KEY -a import-certificate -s 9e -i alice.pem
-Enter management key: CC044321D49AC1FC40146AD049830DB09C5AFF05CD843766
-Successfully imported a new certificate.</code></pre>
-<h2 id="configuring-smart-card-login">Configuring smart card login</h2>
-<p>OpenSC provides a PKCS #11 module for interfacing with PIV smart cards, among other things:</p>
-<pre><code># dnf install -y opensc</code></pre>
-<p>Enable smart card authentication in <code>/etc/sssd.conf</code>:</p>
-<pre><code>[pam]
-pam_cert_auth = True</code></pre>
-<p>Then restart SSSD:</p>
-<pre><code># systemctl restart sssd</code></pre>
-<p>Next, enable the OpenSC PKCS #11 module in the system NSS database:</p>
-<pre><code># modutil -dbdir /etc/pki/nssdb \
-    -add &quot;OpenSC&quot; -libfile opensc-pkcs11.so</code></pre>
-<p>We also need to add the IPA CA cert to the system NSSDB. This will allow SSSD to validate certificates from smart cards. If smart card certificates are issued by a sub-CA or an external CA, import that CA’s certificate instead.</p>
-<pre><code># certutil -d /etc/ipa/nssdb -L -n &#39;IPA.LOCAL IPA CA&#39; -a \
-  | certutil -d /etc/pki/nssdb -A -n &#39;IPA.LOCAL IPA CA&#39; -t &#39;CT,C,C&#39;</code></pre>
-<p>One hiccup I had was that SSSD could not talk to the OCSP server indicated in the <em>Authority Information Access</em> extension on the certificate (due to my DNS not being set up correctly). I had to tell SSSD not to perform OCSP checks. The <code>sssd.conf</code> snippet follows. Do not do this in a production environment.</p>
-<pre><code>[sssd]
-...
-certificate_verification = no_ocsp</code></pre>
-<p>That’s pretty much all there is to it. After this, I was able to log in as <code>alice</code> using the YubiKey NEO. When logging in with the card inserted, instead of being prompted for a password, GDM prompts for the PIN. Enter the pin, and it lets you in!</p>
-<p><img src="../images/smartcard-login.png" alt="Screenshot of login PIN prompt" style="width:100.0%" /></p>
-<h2 id="conclusion">Conclusion</h2>
-<p>I mentioned (or didn’t mention) a few standards related to smart card authentication. A quick review of them is warranted:</p>
-<ul>
-<li>CCID is a USB smart card interface standard.</li>
-<li><a href="http://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-73-4.pdf">PIV</a> (<em>Personal Identify Verification</em>) is a smart card standard from NIST. It defines the slots, PIN behaviour, etc.</li>
-<li>PKCS #15 is a token information format. OpenSC provides an PKCS #15 emulation layer for PIV cards.</li>
-<li>PKCS #11 is a software interface to cryptographic tokens. Token and HSM vendors provide PKCS #11 <em>modules</em> for their devices. OpenSC provides a PKCS #11 interface to PKCS #15 tokens (including emulated PIV tokens).</li>
-</ul>
-<p>It is appropriate to mention <a href="https://github.com/OpenSC/pam_pkcs11"><em>pam_pkcs11</em></a>, which is also part of the OpenSC project, as an alternative to SSSD. More configuration is involved, but if you don’t have (or don’t want) an external identity management system it looks like a good approach.</p>
-<p>You might remember that I was using slot <code>9e</code> which doesn’t require a PIN, yet I was still prompted for a PIN when logging in. There are a couple of issues to tease apart here. The first issue is that although PIV cards do not require the PIN for private key operations on slot <code>9e</code>, the <code>opensc-pkcs11.so</code> PKCS #11 module does not correctly report this. As an alternative to OpenSC, Yubico provide their own PKCS #11 module called <a href="https://developers.yubico.com/yubico-piv-tool/YKCS11_release_notes.html"><em>YKCS11</em></a> as part of <code>yubico-piv-tool</code> but <code>modutil</code> did not like it. Nevertheless, a peek at its source code leads me to believe that it too declares that the PIN is required regardless of the slot in use. I could not find much discussion of this discrepancy so I will raise some tickets and hopefully it can be addressed.</p>
-<p>The second issue is that SSSD requires the PIN and uses it to log into the token, even if the token says that a PIN is not required. Again, I will start a discussion to see if this is really the intended behaviour (perhaps it is).</p>
-<p>The YubiKey NEO features a wireless (NFC) interface. I haven’t played with it yet, but all the smart card features are available over that interface. This lends weight to fixing the issues preventing PIN-less usage.</p>
-<p>A final thought I have about the user experience is that it would be nice if user information could be derived or looked up based on the certificate(s) in the smart card, and a user automatically selected, instead of having to first specify “I am <code>alice</code>” or whoever. The information is there on the card after all, and it is one less step for users to perform. If PIN-less usage can be addressed, it would mean that a user can just approach a machine, plug in their smart card and hi ho, off to work they go. There are some indications that this does work with GDM and <code>pam_pkcs11</code>, so if you know how to get it going with SSSD I would love to know!</p>]]></summary>
 </entry>
 
 </feed>
