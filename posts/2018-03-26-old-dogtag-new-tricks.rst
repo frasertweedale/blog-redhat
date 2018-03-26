@@ -478,7 +478,7 @@ for improving type safety, APIs or performance.  I learned a lot
 about Dogtag's ACL implementation by reading the code to understand
 the problem, then solving the problem using FP.  Later, I was able
 to translate some aspects of the Haskell implementation (e.g. using
-unary sum types to represent ACL rule types and the evaluation order
+sum types to represent ACL rule types and the evaluation order
 setting) back into the Java implementation (as ``enum`` types).
 This improved type safety and readability.
 
