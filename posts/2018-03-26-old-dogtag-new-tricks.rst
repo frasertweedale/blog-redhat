@@ -8,7 +8,7 @@ hardly been touched since it was first written.
 
 Old code often follows old practices that are no longer reasonable.
 This is not an indictment on the original programmers!  The
-capabilities of our tools usually improves over time (certainly true
+capabilities of our tools usually improve over time (certainly true
 for Java).  The way we solve problems often improves over time too,
 through better libraries and APIs.  And back in the '90s sites like
 Stack Overflow didn't exist and there wasn't as much free software
@@ -54,8 +54,8 @@ Case study: ACLs
 ----------------
 
 Dogtag uses *access control lists (ACLs)* to govern what users can
-do in the system.  An ACL is represented in text thus (wrapping for
-presentation):
+do in the system.  The text representation of an ACL (with wrapping
+and indication for presentation only) looks like:
 
 ::
 
@@ -154,12 +154,13 @@ expressions.  An ACL expression can look like::
 
   user="caadmin" || group="Administrators"
 
-The expression is saved in the ``ACLEntry`` as-is.  Parsing is
-deferred to ACL evaluation.  Parsing work is repeated every time the
-entry is evaluated.  The deferral also means that invalid
-expressions are silently allowed and can only be noticed when they
-are evaluated.  The effect of an invalid expression depends on the
-kind of syntax error, and the behaviour of the access evaluator.
+The expression is saved in the ``ACLEntry`` as-is, i.e. as a string.
+Parsing is deferred to ACL evaluation.  Parsing work is repeated
+every time the entry is evaluated.  The deferral also means that
+invalid expressions are silently allowed and can only be noticed
+when they are evaluated.  The effect of an invalid expression
+depends on the kind of syntax error, and the behaviour of the access
+evaluator.
 
 
 Access evaluator expressions
@@ -237,14 +238,14 @@ Dogtag team thinks that it's unlikely that anyone is running in
 .. _CVE-2018-1080: https://bugzilla.redhat.com/show_bug.cgi?id=1556657
 
 This defect is present in the initial commit in the Dogtag Git
-repository (2008).  It might have been presented in the original
+repository (2008).  It might have been present in the original
 implementation.  But whenever it was introduced, the problem was not
 noticed.  Several developers who made small changes over the years
 to the ACL code (logging, formatting, etc) did not notice it.
 Including me, until very recently.
 
-How has this bug existed for so long?  There is not one single
-reason, but contributing factors could be:
+How has this bug existed for so long?  There are several possible
+factors:
 
 - Lack of tests, or at least lack of testing in *allow,deny* mode
 
@@ -315,10 +316,9 @@ reading the Java implementation so I could preserve its semantics.
 The prototype is not complete.  It does not support serialisation of
 ACLs or the heirarchical nature of ACL evaluation (i.e. checking an
 authorisation on resource ``foo.bar.baz`` would check ACLs named
-``foo.bar.baz``, ``foo.bar`` and ``foo``).  But it does support
-parsing and evaluation, and it fixes all the problems mentioned
-earlier: parsing bugs, non-extensible or mismatched access evaluator
-operators, invalid expressions accepted by main parser.
+``foo.bar.baz``, ``foo.bar`` and ``foo``).  It does support parsing
+and evaluation.  We shall see that it resolves the problems in the
+Java implementation discussed above.
 
 The implementation is about 250 lines of code, roughly ⅓ the size of
 the Java implementation.  It is much easier to read and reason
