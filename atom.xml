@@ -48,12 +48,12 @@
     --replace &quot;CN=Certificate Authority,O=EXAMPLE.COM;42&quot;</code></pre>
 <p>The <code>replace</code> option specifies the issuer and serial number of the certificate being replaced. After the new certificate is issued, <code>ipa cert-request</code> would attempt to revoke the specified certificate, and remove it from the principal’s <code>userCertificate</code> attribute. Certmonger would be able to supply the <code>replace</code> option (or whatever we call it).</p>
 <p>For any of the above suggestions it would be necessary to prominently and clearly outline the changes in release notes. The change in revocation behaviour could catch users off guard. It is important not to rush any changes through. We’ll need to engage with our user base to explain the changes, and outline steps to preserve the existing revocation behaviour if so desired.</p>
-<h3 id="ipa-host-service-mod-changes"><code>ipa {host-service}-mod</code> changes</h3>
+<h3 id="ipa-hostservice-mod-changes"><code>ipa {host,service}-mod</code> changes</h3>
 <p>Another (independent) enhancement to consider is an option to suppress the revocation behaviour of <code>ipa {host,service}-mod</code>, so that certificates could be removed from host/service entries without revoking them. A simple <code>--no-revoke</code> flag would suffice.</p>
 <h2 id="conclusion">Conclusion</h2>
 <p>In this post I discussed how the current revocation behaviour of FreeIPA prevents hosts and services from using multiple certificates for different purposes. This is not the majority use case but I feel that we should support the use case. And we can, with a refinement of <code>ipa cert-request</code> behaviour.</p>
 <p>We ought to make it possible to revoke <em>only the certificate being renewed</em>. We can do this by preventing <code>ipa cert-request</code> from revoking certs and requiring a separate call to <code>ipa cert-revoke</code>. behaviour of <code>cert-request</code> Alternatively, we can add an option to <code>ipa cert-request</code> for explicitly specifying the certificate(s) to revoke. In either case, the Certmonger renewal helpers can be changed to ensure that renewals via Certmonger revoke the old certificate (while leaving the subject’s other certificates alone!)</p>
-<p>What do you think of the changes I’ve suggested? You can contribute to the discussion on the <a href="https://lists.fedoraproject.org/archives/list/freeipa-devel@lists.fedorahosted.org/">freeipa-devel mailing list</a>.</p>]]></summary>
+<p>What do you think of the changes I’ve suggested? You can contribute to the <a href="https://lists.fedoraproject.org/archives/list/freeipa-devel@lists.fedorahosted.org/thread/G2BXRJNU5ATVXRNUPGE2Y4V3YJVXR7EC/">discussion on the <em>freeipa-devel</em> mailing list</a>.</p>]]></summary>
 </entry>
 <entry>
     <title>Can we teach an old Dogtag new tricks?</title>
