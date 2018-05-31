@@ -46,7 +46,7 @@ ultimately to higher support costs for Red Hat.
 Today we have some safeguards in place.  In the topology Web UI we
 detect a single-CA topology and warn about it.
 ``ipa-replica-install`` alerts the administrator if there is only
-one CA in the topology and suggests to install the RA role on the
+one CA in the topology and suggests to install the CA role on the
 new replica.  ``ipa-server-install --uninstall`` warns when you are
 uninstalling the last instance of a some server role; this check
 includes the CA role.  Eventually, FreeIPA will have some health
