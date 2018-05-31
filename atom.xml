@@ -483,7 +483,7 @@ Restarting the KDC</code></pre>
 <pre><code>% ldapmodrdn -D &quot;cn=Directory Manager&quot; -wXXXXXXXX -r \
     &quot;cn=IPA.LOCAL IPA CA,cn=certificates,cn=ipa,cn=etc,dc=ipa,dc=local&quot; \
     &quot;cn=CN\=Certificate Authority\,O\=IPA.LOCAL 201805171453&quot;</code></pre></li>
-<li><p>Rename the IPA CA certificate nickname in the NSSDBs at <code>/etc/dirsrv/slapd-{REALM]</code>, <code>/etc/ipa/nssdb</code> and, if relevant, <code>/etc/httpd/alias</code>. Example command:</p>
+<li><p>Rename the IPA CA certificate nickname in the NSSDBs at <code>/etc/dirsrv/slapd-{REALM}</code>, <code>/etc/ipa/nssdb</code> and, if relevant, <code>/etc/httpd/alias</code>. Example command:</p>
 <pre><code># certutil -d /etc/dirsrv/slapd-IPA-LOCAL --rename \
     -n &#39;IPA.LOCAL IPA CA&#39; --new-n &#39;OLD IPA CA&#39;</code></pre></li>
 <li><p>Remove Certmonger tracking requests for all Dogtag system certificates, and remove the tracking request for the IPA RA certificate:</p>
