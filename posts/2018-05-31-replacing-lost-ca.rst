@@ -758,7 +758,7 @@ have to be performed in the order shown here.
         "cn=CN\=Certificate Authority\,O\=IPA.LOCAL 201805171453"
 
 #. Rename the IPA CA certificate nickname in the NSSDBs at
-   ``/etc/dirsrv/slapd-{REALM]``, ``/etc/ipa/nssdb`` and, if
+   ``/etc/dirsrv/slapd-{REALM}``, ``/etc/ipa/nssdb`` and, if
    relevant, ``/etc/httpd/alias``.  Example command::
 
     # certutil -d /etc/dirsrv/slapd-IPA-LOCAL --rename \
