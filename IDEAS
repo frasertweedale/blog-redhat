@@ -1,11 +1,3 @@
 - nested / non-nested validity periods
 
-- replacing IPA CA e.g. after original CA is lost
-  what do to:
-
-	- install master with CA
-	- install replica (no CA)
-	- blow away master
-	- work out what I have to do to bring a CA back.
-
 - how does dogtag-ipa-ca-renew-agent renewal work?
