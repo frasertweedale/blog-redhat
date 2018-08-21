@@ -8,8 +8,268 @@
         <name>Fraser Tweedale</name>
         <email>frase@frase.id.au</email>
     </author>
-    <updated>2018-05-31T00:00:00Z</updated>
+    <updated>2018-08-21T00:00:00Z</updated>
     <entry>
+    <title>Issuing suborindate CA certificates from FreeIPA</title>
+    <link href="https://frasertweedale.github.io/blog-redhat/posts/2018-08-21-ipa-subordinate-ca.html" />
+    <id>https://frasertweedale.github.io/blog-redhat/posts/2018-08-21-ipa-subordinate-ca.html</id>
+    <published>2018-08-21T00:00:00Z</published>
+    <updated>2018-08-21T00:00:00Z</updated>
+    <summary type="html"><![CDATA[<h1 id="issuing-suborindate-ca-certificates-from-freeipa">Issuing suborindate CA certificates from FreeIPA</h1>
+<p>FreeIPA, since version 4.4, has supported creating subordinate CAs within the deployment’s Dogtag CA instance. This feature is called <a href="2016-07-25-freeipa-subcas.html">lightweight sub-CAs</a>. But what about when you need to issue a subordinate CA certificate to an external entity? One use case would be chaining one FreeIPA deployment up to some existing FreeIPA deployment. This is similar to what many customers do with Active Directory. In this post I’ll show how you can issue subordinate CA certificates from FreeIPA.</p>
+<h2 id="scenario-description">Scenario description</h2>
+<p>The existing FreeIPA deployment has the realm <code>IPA.LOCAL</code> and domain <code>ipa.local</code>. Its CA’s <em>Subject Distinguished Name (Subject DN)</em> is <code>CN=Certificate Authority,O=IPA.LOCAL 201808022359</code>. The master’s hostname is <code>f28-0.ipa.local</code>. I will refer to this deployment as the <em>existing</em> or <em>primary deployment</em>.</p>
+<p>I will install a new FreeIPA deployment on the host <code>f28-1.ipa.local</code>, with realm <code>SUB.IPA.LOCAL</code> and domain <code>sub.ipa.local</code>. I will refer to this deployment as the <em>secondary deployment</em>. Its CA will be signed by the CA of the existing deployment.</p>
+<h2 id="choice-of-subject-principal-and-subject-dn">Choice of subject principal and Subject DN</h2>
+<p>All certificate issuance via FreeIPA (with some limited exceptions) requires a nominated <em>subject principal</em>. Subject names in the CSR (Subject DN and <em>Subject Alternative Names</em>) are validated against this subject principal. Furthermore, <em>CA ACLs</em> are consulted to determine if the combination of CA, profile and subject principal is acceptable.</p>
+<p>So in this scenario, we must create a subject principal in the existing deployment to represent the CA of the secondary deployment. When validating CSRs, the <em>Common Name (CN)</em> of the Subject DN is checked against the subject principal, in the following ways:</p>
+<ul>
+<li>for <em>user</em> principals, the CN must match the UID</li>
+<li>for <em>host</em> principals, the CN must match the hostname (case-insensitive)</li>
+<li>for <em>service</em> principals, the CN must match the hostname (case-insensitive; only principal aliases with the same service type as the canonical principal are checked)</li>
+</ul>
+<p>The validation regime imposes a restriction on what the CN of the subordinate CA can be. In particular:</p>
+<ul>
+<li>it can be a hostname (host or service principal); or</li>
+<li>it can be a UID (user principal), which can contain only letters, numbers, <code>_</code>, <code>-</code> and <code>.</code>, and an optional trailing <code>$</code>.</li>
+</ul>
+<p>For this scenario, I chose to create a host principal for the domain of the secondary deployment:</p>
+<pre><code>[f28-0]% ipa host-add --force sub.ipa.local
+--------------------------
+Added host &quot;sub.ipa.local&quot;
+--------------------------
+  Host name: sub.ipa.local
+  Principal name: host/sub.ipa.local@IPA.LOCAL
+  Principal alias: host/sub.ipa.local@IPA.LOCAL
+  Password: False
+  Keytab: False
+  Managed by: sub.ipa.local</code></pre>
+<h2 id="creating-a-certificate-profile-for-sub-cas">Creating a certificate profile for sub-CAs</h2>
+<p>We will tweak the <code>caIPAserviceCert</code> profile configuration to create a new profile for subordinate CAs. Export the profile configuration:</p>
+<pre><code>[f28-0]% ipa certprofile-show caIPAserviceCert --out SubCA.cfg
+------------------------------------------------
+Profile configuration stored in file &#39;SubCA.cfg&#39;
+------------------------------------------------
+  Profile ID: caIPAserviceCert
+  Profile description: Standard profile for network services
+  Store issued certificates: TRUE</code></pre>
+<p>Perform the following edits to <code>SubCA.cfg</code>:</p>
+<ol>
+<li>Replace <code>profileId=caIPAserviceCert</code> with <code>profileId=SubCA</code>.</li>
+<li><p>Replace the <code>subjectNameDefaultImpl</code> component with the <code>userSubjectNameDefaultImpl</code> component. This will use the Subject DN from the CSR <em>as is</em>, without restriction:</p>
+<pre><code>policyset.serverCertSet.1.constraint.class_id=noConstraintImpl
+policyset.serverCertSet.1.constraint.name=No Constraint
+policyset.serverCertSet.1.default.class_id=userSubjectNameDefaultImpl
+policyset.serverCertSet.1.default.name=Subject Name Default</code></pre></li>
+<li>Edit the <code>keyUsageExtDefaultImpl</code> and <code>keyUsageExtConstraintImpl</code> configurations. They should have the following settings:
+<ul>
+<li><code>keyUsageCrlSign=true</code></li>
+<li><code>keyUsageDataEncipherment=false</code></li>
+<li><code>keyUsageDecipherOnly=false</code></li>
+<li><code>keyUsageDigitalSignature=true</code></li>
+<li><code>keyUsageEncipherOnly=false</code></li>
+<li><code>keyUsageKeyAgreement=false</code></li>
+<li><code>keyUsageKeyCertSign=true</code></li>
+<li><code>keyUsageKeyEncipherment=false</code></li>
+<li><code>keyUsageNonRepudiation=true</code></li>
+</ul></li>
+<li><p>Add the <em>Basic Constraints</em> extension configuration:</p>
+<pre><code>policyset.serverCertSet.15.constraint.class_id=basicConstraintsExtConstraintImpl
+policyset.serverCertSet.15.constraint.name=Basic Constraint Extension Constraint
+policyset.serverCertSet.15.constraint.params.basicConstraintsCritical=true
+policyset.serverCertSet.15.constraint.params.basicConstraintsIsCA=true
+policyset.serverCertSet.15.constraint.params.basicConstraintsMinPathLen=0
+policyset.serverCertSet.15.constraint.params.basicConstraintsMaxPathLen=0
+policyset.serverCertSet.15.default.class_id=basicConstraintsExtDefaultImpl
+policyset.serverCertSet.15.default.name=Basic Constraints Extension Default
+policyset.serverCertSet.15.default.params.basicConstraintsCritical=true
+policyset.serverCertSet.15.default.params.basicConstraintsIsCA=true
+policyset.serverCertSet.15.default.params.basicConstraintsPathLen=0</code></pre>
+<p>Add the new components’ index to the component list, to ensure they get processed:</p>
+<pre><code>policyset.serverCertSet.list=1,2,3,4,5,6,7,8,9,10,11,12,15</code></pre></li>
+<li><p>Remove the <code>commonNameToSANDefaultImpl</code> and <em>Extended Key Usage</em> related components. This can be accomplished by removing the relevant indices (in my case, <code>7</code> and <code>12</code>) from the component list:</p>
+<pre><code>policyset.serverCertSet.list=1,2,3,4,5,6,8,9,10,11,15</code></pre></li>
+<li>(<em>Optional</em>) edit the validity period in the <code>validityDefaultImpl</code> and <code>validityConstraintImpl</code> components. The default is 731 days. I did not change it.</li>
+</ol>
+<p>For the avoidance of doubt, the diff between the <code>caIPAserviceCert</code> profile configuration and <code>SubCA</code> is:</p>
+<pre><code>--- caIPAserviceCert.cfg        2018-08-21 12:44:01.748884778 +1000
++++ SubCA.cfg   2018-08-21 14:05:53.484698688 +1000
+@@ -13,5 +13,3 @@
+-policyset.serverCertSet.1.constraint.class_id=subjectNameConstraintImpl
+-policyset.serverCertSet.1.constraint.name=Subject Name Constraint
+-policyset.serverCertSet.1.constraint.params.accept=true
+-policyset.serverCertSet.1.constraint.params.pattern=CN=[^,]+,.+
+-policyset.serverCertSet.1.default.class_id=subjectNameDefaultImpl
++policyset.serverCertSet.1.constraint.class_id=noConstraintImpl
++policyset.serverCertSet.1.constraint.name=No Constraint
++policyset.serverCertSet.1.default.class_id=userSubjectNameDefaultImpl
+@@ -19 +16,0 @@
+-policyset.serverCertSet.1.default.params.name=CN=$request.req_subject_name.cn$, o=IPA.LOCAL 201808022359
+@@ -66,2 +63,2 @@
+-policyset.serverCertSet.6.constraint.params.keyUsageCrlSign=false
+-policyset.serverCertSet.6.constraint.params.keyUsageDataEncipherment=true
++policyset.serverCertSet.6.constraint.params.keyUsageCrlSign=true
++policyset.serverCertSet.6.constraint.params.keyUsageDataEncipherment=false
+@@ -72,2 +69,2 @@
+-policyset.serverCertSet.6.constraint.params.keyUsageKeyCertSign=false
+-policyset.serverCertSet.6.constraint.params.keyUsageKeyEncipherment=true
++policyset.serverCertSet.6.constraint.params.keyUsageKeyCertSign=true
++policyset.serverCertSet.6.constraint.params.keyUsageKeyEncipherment=false
+@@ -78,2 +75,2 @@
+-policyset.serverCertSet.6.default.params.keyUsageCrlSign=false
+-policyset.serverCertSet.6.default.params.keyUsageDataEncipherment=true
++policyset.serverCertSet.6.default.params.keyUsageCrlSign=true
++policyset.serverCertSet.6.default.params.keyUsageDataEncipherment=false
+@@ -84,2 +81,2 @@
+-policyset.serverCertSet.6.default.params.keyUsageKeyCertSign=false
+-policyset.serverCertSet.6.default.params.keyUsageKeyEncipherment=true
++policyset.serverCertSet.6.default.params.keyUsageKeyCertSign=true
++policyset.serverCertSet.6.default.params.keyUsageKeyEncipherment=false
+@@ -111,2 +108,13 @@
+-policyset.serverCertSet.list=1,2,3,4,5,6,7,8,9,10,11,12
+-profileId=caIPAserviceCert
++policyset.serverCertSet.15.constraint.class_id=basicConstraintsExtConstraintImpl
++policyset.serverCertSet.15.constraint.name=Basic Constraint Extension Constraint
++policyset.serverCertSet.15.constraint.params.basicConstraintsCritical=true
++policyset.serverCertSet.15.constraint.params.basicConstraintsIsCA=true
++policyset.serverCertSet.15.constraint.params.basicConstraintsMinPathLen=0
++policyset.serverCertSet.15.constraint.params.basicConstraintsMaxPathLen=0
++policyset.serverCertSet.15.default.class_id=basicConstraintsExtDefaultImpl
++policyset.serverCertSet.15.default.name=Basic Constraints Extension Default
++policyset.serverCertSet.15.default.params.basicConstraintsCritical=true
++policyset.serverCertSet.15.default.params.basicConstraintsIsCA=true
++policyset.serverCertSet.15.default.params.basicConstraintsPathLen=0
++policyset.serverCertSet.list=1,2,3,4,5,6,8,9,10,11,15
++profileId=SubCA</code></pre>
+<p>Now import the profile:</p>
+<pre><code>[f28-0]% ipa certprofile-import SubCA \
+            --desc &quot;Subordinate CA&quot; \
+            --file SubCA.cfg \
+            --store=1
+------------------------
+Imported profile &quot;SubCA&quot;
+------------------------
+  Profile ID: SubCA
+  Profile description: Subordinate CA
+  Store issued certificates: TRUE</code></pre>
+<h2 id="creating-the-ca-acl">Creating the CA ACL</h2>
+<p>Now we must create a CA ACL that permits use of the <code>SubCA</code> profile to issue certificate to our subject principal:</p>
+<pre><code>[f28-0]% ipa caacl-add SubCA
+--------------------
+Added CA ACL &quot;SubCA&quot;
+--------------------
+  ACL name: SubCA
+  Enabled: TRUE
+
+[f28-0]% ipa caacl-add-profile SubCA --certprofile SubCA
+  ACL name: SubCA
+  Enabled: TRUE
+  Profiles: SubCA
+-------------------------
+Number of members added 1
+-------------------------
+
+[f28-0]% ipa caacl-add-ca SubCA --ca ipa
+  ACL name: SubCA
+  Enabled: TRUE
+  CAs: ipa
+  Profiles: SubCA
+-------------------------
+Number of members added 1
+-------------------------
+
+[f28-0]% ipa caacl-add-host SubCA --hosts sub.ipa.local
+  ACL name: SubCA
+  Enabled: TRUE
+  CAs: ipa
+  Profiles: SubCA
+  Hosts: sub.ipa.local
+-------------------------
+Number of members added 1
+-------------------------</code></pre>
+<h2 id="installing-the-secondary-freeipa-deployment">Installing the secondary FreeIPA deployment</h2>
+<p>We are finally ready to run <code>ipa-server-install</code> to set up the secondary deployment. We need to use the <code>--ca-subject</code> option to override the default Subject DN that will be included in the CSR, providing a valid DN according to the rules discussed above.</p>
+<pre><code>[root@f28-1]# ipa-server-install \
+    --realm SUB.IPA.LOCAL \
+    --domain sub.ipa.local \
+    --external-ca \
+    --ca-subject &#39;CN=SUB.IPA.LOCAL,O=Red Hat&#39;
+
+...
+
+The IPA Master Server will be configured with:
+Hostname:       f28-1.ipa.local
+IP address(es): 192.168.124.142
+Domain name:    sub.ipa.local
+Realm name:     SUB.IPA.LOCAL
+
+The CA will be configured with:
+Subject DN:   CN=SUB.IPA.LOCAL,O=Red Hat
+Subject base: O=SUB.IPA.LOCAL
+Chaining:     externally signed (two-step installation)
+
+Continue to configure the system with these values? [no]: yes
+
+...
+
+Configuring certificate server (pki-tomcatd). Estimated time: 3 minutes
+  [1/8]: configuring certificate server instance
+
+The next step is to get /root/ipa.csr signed by your CA and re-run
+/usr/sbin/ipa-server-install as:
+/usr/sbin/ipa-server-install
+  --external-cert-file=/path/to/signed_certificate
+  --external-cert-file=/path/to/external_ca_certificate
+The ipa-server-install command was successful</code></pre>
+<p>Let’s inspect <code>/root/ipa.csr</code>:</p>
+<pre><code>[root@f28-1]# openssl req -text &lt; /root/ipa.csr |grep Subject:
+        Subject: O = Red Hat, CN = SUB.IPA.LOCAL</code></pre>
+<p>The desired Subject DN appears in the CSR (note that <code>openssl</code> shows DN components in the opposite order from FreeIPA). After copying the CSR to <code>f28-0.ipa.local</code> we can request the certificate:</p>
+<pre><code>[f28-0]% ipa cert-request ~/ipa.csr \
+            --principal host/sub.ipa.local \
+            --profile SubCA \
+            --certificate-out ipa.pem
+  Issuing CA: ipa
+  Certificate: MIIEAzCCAuugAwIBAgIBFTANBgkqhkiG9w0BAQsF...
+  Subject: CN=SUB.IPA.LOCAL,O=Red Hat
+  Issuer: CN=Certificate Authority,O=IPA.LOCAL 201808022359
+  Not Before: Tue Aug 21 04:16:24 2018 UTC
+  Not After: Fri Aug 21 04:16:24 2020 UTC
+  Serial number: 21
+  Serial number (hex): 0x15</code></pre>
+<p>The certificate was saved in the file <code>ipa.pem</code>. We can see from the command output that the Subject DN in the certificate is exactly what was in the CSR. Further inspecting the certificate, observe that the Basic Constraints extension is present and the Key Usage extension contains the appropriate assertions:</p>
+<pre><code>[f28-0]% openssl x509 -text &lt; ipa.pem
+...
+      X509v3 extensions:
+          ...
+          X509v3 Key Usage: critical
+              Digital Signature, Non Repudiation, Certificate Sign, CRL Sign
+          ...
+          X509v3 Basic Constraints: critical
+              CA:TRUE, pathlen:0
+          ...</code></pre>
+<p>Now, after copying the just-issued subordinate CA certificate and the primary CA certificate (<code>/etc/ipa/ca.crt</code>) over to <code>f28-1.ipa.local</code>, we can continue the installation:</p>
+<pre><code>[root@f28-1]# ipa-server-install \
+                --external-cert-file ca.crt \
+                --external-cert-file ipa.pem
+
+The log file for this installation can be found in /var/log/ipaserver-install.log
+Directory Manager password: XXXXXXXX
+
+...
+
+Adding [192.168.124.142 f28-1.ipa.local] to your /etc/hosts file
+Configuring ipa-custodia
+  [1/5]: Making sure custodia container exists
+...
+The ipa-server-install command was successful</code></pre>
+<p>And we’re done.</p>
+<h2 id="discussion">Discussion</h2>
+<p>I’ve shown how to create a profile for issuing subordinate CA certificates in FreeIPA. Because of the way FreeIPA validates certificate requests—always against a subject principal—there are restrictions on the what the subject DN of the subordinate CA can be. The Subject DN must contain a CN attribute matching either the hostname of a host or service principal, or the UID of a user principal.</p>
+<p>If you want to avoid these Subject DN restrictions, right now there is no choice but to use the Dogtag CA directly, instead of via the FreeIPA commands. If such a requirement emerges it might make sense to implement some “special handling” for issuing sub-CA certificates (similar to what we currently do for the KDC certificate). But the certificate request logic is already complicated; I am hesitant to complicate it even more.</p>
+<p>Currently there is no sub-CA profile included in FreeIPA by default. It might make sense to include it, or at least to produce an official solution document describing the procedure outlined in this post.</p>]]></summary>
+</entry>
+<entry>
     <title>Replacing a lost or broken CA in FreeIPA</title>
     <link href="https://frasertweedale.github.io/blog-redhat/posts/2018-05-31-replacing-lost-ca.html" />
     <id>https://frasertweedale.github.io/blog-redhat/posts/2018-05-31-replacing-lost-ca.html</id>
@@ -1662,62 +1922,6 @@ The ipa-cacert-manage command was successful</code></pre>
 <p>This will bring up a file chooser dialog. Find the CSR and <strong>Open</strong> it:</p>
 <p><img src="../images/ms-ca/ad-cs-request-2-choose-csr.png" alt="image" /></p>
 <p>Assuming all went well (including the CSR indicating a known certificate template), the certificate is immediately issued and the <strong>Save Certificate</strong> dialog appear, asking where to save the issued certificate.</p>]]></summary>
-</entry>
-<entry>
-    <title>Implications of Common Name deprecation for Dogtag and FreeIPA</title>
-    <link href="https://frasertweedale.github.io/blog-redhat/posts/2017-07-11-cn-deprecation.html" />
-    <id>https://frasertweedale.github.io/blog-redhat/posts/2017-07-11-cn-deprecation.html</id>
-    <published>2017-07-11T00:00:00Z</published>
-    <updated>2017-07-11T00:00:00Z</updated>
-    <summary type="html"><![CDATA[<h1 id="implications-of-common-name-deprecation-for-dogtag-and-freeipa">Implications of Common Name deprecation for Dogtag and FreeIPA</h1>
-<p>Or, <em><code>ERR_CERT_COMMON_NAME_INVALID</code>, and what we are doing about it.</em></p>
-<p>Google Chrome version 58, released in April 2017, removed support for the X.509 certificate Subject <strong>Common Name (CN)</strong> as a source of naming information when validating certificates. As a result, certificates that do not carry all relevant domain names in the <strong>Subject Alternative Name</strong> (SAN) extension result in validation failures.</p>
-<p>At the time of writing this post Chrome is just the first mover, but Mozilla Firefox and other programs and libraries will follow suit. The public PKI used to secure the web and other internet communiations is largely unaffected (browsers and CAs moved a long time ago to ensure that certificates issued by publicly trusted CAs carried all DNS naming information in the SAN extension), but some enterprises running internal PKIs are feeling the pain.</p>
-<p>In this post I will provide some historical and technical context to the situation, and explain what we are are doing in Dogtag and FreeIPA to ensure that we issue valid certificates.</p>
-<h2 id="background">Background</h2>
-<p>X.509 certificates carry subject naming information in two places: the <strong>Subject Distinguished Name (DN)</strong> field, and the <strong>Subject Alternative Name</strong> extension. There are many types of attributes available in the DN, including <em>organisation</em>, <em>country</em>, and <em>common name</em>. The definitions of these attribute types came from X.500 (the precursor to LDAP) and all have an ASN.1 representation.</p>
-<p>Within the X.509 standard, the CN has no special interpretation, but when certificates first entered widespread use in the SSL protocol, it was used to carry the domain name of the subject site or service. When connecting to a web server using TLS/SSL, the client would check that the CN matches the domain name they used to reach the server. If the certificate is chained to a trusted CA, the signature checks out, and the domain name matches, then the client has confidence that all is well and continues the handshake.</p>
-<p>But there were a few problems with using the Common Name. First, what if you want a certificate to support multiple domain names? This was especially a problem for virtual hosts in the pre-<a href="https://en.wikipedia.org/wiki/Server_Name_Indication">SNI</a> days where one IP address could only have one certificate associated with it. You can have multiple CNs in a Distinguished Name, but the semantics of X.500 DNs is strictly heirarichical. It is not an appropriate use of the DN to cram multiple, possibly non-hierarchical domain names into it.</p>
-<p>Second, the CN in X.509 has a length limit of 64 characters. DNS names can be longer. The length limit is too restrictive, especially in the world of IaaS and PaaS where hosts and services are spawned and destroyed <em>en masse</em> by orchestration frameworks.</p>
-<p>Third, some types of subject names do not have a corresponding X.500 attribute, including domain names. The solution to all three of these problems was the introduction of the <em>Subject Alternative Name</em> X.509 extension, to allow more types of names to be used in a certificate. (The SAN extensions is itself extensible; apart from DNS names other important name types include IP addresses, email addresses, URIs and Kerberos principal names). TLS clients added support for validating SAN DNSName values in addition to the CN.</p>
-<p>The use of the CN field to carry DNS names was never a standard. The Common Name field does not have these semantics; but using the CN in this way was an approach that worked. This interpretation was later formalised by the CA/B Forum in their <em>Baseline Requirements</em> for CAs, but only as a reflection of a current practice in SSL/TLS server and client implementations. Even in the Baseline Requirements the CN was a second-class citizen; they mandated that if the CN was present at all, it must reflect one of the DNSName or IP address values from the SAN extension. All public CAs had to comply with this requirement, which is why Chrome’s removal of CN support is only affecting private PKIs, not public web sites.</p>
-<h2 id="why-remove-cn-validation">Why remove CN validation?</h2>
-<p>So, Common Name was not ideal for carrying DNS naming information, but given that we now have SAN, was it really necessary to deprecate it, and is it really necessary to follow through and actually stop using it, causing non-compliant certificates that were previously accepted to now be rejected?</p>
-<p>The most important reason for deprecating CN validation is the X.509 <strong>Name Constraints</strong> extension. Name Constraints, if they appear in a CA certificate or intermediate CA certificate, constrain the valid subject names on leaf certificates. Various name types are supported including DNS names; a DNS name constraint restricts the domain of validity to the domain(s) listed and subdomains thereof. For example, if the DNS name <code>example.com</code> appears in a CA certificate’s Name Constraints extension, leaf certificates with a DNS name of <code>example.com</code> or <code>foo.example.com</code> could be valid, but a DNS name of <code>foo.example</code><strong><code>.net</code></strong> could not be valid. Conforming X.509 implementations must enforce these constraints.</p>
-<p>But these constraints only apply to SAN DNSName values, <strong>not to the CN</strong>. This is why accepting DNS naming information in the CN had to be deprecated - the name constraints cannot be properly enforced!</p>
-<p>So back in May 2000 the use of Common Name for carrying a DNS name was <a href="https://tools.ietf.org/html/rfc2818#section-3.1">deprecated by RFC 2818</a>. Although it deprecated the practice this RFC <strong>required</strong> clients to fall back to the Common Name if there were no SAN DNSName values on the certificate. Then in 2011 <a href="https://tools.ietf.org/html/rfc6125#section-6.4.4">RFC 6125</a> removed the requirement for clients to fall back to the common name, making this optional behaviour. Over recent years, some TLS clients began emitting warnings when they encountered certificates without SAN DNSNames, or where a DNS name in the CN did not also appear in the SAN extension. Finally, Chrome has become the first widely used client to remove support.</p>
-<p>Despite more than 15 years notice on the deprecation of this use of Common Name, a lot of CA software and client tooling still does not have first-class support for the SAN extension. Most tools used to generate CSRs do not even ask about SAN, and require complex configuration to generate a request bearing the SAN extension. Similarly, some CA programs does not do a good job of issuing RFC-compliant certificates. Right now, this includes Dogtag and FreeIPA.</p>
-<h2 id="subject-alternative-name-and-freeipa">Subject Alternative Name and FreeIPA</h2>
-<p>For some years, FreeIPA (in particular, the default profile for host and service certificates, called <code>caIPAserviceCert</code>) has supported the SAN extension, but the client is required to submit a CSR containing the desired SAN extension data. The names in the CSR (the CN and all alternative names) get validated against the subject principal, and then the CA would issue the certificate with exactly those names. There was no way to ensure that the domain name in the CN was also present in the SAN extension.</p>
-<p>We could add this requirement to FreeIPA’s CSR validation routine, but this imposes an unreasonable burden on the user to “get it right”. Tools like OpenSSL have poor usability and complex configuration. Certmonger supports generating a CSR with the SAN extension but it must be explicitly requested. For FreeIPA’s own certificates, we have (in recent major releases) ensured that they have contained the SAN extension, but <em>this is not the default behaviour</em> and that is a problem.</p>
-<p>FreeIPA 4.5 brought with it a <strong>CSR autogeneration</strong> feature that, for a given certificate profile, lets the administrator specify how to construct a CSR appropriate for that profile. This reduces the burden on the end user, but they must still opt in to this process.</p>
-<h2 id="subject-alternative-name-and-dogtag">Subject Alternative Name and Dogtag</h2>
-<p>Until Dogtag 10.4, there were two ways to produce a certificate with the SAN extension. One was the <code>SubjectAltNameExtDefault</code> profile component, which, for a given profile, supports a fixed number of names, either hard coded or based on particular request attributes (e.g. the CN, the email address of the authenticated user, etc). The other was the <code>UserExtensionDefault</code> which copies a given extension from the CSR to the final certificate verbatim (no validation of the data occurs). We use <code>UserExtensionDefault</code> in FreeIPA’s certificate profile (all names are validated by the FreeIPA framework before the request is submitted to Dogtag).</p>
-<p>Unfortunately, <code>SubjectAltNameExtDefault</code> and <code>UserExtensionDefault</code> are not compatible with each other. If a profile uses both and the CSR contains the SAN extension, issuance will fail with an error because Dogtag tried to add two SAN extensions to the certificate.</p>
-<p>In Dogtag 10.4 we introduced a new profile component that improves the situation, especially for dealing with the removal of client CN validation. The <code>CommonNameToSANDefault</code> will cause any profile that uses it to examine the Common Name, and if it looks like a DNS name, it will add it to the SAN extension (creating the extension if necessary).</p>
-<p>Ultimately, what is needed is a way to define a certificate profile that just makes the right certificate, without placing an undue burden on the client (be it a human user or a software agent). The complexity and burden should rest with Dogtag, for the sake of all users. We are gradually making steps toward this, but it is still a long way off. I have discussed this utopian vision <a href="2015-11-04-freeipa-pki-future.html">in a previous post</a>.</p>
-<h2 id="configuring-commonnametosandefault">Configuring <code>CommonNameToSANDefault</code></h2>
-<p>If you have Dogtag 10.4, here is how to configure a profile to use the <code>CommonNameToSANDefault</code>. Add the following policy directives (the <code>policyset</code> and <code>serverCertSet</code> and index <code>12</code> are indicative only, but the index must not collide with other profile components):</p>
-<pre><code>policyset.serverCertSet.12.constraint.class_id=noConstraintImpl
-policyset.serverCertSet.12.constraint.name=No Constraint
-policyset.serverCertSet.12.default.class_id=commonNameToSANDefaultImpl
-policyset.serverCertSet.12.default.name=Copy Common Name to Subject</code></pre>
-<p>Add the index to the list of profile policies:</p>
-<pre><code>policyset.serverCertSet.list=1,2,3,4,5,6,7,8,9,10,11,12</code></pre>
-<p>Then import the modified profile configuration, and you are good to go. There are a few minor caveats to be aware of:</p>
-<ul>
-<li>Names containing wildcards are not recognised as DNS names. The rationale is twofold; wildcard DNS names, although currently recognised by most programs, are technically a violation of the X.509 specification (RFC 5280), and they are <a href="https://tools.ietf.org/html/rfc6125#section-7.2">discouraged by RFC 6125</a>. Therefore if the CN contains a wildcard DNS name, <code>CommonNameToSANDefault</code> will not copy it to the SAN extension.</li>
-<li>Single-label DNS names are not copied. It is unlikely that people will use Dogtag to issue certificates for top-level domains. If <code>CommonNameToSANDefault</code> encounters a single-label DNS name, it will assume it is actually not a DNS name at all, and will not copy it to the SAN extension.</li>
-<li>The <code>CommonNameToSANDefault</code> policy index must come after <code>UserExtensionDefault</code>, <code>SubjectAltNameExtDefault</code>, or any other component that adds the SAN extension, otherwise an error may occur because the older components do not gracefully handle the situation where the SAN extension is already present.</li>
-</ul>
-<h2 id="what-we-are-doing-in-freeipa">What we are doing in FreeIPA</h2>
-<p>Updating FreeIPA profiles to use <code>CommonNameToSANDefault</code> is trickier - FreeIPA configures Dogtag to use LDAP-based profile storage, and mixed-version topologies are possible, so updating a profile to use the new component could break certificate requests on other CA replicas if they are not all at the new versions. We do not want this situation to occur.</p>
-<p>The long-term fix is to develop a general, version-aware profile update mechanism that will import the best version of a profile supported by all CA replicas in the topology. I will be starting this effort soon. When it is in place we will be able to safely update the FreeIPA-defined profiles in existing deployments.</p>
-<p>In the meantime, we will bump the Dogtag dependency and update the default profile <strong>for new installations only</strong> in the <strong>4.5.3</strong> point release. This will be safe to do because you can only install replicas at the same or newer versions of FreeIPA, and it will avoid the CN validation problems for all new installations.</p>
-<h2 id="conclusion">Conclusion</h2>
-<p>In this post we looked at the technical reasons for deprecating and removing support for CN domain validation in X.509 certificates, and discussed the implications of this finally happening, namely: none for the public CA world, but big problems for some private PKIs and programs including FreeIPA and Dogtag. We looked at the new <code>CommonNameToSANDefault</code> component in Dogtag that makes it easier to produce compliant certs even when the tools to generate the CSR don’t help you much, and discussed upcoming and proposed changes in FreeIPA to improve the situation there.</p>
-<p>One big takeaway from this is to be more proactive in dealing with deprecated features in standards, APIs or programs. It is easy to punt on the work, saying <em>“well yes it is deprecated but all the programs still support it…”</em> The thing is, tomorrow they may not support it anymore, and when it was deprecated for good reasons you really cannot lay the blame at Google (or whoever). On the FreeIPA team we (and especially me as <em>PKI wonk in residence</em>) were aware of these issues but kept putting off the work. Then one day users and customers start having problems accessing their internal services in Chrome! 15 years should have been enough time to deal with it… but we (I) did not.</p>
-<p>Lesson learned.</p>]]></summary>
 </entry>
 
 </feed>
