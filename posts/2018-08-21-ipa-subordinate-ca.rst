@@ -1,4 +1,4 @@
-Issuing suborindate CA certificates from FreeIPA
+Issuing subordinate CA certificates from FreeIPA
 ================================================
 
 FreeIPA, since version 4.4, has supported creating subordinate CAs
