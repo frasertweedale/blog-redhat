@@ -8,8 +8,113 @@
         <name>Fraser Tweedale</name>
         <email>frase@frase.id.au</email>
     </author>
-    <updated>2018-10-19T00:00:00Z</updated>
+    <updated>2018-11-20T00:00:00Z</updated>
     <entry>
+    <title>FreeIPA CA renewal master explained</title>
+    <link href="https://frasertweedale.github.io/blog-redhat/posts/2018-11-20-ca-renewal-master.html" />
+    <id>https://frasertweedale.github.io/blog-redhat/posts/2018-11-20-ca-renewal-master.html</id>
+    <published>2018-11-20T00:00:00Z</published>
+    <updated>2018-11-20T00:00:00Z</updated>
+    <summary type="html"><![CDATA[<h1 id="freeipa-ca-renewal-master-explained">FreeIPA CA renewal master explained</h1>
+<p>Every FreeIPA deployment has a critical setting called the <em>CA renewal master</em>. In this post I explain how this setting is used, why it is important, and the consequences of improper configuration. I’ll also discuss scenarios which cause the value to change, and why and how you would change it manually.</p>
+<h2 id="what-is-the-ca-renewal-master">What is the CA renewal master?</h2>
+<p>The CA renewal master configuration controls which CA replica is responsible for renewing some important certificate used within a FreeIPA deployment. I will call these <em>system certificates</em>.</p>
+<p>Unlike service certificates (e.g. for HTTP and LDAP) which have different keypairs and subject names on different servers, FreeIPA system certificates, and their keys, are shared by all CA replicas. These include the IPA CA certificate, OCSP certificate, Dogtag subsystem certificates, Dogtag audit signing certificate, IPA RA agent certificate and KRA transport and storage certificates.</p>
+<p>The current CA renewal master configuration can be viewed via <code>ipa config-show</code>:</p>
+<pre><code>[f28-1] ftweedal% ipa config-show | grep &#39;CA renewal master&#39;
+  IPA CA renewal master: f28-1.ipa.local</code></pre>
+<p>Under the hood, this configuration is a <em>server role attribute</em>. The CA renewal master is indicated by the presence of an <code>(ipaConfigString=caRenewalMaster)</code> attribute value on an IPA server’s CA role object. You can determine the renewal master via a plain LDAP search:</p>
+<pre><code>[f28-1] ftweedal% ldapsearch -LLL \
+      -D &quot;cn=Directory Manager&quot; \
+      &quot;(ipaConfigString=carenewalmaster)&quot;
+dn: cn=CA,cn=f28-1.ipa.local,cn=masters,cn=ipa,cn=etc,dc=ipa,dc=local
+objectClass: nsContainer
+objectClass: ipaConfigObject
+objectClass: top
+cn: CA
+ipaConfigString: startOrder 50
+ipaConfigString: caRenewalMaster
+ipaConfigString: enabledService</code></pre>
+<p>The configuration is automatically set to the first master in the topology on which the CA role was installed. Unless you installed without a CA, this is the original master set up via <code>ipa-server-install</code>.</p>
+<h2 id="what-problem-is-solved-by-having-a-ca-renewal-master">What problem is solved by having a CA renewal master?</h2>
+<p>All CA replicas have tracking requests for all system certificates. But if all CA replicas renewed system certificates independently, they would end up with different certificates. This is especially a problem for the CA certificate, and the subsystem and IPA RA certificates which get stored in LDAP for authentication purposes. The certificates must match exactly, otherwise there will be authentication failures between the FreeIPA framework and Dogtag, and between Dogtag and LDAP.</p>
+<p>Appointing one CA replica as the renewal master allows the system certificates to be renewed exactly once, when required.</p>
+<h3 id="how-do-other-replicas-acquire-the-updated-certificates">How do other replicas acquire the updated certificates?</h3>
+<p>The Certmonger tracking requests on all CA replicas use the <code>dogtag-ipa-ca-renew-agent</code> renewal helper. This program reads the CA renewal master configuration. If the current host is the renewal master, it performs the renewal, and stores the certificate in LDAP under <code>cn=&lt;nickname&gt;,cn=ca_renewal,cn=ipa,cn=etc,{basedn}</code>. Additionally, if the certificate is the IPA RA or the Dogtag CA subsystem certificate, the new certificate gets added to the <code>userCertificate</code> attribute of the corresponding LDAP user entry</p>
+<p>If the renewal master is a different host, the latest certificate is retrieved from the <code>ca_renewal</code> LDAP entry and returned to Certmonger. Due to non-determinism in exactly when Certmonger renewal attempts will occur, the non-renewal helper could attempt to “renew” the certificate before the renewal master has actually renewed the certificate. So it is <em>not an error</em> for the renewal helper to return the old (soon to expire) certificate. Certmonger will keep attempting to renew the certificate (with some delay between attempts) until it can retrieve the updated certificate (which will not expire soon).</p>
+<h2 id="what-can-go-wrong">What can go wrong?</h2>
+<p>If it wasn’t clear already, a (CA-ful) FreeIPA deployment must at all times have exactly one CA replica configured as the renewal master. That server must be online, operating normally, and replicating properly with other servers. Let’s look at what happens if these conditions are not met.</p>
+<p>If the CA renewal master configuration refers to a server that has been decommissioned, or is offline, then no server will actually renew the certificates. All the non-renewal master servers will happily reinstall the current certificate, until they expire, and things will break. The troublesome thing about certificates is even one expired certificate can cause renewal failures for other certificates. The problems cascade and eventually the whole deployment is busted.</p>
+<p>FreeIPA has a simple protection in place to ensure the renewal master configuration stays valid. Servers can be deleted from the topology via the <code>ipa server-del</code>, <code>ipa-replica-manage del</code>, <code>ipa-csreplica-manage del</code> or <code>ipa-server-install --uninstall</code> command. In these commands, if the server being deleted is the current CA renewal master, a different CA replica is elected as the new CA renewal master.</p>
+<p>These protections only go so far. If the renewal master is still part of the topology but is offline for an extended duration it may miss a renewal window, causing expired certificates. If there are replication problems between the renewal master and other CA replicas, renewal might succeed, but the other CA replicas might not be able to retrieve the updated certificates before they expire. All of these problems (and more) have been seen in the wild.</p>
+<p>I have seen cases where a CA renewal master was simply decommissioned without formally removing it from the FreeIPA topology. I have also seen cases where there was no CA renewal master configured (I do not know how this situation arose). Both of these scenarios have similar consequences to the “offline for extended duration” scenario.</p>
+<p>What would happen if you had two (or more) CA replicas with <code>(ipaConfigString=caRenewalMaster)</code>? I haven’t seen this one in the wild, but I would not be surprised if one day I did see it. In this case, multiple CA replicas will perform renewals. Will clobber each others’ certificates, and will result in some replicas having RA Agent or Dogtag subsystem certificates out of sync with the corresponding user entries in LDAP. This is a less catastrophic consequence than the aforementioned scenarios, but still serious. It will result in Dogtag or IPA RA authentication failures on some (or most) CA replicas.</p>
+<h2 id="why-and-how-to-change-the-ca-renewal-master">Why and how to change the CA renewal master</h2>
+<p>Why would you need to change the renewal master configuration? Assuming the existing configuration is valid, the main reason you would need to change it is in anticipation of the decommissioning of the existing CA renewal master. You may wish to appoint a particular server as the new renewal master. As discussed above, the commands that remove servers from the topology will do this automatically, but <em>which server</em> will be chosen is out of your hands. So you can get one step ahead and change the renewal master yourself.</p>
+<p>In my test setup there are two CA replicas:</p>
+<pre><code>[f28-1] ftweedal% ipa server-role-find --role &#39;CA server&#39;
+----------------------
+2 server roles matched
+----------------------
+  Server name: f28-0.ipa.local
+  Role name: CA server
+  Role status: enabled
+
+  Server name: f28-1.ipa.local
+  Role name: CA server
+  Role status: enabled
+----------------------------
+Number of entries returned 2
+----------------------------</code></pre>
+<p>The current renewal master is <code>f28-1.ipa.local</code>:</p>
+<pre><code>[f28-1] ftweedal% ipa config-show | grep &#39;CA renewal master&#39;
+  IPA CA renewal master: f28-1.ipa.local</code></pre>
+<p>The preferred way to change the renewal master configuration is via the <code>ipa config-mod</code> command:</p>
+<pre><code>[f28-1] ftweedal% ipa config-mod \
+      --ca-renewal-master-server f28-0.ipa.local \
+      | grep &#39;CA renewal master&#39;
+  IPA CA renewal master: f28-0.ipa.local</code></pre>
+<p>You can also use the <code>ipa-csreplica-manage</code> command. This requires the <code>Directory Manager</code> passphrase:</p>
+<pre><code>[f28-1] ftweedal% ipa-csreplica-manage \
+                    set-renewal-master f28-1.ipa.local
+Directory Manager password: XXXXXXXX
+
+f28-1.ipa.local is now the renewal master</code></pre>
+<p>If for whatever reason the current renewal master configuration is invalid, you can use these same commands to reset it. As a last resort, you can modify the LDAP objects directly to ensure that exactly one CA role object has <code>(ipaConfigString=caRenewalMaster)</code>. Note that both the attribute name (<code>ipaConfigString</code>) and value (<code>caRenewalMaster</code>) are case-<em>insensitive</em>.</p>
+<p>Finally, let’s observe what happens when we remove a server from the topology. I’ll remove <code>f28-1.ipa.local</code> (the current renewal master) using the <code>ipa-server-install --uninstall</code> command. After this operation, the CA renewal master configuration should point to <code>f28-0.ipa.local</code> (the only other CA replica in the topology).</p>
+<pre><code>[f28-1:~] ftweedal% sudo ipa-server-install --uninstall
+
+This is a NON REVERSIBLE operation and will delete all data
+and configuration!
+It is highly recommended to take a backup of existing data
+and configuration using ipa-backup utility before proceeding.
+
+Are you sure you want to continue with the uninstall procedure? [no]: yes
+Forcing removal of f28-1.ipa.local
+Failed to cleanup f28-1.ipa.local DNS entries: DNS is not configured
+You may need to manually remove them from the tree
+------------------------------------
+Deleted IPA server &quot;f28-1.ipa.local&quot;
+------------------------------------
+Shutting down all IPA services
+Unconfiguring CA
+... (snip!)
+Client uninstall complete.
+The ipa-client-install command was successful
+The ipa-server-install command was successful</code></pre>
+<p>Jumping across to <code>f28-0.ipa.local</code>, let’s check the CA renewal master configuration:</p>
+<pre><code>[f28-0] ftweedal% ipa config-show |grep &#39;CA renewal master&#39;
+  IPA CA renewal master: f28-0.ipa.local</code></pre>
+<p>As expected, the <code>f28-0.ipa.local</code> has become the renewal master.</p>
+<h2 id="explicit-ca-certificate-renewal">Explicit CA certificate renewal</h2>
+<p>There is one more scenario that can cause the CA renewal master to be changed. When the IPA CA certificate is explicitly renewed via the <code>ipa-cacert-manage renew</code> command the server on which the operation is performed becomes the CA renewal master. This is to cause the CA replica that <em>was</em> the renewal master to retrieve the new CA certificate from LDAP instead of renewing it.</p>
+<h2 id="conclusion">Conclusion</h2>
+<p>In this post I explained what the CA renewal master configuration is for and what it looks like under the hood. For FreeIPA/Dogtag system certificates, the CA renewal master configuration controls which CA replica actually performs renewal. The CA renewal master stores the renewed certificates in LDAP, and all other CA replicas look for them there. The <code>dogtag-ipa-ca-renew-agent</code> Certmonger renewal helper implements both of these behaviours, using the CA renewal master configuration to decide which behaviour to execute.</p>
+<p>There must be exactly one CA renewal master in a topology and it must be operational. I discussed the consequences of various configuration or operational problems. I also explained why you might want to change the CA renewal master, and how to do it.</p>
+<p>The CA renewal master is a critical configuration and incorrect renewal master configuration is often a factor in complex customer cases involving FreeIPA’s PKI. Commands that remove servers from the topology <em>should</em> elect a new CA renewal master when necessary. But misconfigurations do arise (if only we could know all the ways how!)</p>
+<p>The upcoming FreeIPA <a href="https://www.freeipa.org/page/V4/Healthcheck">Healthcheck</a> feature will, among other checks, confirm that the CA renewal master configuration is sane. It will not (in the beginning at least) be able to diagnose availability or connectivity issues. But it should catch some misconfigurations before they lead to catastrophic failure of the deployment.</p>]]></summary>
+</entry>
+<entry>
     <title>Should FreeIPA ship a subordinate CA profile?</title>
     <link href="https://frasertweedale.github.io/blog-redhat/posts/2018-10-19-ipa-sub-ca-profile.html" />
     <id>https://frasertweedale.github.io/blog-redhat/posts/2018-10-19-ipa-sub-ca-profile.html</id>
@@ -1611,229 +1716,6 @@ Certificate:
 <p>The default signature digest algorithm in Dogtag is currently SHA-256. This is appropriate for the present time. There are few reasons why you would need to use something else. Usually it is because of an arbitrary security decision imposed on FreeIPA administrators. There are currently no plans to make the default signature algorithm configurable. But you can control the signature algorithm for a self-signed FreeIPA CA certificate via the <code>ipa-server-install</code> <code>--ca-signing-algorithm</code> option.</p>
 <p>In the introduction I mentioned that the CA’s key type determines the public key signature algorithm. That was hand-waving; some key types support multiple signature algorithms. For example, RSA keys support two signature algorithms: <em>PKCS #1 v1.5</em> and <em>RSASSA-PSS</em>. The latter is seldom used in practice.</p>
 <p>The SHA-2 family of algorithms (SHA-256, SHA-384 and SHA-512) are the “most modern” digest algorithms standardised for use in X.509 (<a href="https://tools.ietf.org/html/rfc4055#section-2.1">RFC 4055</a>). The Russian <em>GOST R</em> digest and signature algorithms are also supported (<a href="https://tools.ietf.org/html/rfc4491">RFC 4491</a>) although support is not widespread. In 2015 NIST published SHA-3 (based on the <em>Keccak</em> sponge construction). The use of SHA-3 in X.509 has not yet been standardised. There was an <a href="https://tools.ietf.org/html/draft-turner-lamps-adding-sha3-to-pkix-01">Internet-Draft in 2017</a>, but it expired. The current cryptanalysis of SHA-2 suggests there is no urgency to move to SHA-3. But it took a long time to move from SHA-1 (which is now insecure for applications requiring collision resistance) to SHA-2. Therefore it would be good to begin efforts to standardise SHA-3 in X.509 and add library/client support as soon as possible.</p>]]></summary>
-</entry>
-<entry>
-    <title>Running Keycloak in OpenShift</title>
-    <link href="https://frasertweedale.github.io/blog-redhat/posts/2017-09-04-keycloak-openshift.html" />
-    <id>https://frasertweedale.github.io/blog-redhat/posts/2017-09-04-keycloak-openshift.html</id>
-    <published>2017-09-04T00:00:00Z</published>
-    <updated>2017-09-04T00:00:00Z</updated>
-    <summary type="html"><![CDATA[<h1 id="running-keycloak-in-openshift">Running Keycloak in OpenShift</h1>
-<p>At PyCon Australia in August I gave a presentation about federated and social identity. I demonstrated concepts using <a href="http://www.keycloak.org/">Keycloak</a>, an Open Source, feature rich <em>identity broker</em>. Keycloak is deployed in JBoss, so I wasn’t excited about the prospect of setting up Keycloak from scratch. Fortunately there is an <a href="https://hub.docker.com/r/jboss/keycloak/">official Docker image</a> for Keycloak, so with that as the starting point I took an opportunity to finally learn about OpenShift v3, too.</p>
-<p>This post is simply a recounting of how I ran Keycloak on OpenShift. Along the way we will look at how to get the containerised Keycloak to trust a private certificate authority (CA).</p>
-<p>One thing that is not discussed is how to get Keycloak to persist configuration and user records to a database. This was not required for my demo, but it will be important in a production deployment. Nevertheless I hope this article is a useful starting point for someone wishing to deploy Keycloak on OpenShift.</p>
-<h2 id="bringing-up-a-local-openshift-cluster">Bringing up a local OpenShift cluster</h2>
-<p>To deploy Keycloak on OpenShift, one must first have an OpenShift. <a href="https://www.openshift.com/">OpenShift Online</a> is Red Hat’s public PaaS offering. Although running the demo on a public PaaS was my first choice, OpenShift Online was experiencing issues at the time I was setting up my demo. So I sought a local solution. This approach would have the additional benefit of not being subject to the whims of conference networks (or, it was supposed to - but that is a story for another day!)</p>
-<h3 id="oc-cluster-up"><code>oc cluster up</code></h3>
-<p>Next I tried <code>oc cluster up</code>. <code>oc</code> is the official OpenShift client program. On Fedora, it is provided by the <code>origin-clients</code> package. <code>oc cluster up</code> command pulls required images and brings up an OpenShift cluster running on the system’s Docker infrastructure. The command takes no further arguments; it really is that simple! Or is it…?</p>
-<pre><code>% oc cluster up
--- Checking OpenShift client ... OK
--- Checking Docker client ... OK
--- Checking Docker version ... OK
--- Checking for existing OpenShift container ... OK
--- Checking for openshift/origin:v1.5.0 image ...
-   Pulling image openshift/origin:v1.5.0
-   Pulled 0/3 layers, 3% complete
-   ...
-   Pulled 3/3 layers, 100% complete
-   Extracting
-   Image pull complete
--- Checking Docker daemon configuration ... FAIL
-   Error: did not detect an --insecure-registry argument on the Docker daemon
-   Solution:
-
-     Ensure that the Docker daemon is running with the following argument:
-        --insecure-registry 172.30.0.0/16</code></pre>
-<p>OK, so it is not that simple. But it got a fair way along, and (kudos to the OpenShift developers) they have provided actionable feedback about how to resolve the issue. I added <code>--insecure-registry 172.30.0.0/16</code> to the <code>OPTIONS</code> variable in <code>/etc/sysconfig/docker</code>, then restarted Docker and tried again:</p>
-<pre><code>% oc cluster up
--- Checking OpenShift client ... OK
--- Checking Docker client ... OK
--- Checking Docker version ... OK
--- Checking for existing OpenShift container ... OK
--- Checking for openshift/origin:v1.5.0 image ... OK
--- Checking Docker daemon configuration ... OK
--- Checking for available ports ... OK
--- Checking type of volume mount ...
-   Using nsenter mounter for OpenShift volumes
--- Creating host directories ... OK
--- Finding server IP ...
-   Using 192.168.0.160 as the server IP
--- Starting OpenShift container ...
-   Creating initial OpenShift configuration
-   Starting OpenShift using container &#39;origin&#39;
-   Waiting for API server to start listening
--- Adding default OAuthClient redirect URIs ... OK
--- Installing registry ... OK
--- Installing router ... OK
--- Importing image streams ... OK
--- Importing templates ... OK
--- Login to server ... OK
--- Creating initial project &quot;myproject&quot; ... OK
--- Removing temporary directory ... OK
--- Checking container networking ... OK
--- Server Information ... 
-   OpenShift server started.
-   The server is accessible via web console at:
-       https://192.168.0.160:8443
-
-   You are logged in as:
-       User:     developer
-       Password: developer
-
-   To login as administrator:
-       oc login -u system:admin</code></pre>
-<p>Success! Unfortunately, on my machine with several virtual network, <code>oc cluster up</code> messed a bit too much with the routing tables, and when I deployed Keycloak on this cluster it was unable to communicate with my VMs. No doubt these issues could have been solved, but being short on time and with other approaches to try, I abandoned this approach.</p>
-<h3 id="minishift"><em>Minishift</em></h3>
-<p><a href="https://www.openshift.org/minishift/">Minishift</a> is a tool that launches a single-node OpenShift cluster in a VM. It supports a variety of operating systems and hypervisors. On GNU+Linux it supports KVM and VirtualBox.</p>
-<p>First install <a href="https://github.com/docker/machine/releases">docker-machine</a> and <a href="https://github.com/dhiltgen/docker-machine-kvm/releases">docker-machine-driver-kvm</a>. (follow the instructions at the preceding links). Unfortunately these are not yet packaged for Fedora.</p>
-<p>Download and extract the Minishift release for your OS from <a href="https://github.com/minishift/minishift/releases" class="uri">https://github.com/minishift/minishift/releases</a>.</p>
-<p>Run <code>minishift start</code>:</p>
-<pre><code>% ./minishift start
--- Installing default add-ons ... OK
-Starting local OpenShift cluster using &#39;kvm&#39; hypervisor...
-Downloading ISO &#39;https://github.com/minishift/minishift-b2d-iso/releases/download/v1.0.2/minishift-b2d.iso&#39;
-
-... wait a while ...</code></pre>
-<p>It downloads a <a href="http://boot2docker.io/"><em>boot2docker</em></a> VM image containing the openshift cluster, boots the VM, and the console output then resembles the output of <code>oc cluster up</code>. I deduce that <code>oc cluster up</code> is being executed on the VM.</p>
-<p>At this point, we’re ready to go. Before I continue, it is important to note that once you have access to an OpenShift cluster, the user experience of creating and managing applications is essentially the same. The commands in the following sections are relevant, regardless whether you are running your app on OpenShift online, on a cluster running on your workstation, or anything in between.</p>
-<h2 id="preparing-the-keycloak-image">Preparing the Keycloak image</h2>
-<p>The JBoss project provides official Docker images, including an <a href="https://hub.docker.com/r/jboss/keycloak/">official Docker image</a> for Keycloak. This image runs fine in plain Docker but the directory permissions are not correct for running in OpenShift.</p>
-<p>The <code>Dockerfile</code> for this image is found in the <a href="https://github.com/jboss-dockerfiles/keycloak"><em>jboss-dockerfiles/keycloak</em> repository</a> on GitHub. Although they do not publish an official image for it, this repository also contains a <code>Dockerfile</code> for Keycloak on OpenShift! I was able to build that image myself and upload it to <a href="https://hub.docker.com/r/frasertweedale/keycloak-openshift/">my <em>Docker Hub</em> account</a>. The steps were as follows.</p>
-<p>First clone the <code>jboss-dockerfiles</code> repo:</p>
-<pre><code>% git clone https://github.com/jboss-dockerfiles/keycloak docker-keycloak
-Cloning into &#39;docker-keycloak&#39;...
-remote: Counting objects: 1132, done.
-remote: Compressing objects: 100% (22/22), done.
-remote: Total 1132 (delta 14), reused 17 (delta 8), pack-reused 1102
-Receiving objects: 100% (1132/1132), 823.50 KiB | 158.00 KiB/s, done.
-Resolving deltas: 100% (551/551), done.
-Checking connectivity... done.</code></pre>
-<p>Next build the Docker image for OpenShift:</p>
-<pre><code>% docker build docker-keycloak/server-openshift
-Sending build context to Docker daemon 2.048 kB
-Step 1 : FROM jboss/keycloak:latest
- ---&gt; fb3fc6a18e16
-Step 2 : USER root
- ---&gt; Running in 21b672e19722
- ---&gt; eea91ef53702
-Removing intermediate container 21b672e19722
-Step 3 : RUN chown -R jboss:0 $JBOSS_HOME/standalone &amp;&amp;     chmod -R g+rw $JBOSS_HOME/standalone
- ---&gt; Running in 93b7d11f89af
- ---&gt; 910dc6c4a961
-Removing intermediate container 93b7d11f89af
-Step 4 : USER jboss
- ---&gt; Running in 8b8ccba42f2a
- ---&gt; c21eed109d12
-Removing intermediate container 8b8ccba42f2a
-Successfully built c21eed109d12</code></pre>
-<p>Finally, tag the image into the repo and push it:</p>
-<pre><code>% docker tag c21eed109d12 registry.hub.docker.com/frasertweedale/keycloak-openshift
-
-% docker login -u frasertweedale registry.hub.docker.com
-Password:
-Login Succeeded
-
-% docker push registry.hub.docker.com/frasertweedale/keycloak-openshift
-... wait for upload ...
-latest: digest: sha256:c82c3cc8e3edc05cfd1dae044c5687dc7ebd9a51aefb86a4bb1a3ebee16f341c size: 2623</code></pre>
-<h3 id="adding-ca-trust">Adding CA trust</h3>
-<p>For my demo, I used a local FreeIPA installation to issue TLS certificates for the the Keycloak app. I was also going to carry out a scenario where I configure Keycloak to use that FreeIPA installation’s LDAP server to authenticate users. I wanted to use TLS everywhere (eat your own dog food!) I needed the Keycloak application to trust the CA of one of my local FreeIPA installations. This made it necessary to build another Docker image based on the <code>keycloak-openshift</code> image, with the appropriate CA trust built in.</p>
-<p>The content of the <code>Dockerfile</code> is:</p>
-<pre><code>FROM frasertweedale/keycloak-openshift:latest
-USER root
-COPY ca.pem /etc/pki/ca-trust/source/anchors/ca.pem
-RUN update-ca-trust
-USER jboss</code></pre>
-<p>The file <code>ca.pem</code> contains the CA certificate to add. It must be in the same directory as the <code>Dockerfile</code>. The build copies the CA certificate to the appropriate location and executes <code>update-ca-trust</code> to ensure that applications - including Java programs - will trust the CA.</p>
-<p>Following the <code>docker build</code> I tagged the new image into my <code>hub.docker.com</code> repository (tag: <code>f25-ca</code>) and pushed it. And with that, we are ready to deploy Keycloak on OpenShift.</p>
-<h2 id="creating-the-keycloak-application-in-openshift">Creating the Keycloak application in OpenShift</h2>
-<p>At this point we have a local OpenShift cluster (via <em>Minishift</em>) and a Keycloak image (<code>frasertweedale/keycloak-openshift:f25-ca</code>) to deploy. When deploying the app we need to set some environment variables:</p>
-<dl>
-<dt><code>KEYCLOAK_USER=admin</code></dt>
-<dd><p>A username for the Keycloak admin account to be created</p>
-</dd>
-<dt><code>KEYCLOAK_PASSWORD=secret123</code></dt>
-<dd><p>Passphrase for the admin user</p>
-</dd>
-<dt><code>PROXY_ADDRESS_FORWARDING=true</code></dt>
-<dd><p>Because the application will be running behind OpenShift’s HTTP proxy, we need to tell Keycloak to use the “external” hostname when creating hyperlinks, rather than Keycloak’s own view.</p>
-</dd>
-</dl>
-<p>Use the <code>oc new-app</code> command to create and deploy the application:</p>
-<pre><code>% oc new-app --docker-image frasertweedale/keycloak-openshift:f25-ca \
-    --env KEYCLOAK_USER=admin \
-    --env KEYCLOAK_PASSWORD=secret123 \
-    --env PROXY_ADDRESS_FORWARDING=true
---&gt; Found Docker image 45e296f (4 weeks old) from Docker Hub for &quot;frasertweedale/keycloak-openshift:f25-ca&quot;
-
-    * An image stream will be created as &quot;keycloak-openshift:f25-ca&quot; that will track this image
-    * This image will be deployed in deployment config &quot;keycloak-openshift&quot;
-    * Port 8080/tcp will be load balanced by service &quot;keycloak-openshift&quot;
-      * Other containers can access this service through the hostname &quot;keycloak-openshift&quot;
-
---&gt; Creating resources ...
-    imagestream &quot;keycloak-openshift&quot; created
-    deploymentconfig &quot;keycloak-openshift&quot; created
-    service &quot;keycloak-openshift&quot; created
---&gt; Success
-    Run &#39;oc status&#39; to view your app.</code></pre>
-<p>The app gets created immediately but it is not ready yet. The download of the image and deployment of the container (or <em>pod</em> in OpenShift / Kubernetes terminology) will proceed in the background.</p>
-<p>After a little while (depending on how long it takes to download the ~300MB Docker image) <code>oc status</code> will show that the deployment is up and running:</p>
-<pre><code>% oc status
-In project My Project (myproject) on server https://192.168.42.214:8443
-
-svc/keycloak-openshift - 172.30.198.217:8080
-  dc/keycloak-openshift deploys istag/keycloak-openshift:f25-ca 
-    deployment #2 deployed 3 minutes ago - 1 pod
-
-View details with &#39;oc describe &lt;resource&gt;/&lt;name&gt;&#39; or list everything with &#39;oc get all&#39;.</code></pre>
-<p>(In my case, the first deployment failed because the 10-minute timeout elapsed before the image download completed; hence <code>deployment #2</code> in the output above.)</p>
-<h3 id="creating-a-secure-route">Creating a secure route</h3>
-<p>Now the Keycloak application is running, but we cannot reach it from outside the Keycloak project itself. In order to be able to reach it there must be a <em>route</em>. The <code>oc create route</code> command lets us create a route that uses TLS (so clients can authenticate the service). We will use the domain name <code>keycloak.ipa.local</code>. The public/private keypair and certificate have already been generated (how to do that is outside the scope of this article). The certificate was signed by the CA we added to the image earlier. The service name - visible in the <code>oc status</code> output above - is <code>svc/keycloak-openshift</code>.</p>
-<pre><code>% oc create route edge \
-  --service svc/keycloak-openshift \
-  --hostname keycloak.ipa.local \
-  --key /home/ftweedal/scratch/keycloak.ipa.local.key \
-  --cert /home/ftweedal/scratch/keycloak.ipa.local.pem
-route &quot;keycloak-openshift&quot; created</code></pre>
-<p>Assuming there is a DNS entry pointing <code>keycloak.ipa.local</code> to the OpenShift cluster, and that the system trusts the CA that issued the certificate, we can now visit our Keycloak application:</p>
-<pre><code>% curl https://keycloak.ipa.local/
-&lt;!--
-  ~ Copyright 2016 Red Hat, Inc. and/or its affiliates
-  ~ and other contributors as indicated by the @author tags.
-  ~
-  ~ Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);
-  ~ you may not use this file except in compliance with the License.
-  ~ You may obtain a copy of the License at
-  ~
-  ~ http://www.apache.org/licenses/LICENSE-2.0
-  ~
-  ~ Unless required by applicable law or agreed to in writing, software
-  ~ distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
-  ~ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-  ~ See the License for the specific language governing permissions and
-  ~ limitations under the License.
-  --&gt;
-&lt;!DOCTYPE html PUBLIC &quot;-//W3C//DTD HTML 4.01 Transitional//EN&quot;&gt;
-
-&lt;html&gt;
-&lt;head&gt;
-    &lt;meta http-equiv=&quot;refresh&quot; content=&quot;0; url=/auth/&quot; /&gt;
-    &lt;meta name=&quot;robots&quot; content=&quot;noindex, nofollow&quot;&gt;
-    &lt;script type=&quot;text/javascript&quot;&gt;
-        window.location.href = &quot;/auth/&quot;
-    &lt;/script&gt;
-&lt;/head&gt;
-&lt;body&gt;
-    If you are not redirected automatically, follow this &lt;a href=&#39;/auth&#39;&gt;link&lt;/a&gt;.
-&lt;/body&gt;
-&lt;/html&gt;</code></pre>
-<p>If you visit in a browser, you will be able to log in using the admin account credentials specified in the <code>KEYCLOAK_USER</code> and <code>KEYCLOAK_PASSWORD</code> environment variables specified when the app was created. And from there you can create and manage authentication realms, but that is beyond the scope of this article.</p>
-<h2 id="conclusion">Conclusion</h2>
-<p>In this post I discussed how to run Keycloak in OpenShift, from bringing up an OpenShift cluster to building the Docker image and creating the application and route in OpenShift. I recounted that I found <em>OpenShift Online</em> unstable at the time I tried it, and that although <code>oc cluster up</code> did successfully bring up a cluster I had trouble getting the Docker and VM networks to talk to each other. Eventually I tried <em>Minishift</em> which worked well.</p>
-<p>We saw that although there is no official Docker image for Keycloak in OpenShift, there is a <code>Dockerfile</code> that builds a working image. It is easy to further extend the image to add trust for private CAs.</p>
-<p>Creating the Keycloak app in OpenShift, and adding the routes, is straightforward. There are a few important environment variables that must be set. The <code>oc create route</code> command was used to create a secure route to access the application from the outside.</p>
-<p>We did not discuss how to set up Keycloak with a database for persisting configuration and user records. The deployment we created is ephemeral. This satisfied my needs for demonstration purposes but production deployments will require persistence. There are official JBoss Docker images that extend the base Keycloak image and add <a href="https://hub.docker.com/r/jboss/keycloak-postgres/">support for PostgreSQL</a>, <a href="https://hub.docker.com/r/jboss/keycloak-mysql/">MySQL</a> and <a href="https://hub.docker.com/r/jboss/keycloak-mongo/">MongoDB</a>. I have not tried these but I’d suggest starting with one of these images if you are looking to do a production deployment. Keep in mind that these images may not include the changes that are required for deploying in OpenShift.</p>]]></summary>
 </entry>
 
 </feed>
