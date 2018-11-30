@@ -1,0 +1,135 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+    <head>
+        <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+        <title>Fraser's IdM Blog - Diagnosing Dogtag cloning failures</title>
+        <link rel="stylesheet" type="text/css" href="../css/default.css" />
+    </head>
+    <body>
+        <div id="header">
+            <div id="logo">
+                <a href="../">Fraser's IdM Blog</a>
+            </div>
+            <div id="navigation">
+                <a href="../">Home</a>
+                <a href="../archive.html">Archive</a>
+            </div>
+        </div>
+
+        <div id="content">
+            <div id="postContent">
+    <h1 id="diagnosing-dogtag-cloning-failures">Diagnosing Dogtag cloning failures</h1>
+<p>Sometimes, creating a Dogtag clone or a FreeIPA CA replica fails. I worked with Dogtag and FreeIPA for nearly five years. Over these years I’ve analysed a lot of these clone/replica installation failures and internalised a lot of knowledge about how cloning works, and how it can break. Often when I read a problem report and inspect the logs I quickly get a “gut feeling” about the cause. The purpose of this post is to <em>externalise</em> my internal intuition so that others can benefit. Whether you are an engineer or not, this post explains what you can do to get to the bottom of Dogtag cloning failures faster.</p>
+<h2 id="how-dogtag-clones-are-created">How Dogtag clones are created</h2>
+<p>Some notes about terminology: in FreeIPA we talk about <em>replicas</em>, but in Dogtag we say <em>clones</em>. These terms mean the same thing. When you create a FreeIPA CA replica, FreeIPA creates a clone of the Dogtag CA instance behind the scenes. I will use the term <em>master</em> to refer to the server from which the clone/replica is being created.</p>
+<p>The <code>pkispawn(8)</code> program, depending on its configuration, can be used to create a new Dogtag subsystem or a clone. <code>pkispawn</code>, a Python program, manages the whole clone creation process, with the possible exception of setting up LDAP database and replication. But some stages of the configuration are handled by the Dogtag server itself (thus implemented in Java). Furthermore, the Dogtag server on the <em>master</em> must service some requests to allow the new clone to integrate into the topology.</p>
+<p>The high level procedure of CA cloning is roughly:</p>
+<ol>
+<li>(<code>ipa-replica-install</code>) Create temporary Dogtag admin user account and add to relevant groups</li>
+<li>(<code>ipa-replica-install</code> or <code>pkispawn</code>) Establish LDAP replication of the Dogtag database</li>
+<li>(<code>pkispawn</code>) Extract private keys and system certifiates into Dogtag’s NSSDB</li>
+<li>(<code>pkispawn</code>) Lay out the Dogtag instance on the filesystem</li>
+<li>(<code>pkispawn</code>) Start the <code>pki-tomcatd</code> instance</li>
+<li>(<code>pkispawn</code>) Send a <em>configuration request</em> to the new Dogtag instance
+<ol>
+<li>(<code>pki-tomcatd</code> on <em>clone</em>) Send <em>security domain</em> login request to master (using temporary admin user credentials)</li>
+<li>(<code>pki-tomcatd</code> on <em>master</em>) Authenticate user, return cookie.</li>
+<li>(<code>pki-tomcatd</code> on <em>clone</em>) Send number range requests to master</li>
+<li>(<code>pki-tomcatd</code> on <em>master</em>) Service number range requests for clone</li>
+</ol></li>
+<li>(<code>ipa-replica-install</code>) remove temporary admin user account</li>
+</ol>
+<p>There are several places a problem could occur: in <code>pkispawn</code>, <code>pki-tomcatd</code> on the clone, or <code>pki-tomcatd</code> on the master. Therefore, depending on what failed, the best data about the failure could be in <code>pkispawn</code> output/logs, the Dogtag <code>debug</code> log on the replica, or the master, or even the system journal on either of the hosts. <strong>Recommendation:</strong> when analysing Dogtag cloning or FreeIPA CA replica installation failures, inspect <em>all of these logs</em>. It is often not obvious where the error is occurring, or what caused it. Having all these log files helps a lot.</p>
+<h2 id="case-studies">Case studies</h2>
+<h3 id="failure-to-set-up-replication">Failure to set up replication</h3>
+<p><strong>Description</strong>: <code>ipa-replica-install</code> or <code>pkispawn</code> fail with errors related to replication (failure to establish). I don’t know how common this is in production environments. I’ve encountered it in my development environments. I <em>think</em> it is usually caused by stale replication agreements or something of that nature.</p>
+<p><strong>Workaround</strong>: A “folk remedy”: uninstall and clean up the instance, then try again. Most often the error does not recur.</p>
+<h3 id="replication-races">Replication races</h3>
+<p><strong>Description:</strong> <code>pkispawn</code> fails; <em>replica</em> <code>debug</code> log indicates security domain login failure; <em>master</em> <code>debug</code> log indicates user unknown; <code>debug</code> log indicates token/session unkonwn</p>
+<p>During cloning, the <em>clone</em> adds LDAP objects in its own database. It then performs requests against the <em>master</em>, assuming that those objects (or effects of other LDAP operations) have been replicated to the master. Due to replication lag, the data have not been replicated and as a consequence, a request fails.</p>
+<p>In the past couple of years several replication races were discovered and fixed (or mitigated) in Dogtag or FreeIPA:</p>
+<h4 id="updatenumberrange-failure-due-to-missing-session-object"><code>updateNumberRange</code> failure due to missing session object</h4>
+<p><strong>Ticket</strong>: <a href="https://pagure.io/dogtagpki/issue/2557" class="uri">https://pagure.io/dogtagpki/issue/2557</a></p>
+<p><strong>Description</strong>: After security domain login (locally on the <em>replica</em>) the session object gets replicated to the <em>master</em>. The cookie/token conveyed in the <code>updateNumberRange</code> range referred to a session that the <em>master</em> did not yet know about.</p>
+<p><strong>Resolution</strong>: the <em>replica</em> sleeps (duration configuration; default 5s) after security domain login, giving time for replication. This is not guaranteed the avoid the problem: the complete solution (yet to be implemented) will be to <a href="https://pagure.io/dogtagpki/issue/2831">use a signed/MACed token</a>.</p>
+<h4 id="security-domain-login-failure-due-to-missing-user-or-group-membership">Security domain login failure due to missing user or group membership</h4>
+<p><strong>Ticket</strong>: <a href="https://pagure.io/freeipa/issue/7593" class="uri">https://pagure.io/freeipa/issue/7593</a></p>
+<p><strong>Description</strong>: This bug was actually in FreeIPA, but manifested in <code>pki-tomcatd</code> on <em>master</em> as a failure to log into the security domain. This could occur for one of two reasons: either the user was unknown, or the user was not a member of a required group. FreeIPA performs the relevant LDAP operations on the <em>replica</em>, but they have not replicated to <em>master</em> yet. The <code>pkispawn</code>/<code>ipa-replica-install</code> error message looks something like:</p>
+<pre><code>com.netscape.certsrv.base.PKIException: Failed to obtain
+installation token from security domain:
+com.netscape.certsrv.base.UnauthorizedException: User
+admin-replica1.ipa.example is not a member of Enterprise CA
+Administrators group.</code></pre>
+<p><strong>Workaround</strong>: no supported workaround. (You could hack in a <code>sleep</code> though).</p>
+<p><strong>Resolution</strong>: The user creation routine was already waiting for replication but the wait routine had a timeout bug causing false positives, <em>and</em> the group memberships were not being waited on. The timeout bug was fixed. The wait routine was enhanced to support waiting for particular attribute values; this feature was used to ensure group memberships have been replicated before continuing.</p>
+<h3 id="other-updatenumberrange-failures">Other <code>updateNumberRange</code> failures</h3>
+<p><strong>Ticket</strong>: <a href="https://pagure.io/dogtagpki/issue/3055" class="uri">https://pagure.io/dogtagpki/issue/3055</a></p>
+<p><strong>Description</strong>: When creating a clone from a master that was itself a clone, an <code>updateNumberRange</code> request fails at <em>master</em> with status 500. A <code>NullPointerException</code> backtrace appears in the journal for the <code>pki-tomcatd@pki-tomcat</code> unit (on <em>master</em>). The problem arises because the initial number range assignment for the second clone is equal to the range size of the first clone (range transfer size is a fixed number). This scenario was not handled correctly, leading to the exception.</p>
+<p><strong>Workaround</strong>: Ensure that each clone services one of each kind of number (e.g. one full certificate request and issuance operation). This ensures that the clone’s range is smaller than the range transfer size, so that a subsequent <code>updateNumberRange</code> request will be satisfied from the master’s “standby” range.</p>
+<p><strong>Resolution</strong>: detect range depletion due to <code>updateNumberRange</code> requests and eagerly switch to the standby range. A better fix (yet to be implemented) will be to <a href="https://pagure.io/dogtagpki/issue/3060">allocate each clone a full-sized range</a> from the unallocated numbers.</p>
+<h2 id="discussion">Discussion</h2>
+<p>Dogtag subsystem cloning is a complex procedure. Even more so in the FreeIPA context. There are lots of places failure can occur.</p>
+<p>The case studies above are a few examples of difficult-to-debug failures where the cause was non-obvious. Often the error occurs on a different host (the <em>master</em>) from where the error was observed. And the important data about the true cause may reside in <code>ipareplica-install.log</code>, <code>pkispawn</code> log output, the Dogtag CA <code>debug</code> log (on <em>replica</em> or <em>master</em>) or the system journal (again on <em>replica</em> or <em>master</em>). Sometimes the 389DS logs can be helpful too.</p>
+<p>Normally the fastest way to understand a problem is to gather all these sources of data and look at them all around the time the error occurred. When you see one failure, don’t assume that that is <em>the</em> failure. Cross-reference the log files. If you can’t see anything about an error, you probably need to look in a different file…</p>
+<p>…or a different part of the file! It is important to note that <strong>Dogtag time stamps are in local time</strong>, whereas most other logs are UTC. Different machines in the topology can be in different timezones, so you could be dealing with up to three timezones across the log files. Check carefully what timezone the timestamps are in when you are “lining up” the logfiles. Many times I have seen (and often erred myself) an incorrect conclusion that “there is no error in the debug log” because of this trap.</p>
+<p>In my experience, the most common causes of Dogtag cloning failure have involved Security Domain authentication issues and number range management. Over time I and others have fixed several bugs in these areas, but I am not confident that all potential problems have been fixed. The good news is that checking <em>all</em> the relevant logs usually leads to a good theory about the root cause.</p>
+<p>What if you are not an engineer or not able to make sense of the Dogtag codebase? (This is fine by the way—Dogtag is a huge, gnarly beast!) The best thing you can do to help us analyse and resolve the issue is to collect <em>all</em> the logs (from the master and replica) and prune them to the relevant timeframe (minding the timezones) before passing them on for an engineer to analyse.</p>
+<p>In this post I only looked at Dogtag cloning failures. I have lots of other Dogtag “gut knowledge” that I plan to get out in upcoming posts.</p>
+</div>
+<div id="postFooter">
+    <div id="recent">
+Recent posts:
+<ul>
+    
+        <li>
+            <a href="../posts/2018-11-30-dogtag-clone-failure-debugging.html">Diagnosing Dogtag cloning failures</a>
+        </li>
+    
+        <li>
+            <a href="../posts/2018-11-20-ca-renewal-master.html">FreeIPA CA renewal master explained</a>
+        </li>
+    
+        <li>
+            <a href="../posts/2018-10-19-ipa-sub-ca-profile.html">Should FreeIPA ship a subordinate CA profile?</a>
+        </li>
+    
+        <li>
+            <a href="../posts/2018-08-21-ipa-subordinate-ca.html">Issuing subordinate CA certificates from FreeIPA</a>
+        </li>
+    
+        <li>
+            <a href="../posts/2018-05-31-replacing-lost-ca.html">Replacing a lost or broken CA in FreeIPA</a>
+        </li>
+    
+</ul>
+
+<div id="recentLinks">
+    <a type="application/atom+xml" href="../atom.xml">Atom feed</a>
+     <!-- em space -->
+    <a href="../archive.html">All posts…</a>
+</div>
+
+</div>
+
+    <div id="license">
+    <a rel="license" href="https://creativecommons.org/licenses/by/4.0/">
+        <img alt="Creative Commons License" style="border-width:0" src="https://licensebuttons.net/l/by/4.0/88x31.png">
+    </a>
+    <br />
+    Except where otherwise noted, this work is licensed under a
+    <a rel="license" href="https://creativecommons.org/licenses/by/4.0/">
+        Creative Commons Attribution 4.0 International License
+    </a>.
+</div>
+
+</div>
+
+        </div>
+        <div class="clear"></div>
+        <div id="footer">
+            Generated by
+            <a href="https://jaspervdj.be/hakyll">Hakyll</a>
+        </div>
+    </body>
+</html>

@@ -106,22 +106,25 @@ Unconfiguring CA
 Client uninstall complete.
 The ipa-client-install command was successful
 The ipa-server-install command was successful</code></pre>
-<p>Jumping across to <code>f28-0.ipa.local</code>, let’s check the CA renewal master configuration:</p>
+<p>Jumping across to <code>f28-0.ipa.local</code>, I confirm that <code>f28-0.ipa.local</code> has become the renewal master:</p>
 <pre><code>[f28-0] ftweedal% ipa config-show |grep 'CA renewal master'
   IPA CA renewal master: f28-0.ipa.local</code></pre>
-<p>As expected, the <code>f28-0.ipa.local</code> has become the renewal master.</p>
 <h2 id="explicit-ca-certificate-renewal">Explicit CA certificate renewal</h2>
 <p>There is one more scenario that can cause the CA renewal master to be changed. When the IPA CA certificate is explicitly renewed via the <code>ipa-cacert-manage renew</code> command the server on which the operation is performed becomes the CA renewal master. This is to cause the CA replica that <em>was</em> the renewal master to retrieve the new CA certificate from LDAP instead of renewing it.</p>
 <h2 id="conclusion">Conclusion</h2>
 <p>In this post I explained what the CA renewal master configuration is for and what it looks like under the hood. For FreeIPA/Dogtag system certificates, the CA renewal master configuration controls which CA replica actually performs renewal. The CA renewal master stores the renewed certificates in LDAP, and all other CA replicas look for them there. The <code>dogtag-ipa-ca-renew-agent</code> Certmonger renewal helper implements both of these behaviours, using the CA renewal master configuration to decide which behaviour to execute.</p>
 <p>There must be exactly one CA renewal master in a topology and it must be operational. I discussed the consequences of various configuration or operational problems. I also explained why you might want to change the CA renewal master, and how to do it.</p>
 <p>The CA renewal master is a critical configuration and incorrect renewal master configuration is often a factor in complex customer cases involving FreeIPA’s PKI. Commands that remove servers from the topology <em>should</em> elect a new CA renewal master when necessary. But misconfigurations do arise (if only we could know all the ways how!)</p>
-<p>The upcoming FreeIPA <a href="https://www.freeipa.org/page/V4/Healthcheck">Healthcheck</a> feature will, among other checks, confirm that the CA renewal master configuration is sane. It will not (in the beginning at least) be able to diagnose availability or connectivity issues. But it should catch some misconfigurations before they lead to catastrophic failure of the deployment.</p>
+<p>The upcoming FreeIPA <a href="https://www.freeipa.org/page/V4/Healthcheck">Healthcheck</a> feature will, among other checks, confirm that the CA renewal master configuration is sane. It will not (in the beginning at least) be able to diagnose availability or connectivity issues. But it should be able to catch some misconfigurations before they lead to catastrophic failure of the deployment.</p>
 </div>
 <div id="postFooter">
     <div id="recent">
 Recent posts:
 <ul>
+    
+        <li>
+            <a href="../posts/2018-11-30-dogtag-clone-failure-debugging.html">Diagnosing Dogtag cloning failures</a>
+        </li>
     
         <li>
             <a href="../posts/2018-11-20-ca-renewal-master.html">FreeIPA CA renewal master explained</a>
@@ -137,10 +140,6 @@ Recent posts:
     
         <li>
             <a href="../posts/2018-05-31-replacing-lost-ca.html">Replacing a lost or broken CA in FreeIPA</a>
-        </li>
-    
-        <li>
-            <a href="../posts/2018-05-11-renewal-and-revocation.html">Certificate renewal and revocation in FreeIPA</a>
         </li>
     
 </ul>

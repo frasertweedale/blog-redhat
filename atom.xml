@@ -8,8 +8,72 @@
         <name>Fraser Tweedale</name>
         <email>frase@frase.id.au</email>
     </author>
-    <updated>2018-11-20T00:00:00Z</updated>
+    <updated>2018-11-30T00:00:00Z</updated>
     <entry>
+    <title>Diagnosing Dogtag cloning failures</title>
+    <link href="https://frasertweedale.github.io/blog-redhat/posts/2018-11-30-dogtag-clone-failure-debugging.html" />
+    <id>https://frasertweedale.github.io/blog-redhat/posts/2018-11-30-dogtag-clone-failure-debugging.html</id>
+    <published>2018-11-30T00:00:00Z</published>
+    <updated>2018-11-30T00:00:00Z</updated>
+    <summary type="html"><![CDATA[<h1 id="diagnosing-dogtag-cloning-failures">Diagnosing Dogtag cloning failures</h1>
+<p>Sometimes, creating a Dogtag clone or a FreeIPA CA replica fails. I worked with Dogtag and FreeIPA for nearly five years. Over these years I’ve analysed a lot of these clone/replica installation failures and internalised a lot of knowledge about how cloning works, and how it can break. Often when I read a problem report and inspect the logs I quickly get a “gut feeling” about the cause. The purpose of this post is to <em>externalise</em> my internal intuition so that others can benefit. Whether you are an engineer or not, this post explains what you can do to get to the bottom of Dogtag cloning failures faster.</p>
+<h2 id="how-dogtag-clones-are-created">How Dogtag clones are created</h2>
+<p>Some notes about terminology: in FreeIPA we talk about <em>replicas</em>, but in Dogtag we say <em>clones</em>. These terms mean the same thing. When you create a FreeIPA CA replica, FreeIPA creates a clone of the Dogtag CA instance behind the scenes. I will use the term <em>master</em> to refer to the server from which the clone/replica is being created.</p>
+<p>The <code>pkispawn(8)</code> program, depending on its configuration, can be used to create a new Dogtag subsystem or a clone. <code>pkispawn</code>, a Python program, manages the whole clone creation process, with the possible exception of setting up LDAP database and replication. But some stages of the configuration are handled by the Dogtag server itself (thus implemented in Java). Furthermore, the Dogtag server on the <em>master</em> must service some requests to allow the new clone to integrate into the topology.</p>
+<p>The high level procedure of CA cloning is roughly:</p>
+<ol>
+<li>(<code>ipa-replica-install</code>) Create temporary Dogtag admin user account and add to relevant groups</li>
+<li>(<code>ipa-replica-install</code> or <code>pkispawn</code>) Establish LDAP replication of the Dogtag database</li>
+<li>(<code>pkispawn</code>) Extract private keys and system certifiates into Dogtag’s NSSDB</li>
+<li>(<code>pkispawn</code>) Lay out the Dogtag instance on the filesystem</li>
+<li>(<code>pkispawn</code>) Start the <code>pki-tomcatd</code> instance</li>
+<li>(<code>pkispawn</code>) Send a <em>configuration request</em> to the new Dogtag instance
+<ol>
+<li>(<code>pki-tomcatd</code> on <em>clone</em>) Send <em>security domain</em> login request to master (using temporary admin user credentials)</li>
+<li>(<code>pki-tomcatd</code> on <em>master</em>) Authenticate user, return cookie.</li>
+<li>(<code>pki-tomcatd</code> on <em>clone</em>) Send number range requests to master</li>
+<li>(<code>pki-tomcatd</code> on <em>master</em>) Service number range requests for clone</li>
+</ol></li>
+<li>(<code>ipa-replica-install</code>) remove temporary admin user account</li>
+</ol>
+<p>There are several places a problem could occur: in <code>pkispawn</code>, <code>pki-tomcatd</code> on the clone, or <code>pki-tomcatd</code> on the master. Therefore, depending on what failed, the best data about the failure could be in <code>pkispawn</code> output/logs, the Dogtag <code>debug</code> log on the replica, or the master, or even the system journal on either of the hosts. <strong>Recommendation:</strong> when analysing Dogtag cloning or FreeIPA CA replica installation failures, inspect <em>all of these logs</em>. It is often not obvious where the error is occurring, or what caused it. Having all these log files helps a lot.</p>
+<h2 id="case-studies">Case studies</h2>
+<h3 id="failure-to-set-up-replication">Failure to set up replication</h3>
+<p><strong>Description</strong>: <code>ipa-replica-install</code> or <code>pkispawn</code> fail with errors related to replication (failure to establish). I don’t know how common this is in production environments. I’ve encountered it in my development environments. I <em>think</em> it is usually caused by stale replication agreements or something of that nature.</p>
+<p><strong>Workaround</strong>: A “folk remedy”: uninstall and clean up the instance, then try again. Most often the error does not recur.</p>
+<h3 id="replication-races">Replication races</h3>
+<p><strong>Description:</strong> <code>pkispawn</code> fails; <em>replica</em> <code>debug</code> log indicates security domain login failure; <em>master</em> <code>debug</code> log indicates user unknown; <code>debug</code> log indicates token/session unkonwn</p>
+<p>During cloning, the <em>clone</em> adds LDAP objects in its own database. It then performs requests against the <em>master</em>, assuming that those objects (or effects of other LDAP operations) have been replicated to the master. Due to replication lag, the data have not been replicated and as a consequence, a request fails.</p>
+<p>In the past couple of years several replication races were discovered and fixed (or mitigated) in Dogtag or FreeIPA:</p>
+<h4 id="updatenumberrange-failure-due-to-missing-session-object"><code>updateNumberRange</code> failure due to missing session object</h4>
+<p><strong>Ticket</strong>: <a href="https://pagure.io/dogtagpki/issue/2557" class="uri">https://pagure.io/dogtagpki/issue/2557</a></p>
+<p><strong>Description</strong>: After security domain login (locally on the <em>replica</em>) the session object gets replicated to the <em>master</em>. The cookie/token conveyed in the <code>updateNumberRange</code> range referred to a session that the <em>master</em> did not yet know about.</p>
+<p><strong>Resolution</strong>: the <em>replica</em> sleeps (duration configuration; default 5s) after security domain login, giving time for replication. This is not guaranteed the avoid the problem: the complete solution (yet to be implemented) will be to <a href="https://pagure.io/dogtagpki/issue/2831">use a signed/MACed token</a>.</p>
+<h4 id="security-domain-login-failure-due-to-missing-user-or-group-membership">Security domain login failure due to missing user or group membership</h4>
+<p><strong>Ticket</strong>: <a href="https://pagure.io/freeipa/issue/7593" class="uri">https://pagure.io/freeipa/issue/7593</a></p>
+<p><strong>Description</strong>: This bug was actually in FreeIPA, but manifested in <code>pki-tomcatd</code> on <em>master</em> as a failure to log into the security domain. This could occur for one of two reasons: either the user was unknown, or the user was not a member of a required group. FreeIPA performs the relevant LDAP operations on the <em>replica</em>, but they have not replicated to <em>master</em> yet. The <code>pkispawn</code>/<code>ipa-replica-install</code> error message looks something like:</p>
+<pre><code>com.netscape.certsrv.base.PKIException: Failed to obtain
+installation token from security domain:
+com.netscape.certsrv.base.UnauthorizedException: User
+admin-replica1.ipa.example is not a member of Enterprise CA
+Administrators group.</code></pre>
+<p><strong>Workaround</strong>: no supported workaround. (You could hack in a <code>sleep</code> though).</p>
+<p><strong>Resolution</strong>: The user creation routine was already waiting for replication but the wait routine had a timeout bug causing false positives, <em>and</em> the group memberships were not being waited on. The timeout bug was fixed. The wait routine was enhanced to support waiting for particular attribute values; this feature was used to ensure group memberships have been replicated before continuing.</p>
+<h3 id="other-updatenumberrange-failures">Other <code>updateNumberRange</code> failures</h3>
+<p><strong>Ticket</strong>: <a href="https://pagure.io/dogtagpki/issue/3055" class="uri">https://pagure.io/dogtagpki/issue/3055</a></p>
+<p><strong>Description</strong>: When creating a clone from a master that was itself a clone, an <code>updateNumberRange</code> request fails at <em>master</em> with status 500. A <code>NullPointerException</code> backtrace appears in the journal for the <code>pki-tomcatd@pki-tomcat</code> unit (on <em>master</em>). The problem arises because the initial number range assignment for the second clone is equal to the range size of the first clone (range transfer size is a fixed number). This scenario was not handled correctly, leading to the exception.</p>
+<p><strong>Workaround</strong>: Ensure that each clone services one of each kind of number (e.g. one full certificate request and issuance operation). This ensures that the clone’s range is smaller than the range transfer size, so that a subsequent <code>updateNumberRange</code> request will be satisfied from the master’s “standby” range.</p>
+<p><strong>Resolution</strong>: detect range depletion due to <code>updateNumberRange</code> requests and eagerly switch to the standby range. A better fix (yet to be implemented) will be to <a href="https://pagure.io/dogtagpki/issue/3060">allocate each clone a full-sized range</a> from the unallocated numbers.</p>
+<h2 id="discussion">Discussion</h2>
+<p>Dogtag subsystem cloning is a complex procedure. Even more so in the FreeIPA context. There are lots of places failure can occur.</p>
+<p>The case studies above are a few examples of difficult-to-debug failures where the cause was non-obvious. Often the error occurs on a different host (the <em>master</em>) from where the error was observed. And the important data about the true cause may reside in <code>ipareplica-install.log</code>, <code>pkispawn</code> log output, the Dogtag CA <code>debug</code> log (on <em>replica</em> or <em>master</em>) or the system journal (again on <em>replica</em> or <em>master</em>). Sometimes the 389DS logs can be helpful too.</p>
+<p>Normally the fastest way to understand a problem is to gather all these sources of data and look at them all around the time the error occurred. When you see one failure, don’t assume that that is <em>the</em> failure. Cross-reference the log files. If you can’t see anything about an error, you probably need to look in a different file…</p>
+<p>…or a different part of the file! It is important to note that <strong>Dogtag time stamps are in local time</strong>, whereas most other logs are UTC. Different machines in the topology can be in different timezones, so you could be dealing with up to three timezones across the log files. Check carefully what timezone the timestamps are in when you are “lining up” the logfiles. Many times I have seen (and often erred myself) an incorrect conclusion that “there is no error in the debug log” because of this trap.</p>
+<p>In my experience, the most common causes of Dogtag cloning failure have involved Security Domain authentication issues and number range management. Over time I and others have fixed several bugs in these areas, but I am not confident that all potential problems have been fixed. The good news is that checking <em>all</em> the relevant logs usually leads to a good theory about the root cause.</p>
+<p>What if you are not an engineer or not able to make sense of the Dogtag codebase? (This is fine by the way—Dogtag is a huge, gnarly beast!) The best thing you can do to help us analyse and resolve the issue is to collect <em>all</em> the logs (from the master and replica) and prune them to the relevant timeframe (minding the timezones) before passing them on for an engineer to analyse.</p>
+<p>In this post I only looked at Dogtag cloning failures. I have lots of other Dogtag “gut knowledge” that I plan to get out in upcoming posts.</p>]]></summary>
+</entry>
+<entry>
     <title>FreeIPA CA renewal master explained</title>
     <link href="https://frasertweedale.github.io/blog-redhat/posts/2018-11-20-ca-renewal-master.html" />
     <id>https://frasertweedale.github.io/blog-redhat/posts/2018-11-20-ca-renewal-master.html</id>
@@ -102,17 +166,16 @@ Unconfiguring CA
 Client uninstall complete.
 The ipa-client-install command was successful
 The ipa-server-install command was successful</code></pre>
-<p>Jumping across to <code>f28-0.ipa.local</code>, let’s check the CA renewal master configuration:</p>
+<p>Jumping across to <code>f28-0.ipa.local</code>, I confirm that <code>f28-0.ipa.local</code> has become the renewal master:</p>
 <pre><code>[f28-0] ftweedal% ipa config-show |grep &#39;CA renewal master&#39;
   IPA CA renewal master: f28-0.ipa.local</code></pre>
-<p>As expected, the <code>f28-0.ipa.local</code> has become the renewal master.</p>
 <h2 id="explicit-ca-certificate-renewal">Explicit CA certificate renewal</h2>
 <p>There is one more scenario that can cause the CA renewal master to be changed. When the IPA CA certificate is explicitly renewed via the <code>ipa-cacert-manage renew</code> command the server on which the operation is performed becomes the CA renewal master. This is to cause the CA replica that <em>was</em> the renewal master to retrieve the new CA certificate from LDAP instead of renewing it.</p>
 <h2 id="conclusion">Conclusion</h2>
 <p>In this post I explained what the CA renewal master configuration is for and what it looks like under the hood. For FreeIPA/Dogtag system certificates, the CA renewal master configuration controls which CA replica actually performs renewal. The CA renewal master stores the renewed certificates in LDAP, and all other CA replicas look for them there. The <code>dogtag-ipa-ca-renew-agent</code> Certmonger renewal helper implements both of these behaviours, using the CA renewal master configuration to decide which behaviour to execute.</p>
 <p>There must be exactly one CA renewal master in a topology and it must be operational. I discussed the consequences of various configuration or operational problems. I also explained why you might want to change the CA renewal master, and how to do it.</p>
 <p>The CA renewal master is a critical configuration and incorrect renewal master configuration is often a factor in complex customer cases involving FreeIPA’s PKI. Commands that remove servers from the topology <em>should</em> elect a new CA renewal master when necessary. But misconfigurations do arise (if only we could know all the ways how!)</p>
-<p>The upcoming FreeIPA <a href="https://www.freeipa.org/page/V4/Healthcheck">Healthcheck</a> feature will, among other checks, confirm that the CA renewal master configuration is sane. It will not (in the beginning at least) be able to diagnose availability or connectivity issues. But it should catch some misconfigurations before they lead to catastrophic failure of the deployment.</p>]]></summary>
+<p>The upcoming FreeIPA <a href="https://www.freeipa.org/page/V4/Healthcheck">Healthcheck</a> feature will, among other checks, confirm that the CA renewal master configuration is sane. It will not (in the beginning at least) be able to diagnose availability or connectivity issues. But it should be able to catch some misconfigurations before they lead to catastrophic failure of the deployment.</p>]]></summary>
 </entry>
 <entry>
     <title>Should FreeIPA ship a subordinate CA profile?</title>
@@ -1636,86 +1699,6 @@ The ipa-certupdate command was successful
 <p>In this post I explained what a CA’s Subject DN is, and how it is an integral part of how X.509 works. We discussed some of the conceptual and practical issues that arise when you change a CA’s Subject DN. In particular, path validation, CRLs and OCSP are affected, and a lot of software will break when encountering a “same key, different subject” scenario.</p>
 <p>The general recommendation for changing a CA’s subject DN is <strong>don’t</strong>. But if there is a real business reason why the current subject is unsuitable, we looked at a couple of alternative approaches that could help: re-chaining the CA, and creating sub-CAs.</p>
 <p>In my next post we will have an in-depth look how to change a FreeIPA CA’s Subject DN: how to do it, and how to deal with the inevitable breakage.</p>]]></summary>
-</entry>
-<entry>
-    <title>Changing the X.509 signature algorithm in FreeIPA</title>
-    <link href="https://frasertweedale.github.io/blog-redhat/posts/2017-11-10-freeipa-changing-signature-algorithm.html" />
-    <id>https://frasertweedale.github.io/blog-redhat/posts/2017-11-10-freeipa-changing-signature-algorithm.html</id>
-    <published>2017-11-10T00:00:00Z</published>
-    <updated>2017-11-10T00:00:00Z</updated>
-    <summary type="html"><![CDATA[<h1 id="changing-the-x.509-signature-algorithm-in-freeipa">Changing the X.509 signature algorithm in FreeIPA</h1>
-<p>X.509 certificates are an application of <em>digital signatures</em> for identity verification. TLS uses X.509 to create a <em>chain of trust</em> from a trusted CA to a service certificate. An X.509 certificate binds a public key to a <em>subject</em> by way of a secure and verifiable <em>signature</em> made by a <em>certificate authority (CA)</em>.</p>
-<p>A signature algorithm has two parts: a public key signing algorithm (determined by the type of the CA’s signing key) and a <em>collision-resistant</em> hash function. The hash function <em>digests</em> the certified data into a small value that is hard to find collision for, which gets signed.</p>
-<p>Computers keep getting faster and attacks on cryptography always get better. So over time older algorithms need to be deprecated, and newer algorithms adopted for use with X.509. In the past the MD5 and SHA-1 digests were often used with X.509, but today SHA-256 (a variant of SHA-2) is the most used algorithm. SHA-256 is also the weakest digest accepted by many programs (e.g. web browsers). Stronger variants of SHA-2 are widely supported.</p>
-<p>FreeIPA currently uses the <code>sha256WithRSAEncryption</code> signature algorithm by default. Sometimes we get asked about how to use a stronger digest algorithm. In this article I’ll explain how to do that and discuss the motivations and implications.</p>
-<h2 id="implications-of-changing-the-digest-algorithm">Implications of changing the digest algorithm</h2>
-<p>Unlike re-keying or changing the CA’s Subject DN, re-issuing a certificate signed by the same key, but using a different digest, should Just Work. As long as a client knows about the digest algorithm used, it will be able to verify the signature. It’s fine to have a chain of trust that uses a variety of signature algorithms.</p>
-<h2 id="configuring-the-signature-algorithm-in-freeipa">Configuring the signature algorithm in FreeIPA</h2>
-<p>The signature algorithm is configured in each Dogtag certificate profile. Different profiles can use different signature algorithms. The public key signing algorithm depends on the CA’s key type (e.g. RSA) so you can’t change it; you can only change the digest used.</p>
-<h3 id="modifying-certificate-profiles">Modifying certificate profiles</h3>
-<p>Before FreeIPA 4.2 (RHEL 7.2), Dogtag stored certificate profile configurations as flat files. Dogtag 9 stores them in <code>/var/lib/pki-ca/profiles/ca</code> and Dogtag &gt;= 10 stores them in <code>/var/lib/pki/pki-tomcat/ca/profiles/ca</code>. When Dogtag is using file-based profile storage you must modify profiles on all CA replicas for consistent behaviour. After modifying a profile, Dogtag requires a restart to pick up the changes.</p>
-<p>As of FreeIPA 4.2, Dogtag uses LDAP-based profile storage. Changes to profiles get replicated among the CA replicas, so you only need to make the change once. Restart is not required. The <code>ipa certprofile</code> plugin provides commands for importing, exporting and modifying certificate profiles.</p>
-<p>Because of the variation among versions, I won’t detail the process of modifying profiles. We’ll look at what modifications to make, but skip over how to apply them.</p>
-<h3 id="profile-configuration-changes">Profile configuration changes</h3>
-<p>For service certificates, the profile to modify is <code>caIPAserviceCert</code>. If you want to renew the CA signing cert with a different algorithm, modify the <code>caCACert</code> profile. The relevant profile policy components are <code>signingAlgConstraintImpl</code> and <code>signingAlgDefaultImpl</code>. Look for these components in the profile configuration:</p>
-<pre><code>policyset.serverCertSet.8.constraint.class_id=signingAlgConstraintImpl
-policyset.serverCertSet.8.constraint.name=No Constraint
-policyset.serverCertSet.8.constraint.params.signingAlgsAllowed=SHA1withRSA,SHA256withRSA,SHA512withRSA,MD5withRSA,MD2withRSA,SHA1withDSA,SHA1withEC,SHA256withEC,SHA384withEC,SHA512withEC
-policyset.serverCertSet.8.default.class_id=signingAlgDefaultImpl
-policyset.serverCertSet.8.default.name=Signing Alg
-policyset.serverCertSet.8.default.params.signingAlg=-</code></pre>
-<p>Update the <code>policyset.&lt;name&gt;.&lt;n&gt;.default.params.signingAlg</code> parameter; replace the <code>-</code> with the desired signing algorithm. (I set it to <code>SHA512withRSA</code>.) Ensure that the algorithm appears in the <code>policyset.&lt;name&gt;.&lt;n&gt;.constraint.params.signingAlgsAllowed</code> parameter (if not, add it).</p>
-<p>After applying this change, certificates issued using the modified profile will use the specified algorithm.</p>
-<h2 id="results">Results</h2>
-<p>After modifying the <code>caIPAserviceCert</code> profile, we can renew the HTTP certificate and see that the new certificate uses <code>SHA512withRSA</code>. Use <code>getcert list</code> to find the Certmonger tracking request ID for this certificate. We find the tracking request in the output:</p>
-<pre><code>...
-Request ID &#39;20171109075803&#39;:
-  status: MONITORING
-  stuck: no
-  key pair storage: type=NSSDB,location=&#39;/etc/httpd/alias&#39;,nickname=&#39;Server-Cert&#39;,token=&#39;NSS Certificate DB&#39;,pinfile=&#39;/etc/httpd/alias/pwdfile.txt&#39;
-  certificate: type=NSSDB,location=&#39;/etc/httpd/alias&#39;,nickname=&#39;Server-Cert&#39;,token=&#39;NSS Certificate DB&#39;
-  CA: IPA
-  issuer: CN=Certificate Authority,O=IPA.LOCAL
-  subject: CN=rhel69-0.ipa.local,O=IPA.LOCAL
-  expires: 2019-11-10 07:53:11 UTC
-  ...
-...</code></pre>
-<p>So the tracking request ID is <code>20171109075803</code>. Now resubmit the request:</p>
-<pre><code>[root@rhel69-0 ca]# getcert resubmit -i 20171109075803
-Resubmitting &quot;20171109075803&quot; to &quot;IPA&quot;.</code></pre>
-<p>After a few moments, check the status of the request:</p>
-<pre><code>[root@rhel69-0 ca]# getcert list -i 20171109075803
-Number of certificates and requests being tracked: 8.
-Request ID &#39;20171109075803&#39;:
-  status: MONITORING
-  stuck: no
-  key pair storage: type=NSSDB,location=&#39;/etc/httpd/alias&#39;,nickname=&#39;Server-Cert&#39;,token=&#39;NSS Certificate DB&#39;,pinfile=&#39;/etc/httpd/alias/pwdfile.txt&#39;
-  certificate: type=NSSDB,location=&#39;/etc/httpd/alias&#39;,nickname=&#39;Server-Cert&#39;,token=&#39;NSS Certificate DB&#39;
-  CA: IPA
-  issuer: CN=Certificate Authority,O=IPA.LOCAL
-  subject: CN=rhel69-0.ipa.local,O=IPA.LOCAL
-  expires: 2019-11-11 00:02:56 UTC
-  ...</code></pre>
-<p>We can see by the <code>expires</code> field that renewal succeeded. Pretty-printing the certificate shows that it is using the new signature algorithm:</p>
-<pre><code>[root@rhel69-0 ca]# certutil -d /etc/httpd/alias -L -n &#39;Server-Cert&#39;
-Certificate:
-    Data:
-        Version: 3 (0x2)
-        Serial Number: 12 (0xc)
-        Signature Algorithm: PKCS #1 SHA-512 With RSA Encryption
-        Issuer: &quot;CN=Certificate Authority,O=IPA.LOCAL&quot;
-        Validity:
-            Not Before: Fri Nov 10 00:02:56 2017
-            Not After : Mon Nov 11 00:02:56 2019
-        Subject: &quot;CN=rhel69-0.ipa.local,O=IPA.LOCAL&quot;</code></pre>
-<p>It is using SHA-512/RSA. Mission accomplished.</p>
-<h2 id="discussion">Discussion</h2>
-<p>In this article I showed how to configure the signing algorithm in a Dogtag certificate profile. Details about how to modify profiles in particular versions of FreeIPA was out of scope.</p>
-<p>In the example I modified the default service certificate profile <code>caIPAserviceCert</code> to use <code>SHA512withRSA</code>. Then I renewed the HTTP TLS certificate to confirm that the configuration change had the intended effect. To change the signature algorithm on the FreeIPA CA certificate, you would modify the <code>caCACert</code> profile then renew the CA certificate. This would only work if the FreeIPA CA is <em>self-signed</em>. If it is externally-signed, it is up to the external CA what digest to use.</p>
-<p>In FreeIPA version 4.2 and later, we support the addition of custom certificate profiles. If you want to use a different signature algorithm for a specific use case, instead of modifying the default profile (<code>caIPAserviceCert</code>) you might add a new profile.</p>
-<p>The default signature digest algorithm in Dogtag is currently SHA-256. This is appropriate for the present time. There are few reasons why you would need to use something else. Usually it is because of an arbitrary security decision imposed on FreeIPA administrators. There are currently no plans to make the default signature algorithm configurable. But you can control the signature algorithm for a self-signed FreeIPA CA certificate via the <code>ipa-server-install</code> <code>--ca-signing-algorithm</code> option.</p>
-<p>In the introduction I mentioned that the CA’s key type determines the public key signature algorithm. That was hand-waving; some key types support multiple signature algorithms. For example, RSA keys support two signature algorithms: <em>PKCS #1 v1.5</em> and <em>RSASSA-PSS</em>. The latter is seldom used in practice.</p>
-<p>The SHA-2 family of algorithms (SHA-256, SHA-384 and SHA-512) are the “most modern” digest algorithms standardised for use in X.509 (<a href="https://tools.ietf.org/html/rfc4055#section-2.1">RFC 4055</a>). The Russian <em>GOST R</em> digest and signature algorithms are also supported (<a href="https://tools.ietf.org/html/rfc4491">RFC 4491</a>) although support is not widespread. In 2015 NIST published SHA-3 (based on the <em>Keccak</em> sponge construction). The use of SHA-3 in X.509 has not yet been standardised. There was an <a href="https://tools.ietf.org/html/draft-turner-lamps-adding-sha3-to-pkix-01">Internet-Draft in 2017</a>, but it expired. The current cryptanalysis of SHA-2 suggests there is no urgency to move to SHA-3. But it took a long time to move from SHA-1 (which is now insecure for applications requiring collision resistance) to SHA-2. Therefore it would be good to begin efforts to standardise SHA-3 in X.509 and add library/client support as soon as possible.</p>]]></summary>
 </entry>
 
 </feed>
