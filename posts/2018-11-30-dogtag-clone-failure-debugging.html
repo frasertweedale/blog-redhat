@@ -74,13 +74,17 @@ Administrators group.</code></pre>
 <p>Normally the fastest way to understand a problem is to gather all these sources of data and look at them all around the time the error occurred. When you see one failure, don’t assume that that is <em>the</em> failure. Cross-reference the log files. If you can’t see anything about an error, you probably need to look in a different file…</p>
 <p>…or a different part of the file! It is important to note that <strong>Dogtag time stamps are in local time</strong>, whereas most other logs are UTC. Different machines in the topology can be in different timezones, so you could be dealing with up to three timezones across the log files. Check carefully what timezone the timestamps are in when you are “lining up” the logfiles. Many times I have seen (and often erred myself) an incorrect conclusion that “there is no error in the debug log” because of this trap.</p>
 <p>In my experience, the most common causes of Dogtag cloning failure have involved Security Domain authentication issues and number range management. Over time I and others have fixed several bugs in these areas, but I am not confident that all potential problems have been fixed. The good news is that checking <em>all</em> the relevant logs usually leads to a good theory about the root cause.</p>
-<p>What if you are not an engineer or not able to make sense of the Dogtag codebase? (This is fine by the way—Dogtag is a huge, gnarly beast!) The best thing you can do to help us analyse and resolve the issue is to collect <em>all</em> the logs (from the master and replica) and prune them to the relevant timeframe (minding the timezones) before passing them on for an engineer to analyse.</p>
+<p>What if you are not an engineer or not able to make sense of the Dogtag codebase? (This is fine by the way—Dogtag is a huge, gnarly beast!) The best thing you can do to help us analyse and resolve the issue is to collect <em>all</em> the logs (from the master and replica) and prune them to the relevant timeframe (minding the timezones) before passing them to an engineer for analysis.</p>
 <p>In this post I only looked at Dogtag cloning failures. I have lots of other Dogtag “gut knowledge” that I plan to get out in upcoming posts.</p>
 </div>
 <div id="postFooter">
     <div id="recent">
 Recent posts:
 <ul>
+    
+        <li>
+            <a href="../posts/2019-01-29-name-constraints.html">X.509 Name Constraints and FreeIPA</a>
+        </li>
     
         <li>
             <a href="../posts/2018-11-30-dogtag-clone-failure-debugging.html">Diagnosing Dogtag cloning failures</a>
@@ -96,10 +100,6 @@ Recent posts:
     
         <li>
             <a href="../posts/2018-08-21-ipa-subordinate-ca.html">Issuing subordinate CA certificates from FreeIPA</a>
-        </li>
-    
-        <li>
-            <a href="../posts/2018-05-31-replacing-lost-ca.html">Replacing a lost or broken CA in FreeIPA</a>
         </li>
     
 </ul>
