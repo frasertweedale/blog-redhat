@@ -8,8 +8,113 @@
         <name>Fraser Tweedale</name>
         <email>frase@frase.id.au</email>
     </author>
-    <updated>2019-01-29T00:00:00Z</updated>
+    <updated>2019-02-04T00:00:00Z</updated>
     <entry>
+    <title>How does Dogtag PKI spawn?</title>
+    <link href="https://frasertweedale.github.io/blog-redhat/posts/2019-02-04-dogtag-installation.html" />
+    <id>https://frasertweedale.github.io/blog-redhat/posts/2019-02-04-dogtag-installation.html</id>
+    <published>2019-02-04T00:00:00Z</published>
+    <updated>2019-02-04T00:00:00Z</updated>
+    <summary type="html"><![CDATA[<h1 id="how-does-dogtag-pki-spawn">How does Dogtag PKI spawn?</h1>
+<p>Dogtag PKI is a complex program. Anyone who has performed a standalone installation of Dogtag can attest to this (to say nothing of actually using it). The program you invoke to install Dogtag is called <code>pkispawn(8)</code>. When installing standalone, you invoke <code>pkispawn</code> directly. When FreeIPA installs a Dogtag instance, it invokes <code>pkispawn</code> behind the scenes.</p>
+<p>So what does <code>pkispawn</code> actually <em>do</em>? In this post I’ll explain how <code>pkispawn</code> actually spawns a Dogtag instance. This post is not intended to be a guide to the many configuration options <code>pkispawn</code> knows about (although we’ll cover several). Rather, I’ll explain the actions <code>pkispawn</code> performs (or causes to be performed) to go from a fresh system to a working Dogtag CA instance.</p>
+<p>This post is aimed at developers and support associates, and to a lesser extent, people who are trying to diagnose issues themselves or understand how to accomplish something fancy in their Dogtag installation. By explaining the steps involved in spawning a Dogtag instance, I hope to make it easier for readers to diagnose issues or implement fixes or enhancements.</p>
+<h2 id="pkispawn-overview"><code>pkispawn</code> overview</h2>
+<p><code>pkispawn(8)</code> is provided by the <code>pki-server</code> RPM (which is required by the <code>pki-ca</code> RPM that provides the CA subsystem).</p>
+<p>You can invoke <code>pkispawn</code> without arguments, and it will prompt for the minimal data it needs to continue. These data include the subsystem to install (e.g. <code>CA</code> or <code>KRA</code>), and LDAP database connection details. For a fresh installation, most defaults are acceptable.</p>
+<p>There are many ways to configure or customise an installation. A few important scenarios are:</p>
+<ul>
+<li>installing a <code>KRA</code>, <code>OCSP</code>, <code>TKS</code> or <code>TPS</code> subsystem associated with the existing <code>CA</code> subsystem (typically on the same machine as the <code>CA</code> subsystem).</li>
+<li>installing a <em>clone</em> of a subsystem (typically on a different machine)</li>
+<li>installing a CA subsystem with an externally-signed CA certificate</li>
+<li>non-interactive installation</li>
+</ul>
+<p>For the above scenarios, and for many other possible variations, it is necessary to give <code>pkispawn</code> a configuration file. The <code>pki_default.cfg(5)</code> man page describes the format and available options. Some options are relevant to all subsystems, and others are subsystem-specific (i.e. only for <code>CA</code>, or <code>KRA</code>, etc.) Here is a basic configuration:</p>
+<pre><code>[DEFAULT]
+pki_server_database_password=Secret.123
+
+[CA]
+pki_admin_email=caadmin@example.com
+pki_admin_name=caadmin
+pki_admin_nickname=caadmin
+pki_admin_password=Secret.123
+pki_admin_uid=caadmin
+
+pki_client_database_password=Secret.123
+pki_client_database_purge=False
+pki_client_pkcs12_password=Secret.123
+
+pki_ds_base_dn=dc=ca,dc=pki,dc=example,dc=com
+pki_ds_database=ca
+pki_ds_password=Secret.123
+
+pki_security_domain_name=EXAMPLE
+
+pki_ca_signing_nickname=ca_signing
+pki_ocsp_signing_nickname=ca_ocsp_signing
+pki_audit_signing_nickname=ca_audit_signing
+pki_sslserver_nickname=sslserver
+pki_subsystem_nickname=subsystem</code></pre>
+<p>The <code>-f</code> option tells <code>pkispawn</code> the configuration file to use. <code>-s CA</code> tell it install the CA subsystem.</p>
+<pre><code>$ pkispawn -f ca.cfg -s CA</code></pre>
+<p>For many more examples of how to install Dogtag subsystems for particular scenarios, see the <a href="https://www.dogtagpki.org/wiki/PKI_10_Installation">PKI 10 Installation guide</a> on the Dogtag wiki.</p>
+<h2 id="terminology">Terminology</h2>
+<p>It is worthwhile to clarify the meaning of some terms:</p>
+<ul>
+<li><strong><em>instance</em></strong> or <strong><em>installation</em></strong>. An installation of Dogtag on a particular machine. An instance may contain one or more <em>subsystems</em>. There may be more than one Dogtag instance on a single machine, although this is uncommon (and each instance must use a disjoint set of network ports). The default instance name is <code>pki-tomcat</code>.</li>
+<li><strong><em>subsystem</em></strong>. Each main function in Dogtag is provided by a subsystem. The subsystems are: <code>CA</code>, <code>KRA</code>, <code>OCSP</code>, <code>TKS</code> and <code>TPS</code>. Every Dogtag instance must have a <code>CA</code> subsystem (hence, the first subsystem installed must be the <code>CA</code> subsystem).</li>
+<li><strong><em>clone</em></strong>. For redundancy, a subsystem may be <em>cloned</em> to a different instance (usually on a different machine; this is not a technical requirement but it does not make sense to do otherwise). Different subsystems may have different numbers of clones in a topology.</li>
+<li><strong><em>topology</em></strong> or <strong><em>deployment</em></strong>. All of the clones of all subsystems derived from some original CA subsystem form a <em>deployment</em> or <em>topology</em>. Typically, each <em>instance</em> in the topology would have a replicated copy of the LDAP database.</li>
+</ul>
+<h2 id="pkispawn-implementation"><code>pkispawn</code> implementation</h2>
+<h3 id="two-main-phases">Two main phases</h3>
+<p><code>pkispawn</code> has two main phases:</p>
+<ol type="1">
+<li>set up the Tomcat server and Dogtag application</li>
+<li>send <em>configuration requests</em> to the Dogtag application, which performs further configuration steps.</li>
+</ol>
+<p>(This is not to be confused with a <em>two step</em> externally-signed CA installation.)</p>
+<p>Of course there are many more steps than this. But there is an important reasons I am making such a high-level distinction: debugging. In the first phase <code>pkispawn</code> does everything. Any errors will show up in the <code>pkispawn</code> log file (<code>/var/log/pki/pki-&lt;subsystem&gt;-&lt;timestamp&gt;.log</code>). It is usually straightforward to work out what failed. <em>Why</em> it failed is sometimes easy to work out, and sometimes not so easy.</p>
+<p>But in the second phase, <code>pkispawn</code> is handing over control to Dogtag to finish configuring itself. <code>pkispawn</code> sends a series of requests to the <code>pki-tomcatd</code> web application. These requests tell Dogtag to configure things like the database, security domain, and so on. If something goes wrong during these steps, you <em>might</em> see something useful in the <code>pkispawn</code> log, but you will probably also need to look at the Dogtag <code>debug</code> log, or even the Tomcat or Dogtag logs of another subsystem or clone. I detailed this (in the context of debugging clone installation failures) in <a href="">a previous post</a>.</p>
+<h3 id="scriptlets">Scriptlets</h3>
+<p><code>pkispawn</code> is implemented in Python. The various steps of installation are implemented as <em>scriptlets</em>: small subroutines that take care of one part of the installation. These are:</p>
+<ol type="1">
+<li><code>initialization</code>: sanity check and normalise installer configuration, and sanity check the system environment.</li>
+<li><code>infrastructure_layout</code>: create PKI instance directories and configuration files.</li>
+<li><code>instance_layout</code>: lay out the Tomcat instance and configuration files (skipped when spawning a second subsystem on an existing instance).</li>
+<li><code>subsystem_layout</code>: lay out subsystem-specific files and directories.</li>
+<li><code>webapp_deployment</code>: deploy the Tomcat web application.</li>
+<li><code>security_databases</code>: set up the main Dogtag NSS database, and a client database where the administrator key and certificate will be created.</li>
+<li><code>selinux_setup</code>: establish correct SELinux contexts on instance and subsystem files.</li>
+<li><code>keygen</code>: generate keys and CSRs for the subsystem (for the CA subsystem, this inclues the CA signing key and CSR for external signing).</li>
+<li><code>configuration</code>: For external CA installation, import the externally-signed CA certificate and chain. (Re)start the <code>pki-tomcatd</code> instance and send configuration requests to the Java application. The whole second phase discussed in the previous section occurs here. It will be discussed in more detail in the next section.</li>
+<li><code>finalization</code>: enable PKI to start on boot (by default) and optionally purge client NSS databases that were set up during installation.</li>
+</ol>
+<p>For a two-step externally-signed CA installation, the <code>configuration</code> and <code>finalization</code> scriptlets are skipped during step 1, and in step 2 the scriptlets up to and including <code>keygen</code> are skipped. (A bit of hand-waving here; they not not really skipped but return early).</p>
+<p>In the codebase, scriptlets are located under <code>base/server/python/pki/server/deployment/scriptlets/&lt;name&gt;.py</code>. The list of scriptlets and the order in which they’re run is given by the <code>spawn_scriplets</code> variable in <code>base/server/etc/default.cfg</code>. Note that <em><code>scriplet</code></em> there is not a typo. Or maybe it is, but it’s not <em>my</em> typo. In some parts of the codebase, we say <em>scriplet</em>, and in others it’s <em>scriptlet</em>. This is mildly annoying, but just to be careful to use the correct class or variable name.</p>
+<p>Some other Python files contain a lot of code used during deployment. It’s not reasonable to make an exhaustive list, but <code>pki.server.deployment.pkihelper</code> and <code>pki.server.deployment.pkiparser</code> in particular include a lot of configuration processing code. If you are implementing or changing <code>pkispawn</code> configuration options, you’ll be defining them and following changes around in these files (and possibly others), as well as in <code>base/server/etc/default.cfg</code>.</p>
+<h4 id="scriptlets-and-uninstallation">Scriptlets and uninstallation</h4>
+<p>The installation scriptlets also implement corresponding uninstallation behaviours. When uninstalling a Dogtag instance or subsystem via the <code>pkidestroy</code> command, each scriptlets’ uninstallation behaviour is invoked. The order in which they’re invoked is different from installation, and is given by the <code>destroy_scriplets</code> variable in <code>base/server/etc/default.cfg</code>.</p>
+<h3 id="configuration-requests">Configuration requests</h3>
+<p>The <code>configuration</code> scriptlet sends a series of configuration requests to the Dogtag web API. Each request causes Dogtag to perform specific configuration behaviour(s). Depending on the subsystem being installed and whether it is a clone, these steps may including communication with other subsystems or instances, and/or the LDAP database.</p>
+<p>The requests performed, in order, are:</p>
+<ol type="1">
+<li><code>/rest/installer/configure</code>: configure (but don’t yet create) the security domain. Import and verify certificates. If creating a clone, request number range allocations from the master.</li>
+<li><code>/rest/installer/setupDatabase</code>: add database connection configuration to <code>CS.cfg</code>. Enable required DS plugins. Populate the database. If creating a clone, initialise replication (this can be suppressed if replication is managed externally, as is the case for FreeIPA in Domain Level 1). Populate VLV indices.</li>
+<li><code>/rest/installer/configureCerts</code>: configure system certificates, generating keys and issuing certificates where necessary.</li>
+<li><code>/rest/installer/setupAdmin</code> (skipped for clones): create admin user and issue certificate.</li>
+<li><code>/rest/installer/backupKeys</code> (optional): back up system certificates and keys to a PKCS #12 file.</li>
+<li><code>/rest/installer/setupSecurityDomain</code>: create the security domain data in LDAP (non-clone) or add the new clone to the security domain.</li>
+<li><code>/rest/installer/setupDatabaseUser</code>: set up the LDAP database user, including certificate (if configured). This is the user that Dogtag uses to bind to LDAP.</li>
+<li><code>/rest/installer/finalizeConfiguration</code>: remove <em>preop</em> configuration entries (which are only used during installation) and perform other finalisation in <code>CS.cfg</code>.</li>
+</ol>
+<p>For all of these requests, the <code>configuration</code> scriptlet builds the request data according to the <code>pkispawn</code> configuration. Then it sends the request to the current hostname. Communications between <code>pkispawn</code> and Tomcat are unlikely to fail (connection failure would suggest a major network configuration problem).</p>
+<p>If something goes wrong during processing of the request, errors should appear in the subsystem debug log (<code>/etc/pki/pki-tomcat/ca/debug.YYYY-MM-DD.log</code>; <code>/etc/pki/pki-tomcat/ca/debug</code> on older versions), or the system journal. If the local system had to contact other subsystems or instances on other hosts, it may be necessary to look at the debug logs, system journal or Tomcat / Apache httpd logs of the relevant host / subsystem. I wrote about this at length in <a href="">a previous post</a> so I won’t say more about it here.</p>
+<p>In terms of the code, the resource paths and servlet interface are defined in <code>com.netscape.certsrv.system.SystemConfigResource</code>. The implementation is in <code>com.netscape.certsrv.system.SystemConfigService</code>, with a considerable amount of behaviour residing as helper methods in <code>com.netscape.cms.servlet.csadmin.ConfigurationUtils</code>. If you are investigating or fixing configuration request failures, you will spend a fair bit of time grubbing around in these classes.</p>
+<h2 id="conclusion">Conclusion</h2>
+<p>As I have shown in this post, spawning a Dogtag PKI instance involves a lot of steps. There are many, <em>many</em> ways to customise the installation and I have glossed over many details. But my aim in this post was not to be a comprehensive reference guide or how-to. Rather the intent was to give a high-level view of what happens during installation, and how those behaviours are implemented. Hopefully I have achieved that, and as a result you are now able to more easily diagnose issues or implement changes or features in the Dogtag installer.</p>]]></summary>
+</entry>
+<entry>
     <title>X.509 Name Constraints and FreeIPA</title>
     <link href="https://frasertweedale.github.io/blog-redhat/posts/2019-01-29-name-constraints.html" />
     <id>https://frasertweedale.github.io/blog-redhat/posts/2019-01-29-name-constraints.html</id>
@@ -1390,348 +1495,6 @@ the same encoding.</code></pre>
 <li><em>should</em> ensure that Subject DN attribute encodings on end-entity certificates it issues to a given subject do not change upon renewal.</li>
 </ul>
 <p>CAs will often issue certificates with values encoded differently from how they were presented in the CSR. This usually does not cause problems. But if it does cause problems, you might be able to configure the client program to produce a CSR with different attribute encodings. If you control the CA you may be able to configure it to have a different treatment for attribute encodings. How to do these things was beyond the scope of this article.</p>]]></summary>
-</entry>
-<entry>
-    <title>Changing a CA’s Subject DN; Part II: FreeIPA</title>
-    <link href="https://frasertweedale.github.io/blog-redhat/posts/2017-11-22-changing-ca-subject-dn-part-ii-freeipa.html" />
-    <id>https://frasertweedale.github.io/blog-redhat/posts/2017-11-22-changing-ca-subject-dn-part-ii-freeipa.html</id>
-    <published>2017-11-22T00:00:00Z</published>
-    <updated>2017-11-22T00:00:00Z</updated>
-    <summary type="html"><![CDATA[<h1 id="changing-a-cas-subject-dn-part-ii-freeipa">Changing a CA’s Subject DN; Part II: FreeIPA</h1>
-<p>In the <a href="2017-11-20-changing-ca-subject-dn-part-i.html">previous post</a> I explained how the CA Subject DN is an integral part of X.509 any why you should not change it. Doing so can break path validation, CRLs and OCSP, and many programs will not copye with the change. I proposed some alternative approaches that avoid these problems: re-chaining the CA, and creating subordinate CAs.</p>
-<p>If you were thinking of changing your CA’s Subject DN, I hope that I dissuaded you. But if I failed, or you absolutely do need to change the Subject DN of your CA, where there’s a will there’s way. The purpose of this post is to explore how to do this in FreeIPA, and discuss the implications.</p>
-<p>This is a <strong>long post</strong>. If you are really changing the CA subject DN, don’t skip anything. Otherwise don’t feel bad about skimming or jumping straight to the <a href="#discussion">discussion</a>. Even skimming the article will give you an idea of the steps involved, and how to repair the ensuing breakage.</p>
-<h2 id="changing-the-freeipa-cas-subject-dn">Changing the FreeIPA CA’s Subject DN</h2>
-<p>Before writing this post, I had never even attempted to do this. I am unaware of anyone else trying or whether they were successful. But the question of how to do it has come up several times, so I decided to investigate. The format of this post follows my exploration of the topic as I poked and prodded a FreeIPA deployment, working towards the goal.</p>
-<p>What was the goal? Let me state the goal, and some assumptions:</p>
-<ul>
-<li>The goal is to give the FreeIPA CA a new Subject DN. The deployment should look and behave as though it were originally installed with the new Subject.</li>
-<li>We want to keep the old CA certificate in the relevant certificate stores and databases, alongside the new certificate.</li>
-<li>The CA is not being re-keyed (I will deal with re-keying in a future article).</li>
-<li>We want to be able to do this with both self-signed and externally-signed CAs. It’s okay if the process differs.</li>
-<li>It’s okay to have manual steps that the administrator must perform.</li>
-</ul>
-<p>Let’s begin on the deployment’s <em>CA renewal master</em>.</p>
-<h3 id="certmonger-first-attempt">Certmonger (first attempt)</h3>
-<p>There is a Certmonger tracking request for the FreeIPA CA, which uses the <code>dogtag-ipa-ca-renew-agent</code> CA helper. The <code>getcert resubmit</code> command lets you change the Subject DN when you resubmit a request, via the <code>-N</code> option. I know the internals of the CA helper and I can see that there will be problems <em>after</em> renewing the certificate this way. Storing the certificate in the <code>ca_renewal</code> LDAP container will fail. But the renewal itself <em>might</em> succeed so I’ll try it and see what happens:</p>
-<pre><code>[root@f27-2 ~]# getcert resubmit -i 20171106062742 \
-  -N &#39;CN=IPA.LOCAL CA 2017.11.09&#39;
-Resubmitting &quot;20171106062742&quot; to &quot;dogtag-ipa-ca-renew-agent&quot;.</code></pre>
-<p>After waiting about 10 seconds for Certmonger to do its thing, I check the state of the tracking request:</p>
-<pre><code>[root@f27-2 ~]# getcert list -i 20171106062742
-Request ID &#39;20171106062742&#39;:
-  status: MONITORING
-  CA: dogtag-ipa-ca-renew-agent
-  issuer: CN=Certificate Authority,O=IPA.LOCAL 201711061603
-  subject: CN=Certificate Authority,O=IPA.LOCAL 201711061603
-  expires: 2037-11-06 17:26:21 AEDT
-  ... (various fields omitted)</code></pre>
-<p>The <code>status</code> and <code>expires</code> fields show that renewal succeeded, but the certificate still has the old Subject DN. This happened because the <code>dogtag-ipa-ca-renew-agent</code> helper doesn’t think it is renewing the CA certificate (which is true!)</p>
-<h3 id="modifying-the-ipa-ca-entry">Modifying the IPA CA entry</h3>
-<p>So let’s trick the Certmonger renewal helper. <code>dogtag-ipa-ca-renew-agent</code> looks up the CA Subject DN in the <code>ipaCaSubjectDn</code> attribute of the <code>ipa</code> CA entry (<code>cn=ipa,cn=cas,cn=ca,{basedn}</code>). This attribute is not writeable via the IPA framework but you can change it using regular LDAP tools (details out of scope). If the certificate is self-signed you should also change the <code>ipaCaIssuerDn</code> attribute. After modifying the entry run <code>ipa ca-show</code> to verify that these attributes have the desired values:</p>
-<pre><code>[root@f27-2 ~]# ipa ca-show ipa
-  Name: ipa
-  Description: IPA CA
-  Authority ID: cdbfeb5a-64d2-4141-98d2-98c005802fc1
-  Subject DN: CN=IPA.LOCAL CA 2017.11.09
-  Issuer DN: CN=IPA.LOCAL CA 2017.11.09
-  Certificate: MIIDnzCCAoegAwIBAgIBCTANBgkqhkiG9w0...</code></pre>
-<h3 id="certmonger-second-attempt">Certmonger (second attempt)</h3>
-<p>Now let’s try and renew the CA certificate via Certmonger again:</p>
-<pre><code>[root@f27-2 ~]# getcert resubmit -i 20171106062742 \
-  -N &#39;CN=IPA.LOCAL CA 2017.11.09&#39;
-Resubmitting &quot;20171106062742&quot; to &quot;dogtag-ipa-ca-renew-agent&quot;.</code></pre>
-<p>Checking the <code>getcert list</code> output after a short wait:</p>
-<pre><code>[root@f27-2 ~]# getcert list -i 20171106062742
-Request ID &#39;20171106062742&#39;:
-  status: MONITORING
-  CA: dogtag-ipa-ca-renew-agent
-  issuer: CN=Certificate Authority,O=IPA.LOCAL 201711061603
-  subject: CN=IPA.LOCAL CA 2017.11.09
-  expires: 2037-11-09 16:11:12 AEDT
-  ... (various fields omitted)</code></pre>
-<p>Progress! We now have a CA certificate with the desired Subject DN. The new certificate has the old (current) issuer DN. We’ll ignore that for now.</p>
-<h3 id="checking-server-health">Checking server health</h3>
-<p>Now I need to check the state of the deployment. Did anything go wrong during renewal? Is everything working?</p>
-<p>First, I checked the Certmonger journal output to see if there were any problems. The journal contained the following messages (some fields omitted for brevity):</p>
-<pre><code>16:11:17 /dogtag-ipa-ca-renew-agent-submit[1662]: Forwarding request to dogtag-ipa-renew-agent
-16:11:17 /dogtag-ipa-ca-renew-agent-submit[1662]: dogtag-ipa-renew-agent returned 0
-16:11:19 /stop_pkicad[1673]: Stopping pki_tomcatd
-16:11:20 /stop_pkicad[1673]: Stopped pki_tomcatd
-16:11:22 /renew_ca_cert[1710]: Updating CS.cfg
-16:11:22 /renew_ca_cert[1710]: Updating CA certificate failed: no matching entry found
-16:11:22 /renew_ca_cert[1710]: Starting pki_tomcatd
-16:11:34 /renew_ca_cert[1710]: Started pki_tomcatd
-16:11:34 certmonger[2013]: Certificate named &quot;caSigningCert cert-pki-ca&quot; in token &quot;NSS Certificate DB&quot; in database &quot;/etc/pki/pki-tomcat/alias&quot; issued by CA and saved.</code></pre>
-<p>We can see that the renewal succeeded and Certmonger saved the new certificate in the NSSDB. Unfortunately there was an error in the <code>renew_ca_cert</code> post-save hook: it failed to store the new certificate in the LDAP certstore. That should be easy to resolve. I’ll make a note of that and continue checking deployment health.</p>
-<p>Next, I checked whether Dogtag was functioning. <code>systemctl status pki-tomcatd@pki-tomcat</code> and the CA debug log (<code>/var/log/pki/pki-tomcat/ca/debug</code>) indicated that Dogtag started cleanly. Even better, the Dogtag NSSDB has the new CA certificate with the correct nickname:</p>
-<pre><code>[root@f27-2 ~]# certutil -d /etc/pki/pki-tomcat/alias \
-  -L -n &#39;caSigningCert cert-pki-ca&#39;
-Certificate:
-    Data:
-        Version: 3 (0x2)
-        Serial Number: 11 (0xb)
-        Signature Algorithm: PKCS #1 SHA-256 With RSA Encryption
-        Issuer: &quot;CN=Certificate Authority,O=IPA.LOCAL 201711061603&quot;
-        Validity:
-            Not Before: Thu Nov 09 05:11:12 2017
-            Not After : Mon Nov 09 05:11:12 2037
-        Subject: &quot;CN=IPA.LOCAL CA 2017.11.09&quot;
-  ... (remaining lines omitted)</code></pre>
-<p>We have not yet confirmed that the Dogtag uses the new CA Subject DN as the Issuer DN on new certificates (we’ll check this later).</p>
-<p>Now let’s check the state of IPA itself. There is a problem in communication between the IPA framework and Dogtag:</p>
-<pre><code>[root@f27-2 ~]# ipa ca-show ipa
-ipa: ERROR: Request failed with status 500: Non-2xx response from CA REST API: 500.</code></pre>
-<p>A quick look in <code>/var/log/httpd/access_log</code> showed that it was not a general problem but only occurred when accessing a particular resource:</p>
-<pre><code>[09/Nov/2017:17:15:09 +1100] &quot;GET https://f27-2.ipa.local:443/ca/rest/authorities/cdbfeb5a-64d2-4141-98d2-98c005802fc1/cert HTTP/1.1&quot; 500 6201</code></pre>
-<p>That is a Dogtag <em>lightweight authority</em> resource for the CA identified by <code>cdbfeb5a-64d2-4141-98d2-98c005802fc1</code>. That is the <em>CA ID</em> recorded in the FreeIPA <code>ipa</code> CA entry. This gives a hint about where the problem lies. An <code>ldapsearch</code> reveals more:</p>
-<pre><code>[f27-2:~] ftweedal% ldapsearch -LLL \
-    -D &#39;cn=directory manager&#39; -w DM_PASSWORD \
-    -b &#39;ou=authorities,ou=ca,o=ipaca&#39; -s one
-dn: cn=cdbfeb5a-64d2-4141-98d2-98c005802fc1,ou=authorities,ou=ca,o=ipaca
-authoritySerial: 9
-objectClass: authority
-objectClass: top
-cn: cdbfeb5a-64d2-4141-98d2-98c005802fc1
-authorityID: cdbfeb5a-64d2-4141-98d2-98c005802fc1
-authorityKeyNickname: caSigningCert cert-pki-ca
-authorityEnabled: TRUE
-authorityDN: CN=Certificate Authority,O=IPA.LOCAL 201711061603
-description: Host authority
-
-dn: cn=008a4ded-fd4b-46fe-8614-68518123c95f,ou=authorities,ou=ca,o=ipaca
-objectClass: authority
-objectClass: top
-cn: 008a4ded-fd4b-46fe-8614-68518123c95f
-authorityID: 008a4ded-fd4b-46fe-8614-68518123c95f
-authorityKeyNickname: caSigningCert cert-pki-ca
-authorityEnabled: TRUE
-authorityDN: CN=IPA.LOCAL CA 2017.11.09
-description: Host authority</code></pre>
-<p>There are now two authority entries when there should be one. During startup, Dogtag makes sure it has an authority entry for the main (“host”) CA. It compares the Subject DN from the signing certificate in its NSSDB to the authority entries. If it doesn’t find a match it creates a new entry, and that’s what happened here.</p>
-<p>The resolution is straightforward:</p>
-<ol style="list-style-type: decimal">
-<li>Stop Dogtag</li>
-<li>Update the <code>authorityDN</code> and <code>authoritySerial</code> attributes of the <em>original</em> host authority entry.</li>
-<li>Delete the <em>new</em> host authority entry.</li>
-<li>Restart Dogtag.</li>
-</ol>
-<p>Now the previous <code>ldapsearch</code> returns one entry, with the original authority ID and correct attribute values:</p>
-<pre><code>[f27-2:~] ftweedal% ldapsearch -LLL \
-    -D &#39;cn=directory manager&#39; -w DM_PASSWORD \
-    -b &#39;ou=authorities,ou=ca,o=ipaca&#39; -s one
-dn: cn=cdbfeb5a-64d2-4141-98d2-98c005802fc1,ou=authorities,ou=ca,o=ipaca
-authoritySerial: 11
-authorityDN: CN=IPA.LOCAL CA 2017.11.09
-objectClass: authority
-objectClass: top
-cn: cdbfeb5a-64d2-4141-98d2-98c005802fc1
-authorityID: cdbfeb5a-64d2-4141-98d2-98c005802fc1
-authorityKeyNickname: caSigningCert cert-pki-ca
-authorityEnabled: TRUE
-description: Host authority</code></pre>
-<p>And the operations that were failing before (e.g. <code>ipa ca-show ipa</code>) now succeed. So we’ve confirmed, or restored, the basic functionality on this server.</p>
-<h3 id="ldap-certificate-stores">LDAP certificate stores</h3>
-<p>There are two LDAP certificate stores in FreeIPA. The first is <code>cn=ca_renewal,cn=ipa,cn=etc,{basedn}</code>. It is only used for replicating Dogtag CA and system certificates from the CA renewal master to CA replicas. The <code>dogtag-ipa-ca-renew-agent</code> Certmonger helper should update the <code>cn=caSigningCert cert-pki-ca,cn=ca_renewal,cn=ipa,cn=etc,{basedn}</code> entry after renewing the CA certificate. A quick <code>ldapsearch</code> shows that this succeeded, so there is nothing else to do here.</p>
-<p>The other certificate store is <code>cn=certificates,cn=ipa,cn=etc,{basedn}</code>. This store contains trusted CA certificates. FreeIPA clients and servers retrieve certificates from this directory when updating their certificate trust stores. Certificates are stored in this container with a <code>cn</code> based on the Subject DN, except for the IPA CA which is stored with <code>cn={REALM-NAME} IPA CA</code>. (In my case, this is <code>cn=IPA.LOCAL IPA CA</code>.)</p>
-<p>We discovered the failure to update this certificate store earlier (in the Certmonger journal). Now we must fix it up. We still want to trust certificates with the old Issuer DN, otherwise we would have to reissue <em>all of them</em>. So we need to keep the old CA certificate in the store, alongside the new.</p>
-<p>The process to fix up the certificate store is:</p>
-<ol style="list-style-type: decimal">
-<li><p>Export the new CA certificate from the Dogtag NSSDB to a file:</p>
-<pre><code>[root@f27-2 ~]# certutil -d /etc/pki/pki-tomcat/alias \
-   -L -a -n &#39;caSigningCert cert-pki-ca&#39; &gt; new-ca.crt</code></pre></li>
-<li><p>Add the new CA certificate to the certificate store:</p>
-<pre><code>[root@f27-2 ~]# ipa-cacert-manage install new-ca.crt
-Installing CA certificate, please wait
-CA certificate successfully installed
-The ipa-cacert-manage command was successful</code></pre></li>
-<li>Rename (<code>modrdn</code>) the existing <code>cn={REALM-NAME} IPA CA</code> entry. The new <code>cn</code> RDN is based on the old CA Subject DN.</li>
-<li>Rename the new CA certificate entry. The current <code>cn</code> is the new Subject DN. Rename it to <code>cn={REALM-NAME} IPA CA</code>. I encountered a 389DS attribute uniqueness error when I attempted to do this as a <code>modrdn</code> operation. I’m not sure why it happened. To work around the problem I deleted the entry and added it back with the new <code>cn</code>.</li>
-</ol>
-<p>At the end of this procedure the certificate store is as it should be. The CA certificate with new Subject DN is installed as <code>{REALM-NAME} IPA CA</code> and the old CA certificate has been preserved under a different RDN.</p>
-<h3 id="updating-certificate-databases">Updating certificate databases</h3>
-<p>The LDAP certificate stores have the new CA certificate. Now we need to update the other certificate databases so that the programs that use them will trust certificates with the new Issuer DN. These databases include:</p>
-<dl>
-<dt><code>/etc/ipa/ca.crt</code></dt>
-<dd><p>CA trust store used by the IPA framework</p>
-</dd>
-<dt><code>/etc/ipa/nssdb</code></dt>
-<dd><p>An NSSDB used by FreeIPA</p>
-</dd>
-<dt><code>/etc/dirsrv/slapd-{REALM-NAME}</code></dt>
-<dd><p>NSSDB used by 389DS</p>
-</dd>
-<dt><code>/etc/httpd/alias</code></dt>
-<dd><p>NSSDB used by Apache HTTPD</p>
-</dd>
-<dt><code>/etc/pki/ca-trust/source/ipa.p11-kit</code></dt>
-<dd><p>Adds FreeIPA CA certificates to the system-wide trust store</p>
-</dd>
-</dl>
-<p>Run <code>ipa-certupdate</code> to update these databases with the CA certificates from the LDAP CA certificate store:</p>
-<pre><code>[root@f27-2 ~]# ipa-certupdate
-trying https://f27-2.ipa.local/ipa/json
-[try 1]: Forwarding &#39;schema&#39; to json server &#39;https://f27-2.ipa.local/ipa/json&#39;
-trying https://f27-2.ipa.local/ipa/session/json
-[try 1]: Forwarding &#39;ca_is_enabled/1&#39; to json server &#39;https://f27-2.ipa.local/ipa/session/json&#39;
-[try 1]: Forwarding &#39;ca_find/1&#39; to json server &#39;https://f27-2.ipa.local/ipa/session/json&#39;
-failed to update IPA.LOCAL IPA CA in /etc/dirsrv/slapd-IPA-LOCAL: Command &#39;/usr/bin/certutil -d /etc/dirsrv/slapd-IPA-LOCAL -A -n IPA.LOCAL IPA CA -t C,, -a -f /etc/dirsrv/slapd-IPA-LOCAL/pwdfile.txt&#39; returned non-zero exit status 255.
-failed to update IPA.LOCAL IPA CA in /etc/httpd/alias: Command &#39;/usr/bin/certutil -d /etc/httpd/alias -A -n IPA.LOCAL IPA CA -t C,, -a -f /etc/httpd/alias/pwdfile.txt&#39; returned non-zero exit status 255.
-failed to update IPA.LOCAL IPA CA in /etc/ipa/nssdb: Command &#39;/usr/bin/certutil -d /etc/ipa/nssdb -A -n IPA.LOCAL IPA CA -t C,, -a -f /etc/ipa/nssdb/pwdfile.txt&#39; returned non-zero exit status 255.
-Systemwide CA database updated.
-Systemwide CA database updated.
-The ipa-certupdate command was successful
-[root@f27-2 ~]# echo $?
-0</code></pre>
-<p><code>ipa-certupdate</code> reported that it was successful and it exited cleanly. But a glance at the output shows that not all went well. There were failures added the new CA certificate to several NSSDBs. Running one of the commands manually to see the command output doesn’t give us much more information:</p>
-<pre><code>[root@f27-2 ~]# certutil -d /etc/ipa/nssdb -f /etc/ipa/nssdb/pwdfile.txt \
-    -A -n &#39;IPA.LOCAL IPA CA&#39; -t C,, -a &lt; ~/new-ca.crt
-certutil: could not add certificate to token or database: SEC_ERROR_ADDING_CERT: Error adding certificate to database.
-[root@f27-2 ~]# echo $?
-255</code></pre>
-<p>At this point I guessed that because there is already a certificate stored with the nickname <code>IPA.LOCAL IPA CA</code>, NSS refuses to add a certificate with a different Subject DN under the same nickname. So I will delete the certificates with this nickname from each of the NSSDBs, then try again. For some reason the nickname appeared twice in each NSSDB:</p>
-<pre><code>[root@f27-2 ~]# certutil -d /etc/dirsrv/slapd-IPA-LOCAL -L
-
-Certificate Nickname                                         Trust Attributes
-                                                             SSL,S/MIME,JAR/XPI
-
-CN=alt-f27-2.ipa.local,O=Example Organization                u,u,u
-CN=CA,O=Example Organization                                 C,,
-IPA.LOCAL IPA CA                                             CT,C,C
-IPA.LOCAL IPA CA                                             CT,C,C</code></pre>
-<p>So for each NSSDB, to delete the certificate I had to execute the <code>certutil</code> command twice. For the 389DS NSSDB, the command was:</p>
-<pre><code>[root@f27-2 ~]# certutil -d /etc/httpd/alias -D -n &quot;IPA.LOCAL IPA CA&quot;</code></pre>
-<p>The commands for the other NSSDBs were similar. With the problematic certificates removed, I tried running <code>ipa-certupdate</code> again:</p>
-<pre><code>[root@f27-2 ~]# ipa-certupdate
-trying https://f27-2.ipa.local/ipa/session/json
-[try 1]: Forwarding &#39;ca_is_enabled/1&#39; to json server &#39;https://f27-2.ipa.local/ipa/session/json&#39;
-[try 1]: Forwarding &#39;ca_find/1&#39; to json server &#39;https://f27-2.ipa.local/ipa/session/json&#39;
-Systemwide CA database updated.
-Systemwide CA database updated.
-The ipa-certupdate command was successful
-[root@f27-2 ~]# echo $?
-0</code></pre>
-<p>This time there were no errors. <code>certutil</code> shows an <code>IPA.LOCAL IPA CA</code> certificate in the database, and it’s the right certificate:</p>
-<pre><code>[root@f27-2 ~]# certutil -d /etc/dirsrv/slapd-IPA-LOCAL -L
-
-Certificate Nickname                                         Trust Attributes
-                                                             SSL,S/MIME,JAR/XPI
-
-CN=alt-f27-2.ipa.local,O=Example Organization                u,u,u
-CN=CA,O=Example Organization                                 C,,
-CN=Certificate Authority,O=IPA.LOCAL 201711061603            CT,C,C
-CN=Certificate Authority,O=IPA.LOCAL 201711061603            CT,C,C
-IPA.LOCAL IPA CA                                             C,,
-[root@f27-2 ~]# certutil -d /etc/dirsrv/slapd-IPA-LOCAL -L -n &#39;IPA.LOCAL IPA CA&#39;
-Certificate:
-    Data:
-        Version: 3 (0x2)
-        Serial Number: 11 (0xb)
-        Signature Algorithm: PKCS #1 SHA-256 With RSA Encryption
-        Issuer: &quot;CN=Certificate Authority,O=IPA.LOCAL 201711061603&quot;
-        Validity:
-            Not Before: Thu Nov 09 05:11:12 2017
-            Not After : Mon Nov 09 05:11:12 2037
-        Subject: &quot;CN=IPA.LOCAL CA 2017.11.09&quot;
-        ...</code></pre>
-<p>I also confirmed that the old and new CA certificates are present in the <code>/etc/ipa/ca.crt</code> and <code>/etc/pki/ca-trust/source/ipa.p11-kit</code> files. So all the certificate databases now include the new CA certificate.</p>
-<h3 id="renewing-the-ca-certificate-again">Renewing the CA certificate (again)</h3>
-<p>Observe that (in the self-signed FreeIPA CA case) the Issuer DN of the new CA certificate is the Subject DN of the old CA certificate. So we have not quite reached out goal. The original CA certificate was self-signed, so we want a self-signed certificate with the new Subject.</p>
-<p>Renewing the CA certificate one more time should result in a self-signed certificate. The current situation is not likely to result in operational issues. So you can consider this an optional step. Anyhow, let’s give it a go:</p>
-<pre><code>[root@f27-2 ~]# getcert list -i 20171106062742 | egrep &#39;status|issuer|subject&#39;
-        status: MONITORING
-        issuer: CN=Certificate Authority,O=IPA.LOCAL 201711061603
-        subject: CN=IPA.LOCAL CA 2017.11.09
-[root@f27-2 ~]# getcert resubmit -i 20171106062742
-Resubmitting &quot;20171106062742&quot; to &quot;dogtag-ipa-ca-renew-agent&quot;.
-[root@f27-2 ~]# sleep 5
-[root@f27-2 ~]# getcert list -i 20171106062742 | egrep &#39;status|issuer|subject&#39;
-        status: MONITORING
-        issuer: CN=IPA.LOCAL CA 2017.11.09
-        subject: CN=IPA.LOCAL CA 2017.11.09</code></pre>
-<p>Now we have a self-signed CA cert with the new Subject DN. This step has also confirmed that that the certificate issuance is working fine with the new CA subject.</p>
-<h3 id="renewing-freeipa-service-certificates">Renewing FreeIPA service certificates</h3>
-<p>This is another optional step, because we have kept the old CA certificate in the trust store. I want to check that certificate renewals via the FreeIPA framework are working, and this is a fine way to do that.</p>
-<p>I’ll renew the HTTP service certificate. This deployment is using an externally-signed HTTP certificate so first I had to track it:</p>
-<pre><code>[root@f27-2 ~]# getcert start-tracking \
-  -d /etc/httpd/alias -p /etc/httpd/alias/pwdfile.txt \
-  -n &#39;CN=alt-f27-2.ipa.local,O=Example Organization&#39; \
-  -c IPA -D &#39;f27-2.ipa.local&#39; -K &#39;HTTP/f27-2.ipa.local@IPA.LOCAL&#39;
-New tracking request &quot;20171121071700&quot; added.</code></pre>
-<p>Then I resubmitted the tracking request. I had to include the <code>-N &lt;SUBJECT&gt;</code> option because the current Subject DN would be rejected by FreeIPA. I also had to include the <code>-K &lt;PRINC_NAME&gt;</code> option due to <a href="https://pagure.io/certmonger/issue/85">a bug in Certmonger</a>.</p>
-<pre><code>[root@f27-2 ~]# getcert resubmit -i 20171121073608 \
-  -N &#39;CN=f27-2.ipa.local&#39; \
-  -K &#39;HTTP/f27-2.ipa.local@IPA.LOCAL&#39;
-Resubmitting &quot;20171121073608&quot; to &quot;IPA&quot;.
-[root@f27-2 ~]# sleep 5
-[root@f27-2 ~]# getcert list -i 20171121073608 \
-  | egrep &#39;status|error|issuer|subject&#39;
-      status: MONITORING
-      issuer: CN=IPA.LOCAL CA 2017.11.09
-      subject: CN=f27-2.ipa.local,O=IPA.LOCAL 201711061603</code></pre>
-<p>The renewal succeeded, proving that certificate issuance via the FreeIPA framework is working.</p>
-<h2 id="checking-replica-health">Checking replica health</h2>
-<p>At this point, I’m happy with the state of the FreeIPA server. But so far I have only dealt with one server in the topology (the renewal master, whose hostname is <code>f27-2.ipa.local</code>). What about other CA replicas?</p>
-<p>I log onto <code>f27-1.ipa.local</code> (a CA replica). As a first step I execute <code>ipa-certupdate</code>. This failed in the same was as on the renewal master, and the steps to resolve were the same.</p>
-<p>Next I tell Certmonger to renew the CA certificate. This should not renew the CA certificate, only retrieve the certificate from the LDAP certificate store:</p>
-<pre><code>[root@f27-1 ~]# getcert list -i 20171106064548 \
-  | egrep &#39;status|error|issuer|subject&#39;
-        status: MONITORING
-        issuer: CN=Certificate Authority,O=IPA.LOCAL 201711061603
-        subject: CN=Certificate Authority,O=IPA.LOCAL 201711061603
-[root@f27-1 ~]# getcert resubmit -i 20171106064548
-Resubmitting &quot;20171106064548&quot; to &quot;dogtag-ipa-ca-renew-agent&quot;.
-[root@f27-1 ~]# sleep 30
-[root@f27-1 ~]# getcert list -i 20171106064548 | egrep &#39;status|error|issuer|subject&#39;
-        status: MONITORING
-        issuer: CN=Certificate Authority,O=IPA.LOCAL 201711061603
-        subject: CN=Certificate Authority,O=IPA.LOCAL 201711061603</code></pre>
-<p>Well, that did not work. Instead of retrieving the new CA certificate from LDAP, the CA replica issued a new certificate:</p>
-<pre><code>[root@f27-1 ~]# certutil -d /etc/pki/pki-tomcat/alias -L \
-    -n &#39;caSigningCert cert-pki-ca&#39;
-Certificate:
-    Data:
-        Version: 3 (0x2)
-        Serial Number: 268369927 (0xfff0007)
-        Signature Algorithm: PKCS #1 SHA-256 With RSA Encryption
-        Issuer: &quot;CN=Certificate Authority,O=IPA.LOCAL 201711061603&quot;
-        Validity:
-            Not Before: Tue Nov 21 08:18:09 2017
-            Not After : Fri Nov 06 06:26:21 2037
-        Subject: &quot;CN=Certificate Authority,O=IPA.LOCAL 201711061603&quot;
-        ...</code></pre>
-<p>This was caused by the first problem we faced when renewing the CA certificate with a new Subject DN. Once again, a mismatch between the Subject DN in the CSR and the FreeIPA CA’s Subject DN has confused the renewal helper.</p>
-<p>The resolution in this case is to delete all the certificates with nickname <code>caSigningCert cert-pki-ca</code> or <code>IPA.LOCAl IPA CA</code> from Dogtag’s NSSDB then add the new CA certificate to the NSSDB. Then run <code>ipa-certupdate</code> again. Dogtag must not be running during this process:</p>
-<pre><code>[root@f27-1 ~]# systemctl stop pki-tomcatd@pki-tomcat
-[root@f27-1 ~]# cd /etc/pki/pki-tomcat/alias
-[root@f27-1 ~]# certutil -d . -D -n &#39;caSigningCert cert-pki-ca&#39;
-[root@f27-1 ~]# certutil -d . -D -n &#39;caSigningCert cert-pki-ca&#39;
-[root@f27-1 ~]# certutil -d . -D -n &#39;caSigningCert cert-pki-ca&#39;
-[root@f27-1 ~]# certutil -d . -D -n &#39;caSigningCert cert-pki-ca&#39;
-certutil: could not find certificate named &quot;caSigningCert cert-pki-ca&quot;: SEC_ERROR_BAD_DATABASE: security library: bad database.
-[root@f27-1 ~]# certutil -d . -D -n &#39;IPA.LOCAL IPA CA&#39;
-[root@f27-1 ~]# certutil -d . -D -n &#39;IPA.LOCAL IPA CA&#39;
-[root@f27-1 ~]# certutil -d . -D -n &#39;IPA.LOCAL IPA CA&#39;
-certutil: could not find certificate named &quot;IPA.LOCAL IPA CA&quot;: SEC_ERROR_BAD_DATABASE: security library: bad database.
-[root@f27-1 ~]# certutil -d . -A \
-    -n &#39;caSigningCert cert-pki-ca&#39; -t &#39;CT,C,C&#39; &lt; /root/ipa-ca.pem
-[root@f27-1 ~]# ipa-certupdate
-trying https://f27-1.ipa.local/ipa/json
-[try 1]: Forwarding &#39;ca_is_enabled&#39; to json server &#39;https://f27-1.ipa.local/ipa/json&#39;
-[try 1]: Forwarding &#39;ca_find/1&#39; to json server &#39;https://f27-1.ipa.local/ipa/json&#39;
-Systemwide CA database updated.
-Systemwide CA database updated.
-The ipa-certupdate command was successful
-[root@f27-1 ~]# systemctl start pki-tomcatd@pki-tomcat</code></pre>
-<p>Dogtag started without issue and I was able to issue a certificate via the <code>ipa cert-request</code> command on this replica.</p>
-<h2 id="discussion">Discussion</h2>
-<p>It took a while and required a lot of manual effort, but I reached the goal of changing the CA Subject DN. The deployment seems to be operational, although my testing was not exhaustive and there may be breakage that I did not find.</p>
-<p>One of the goals was to define the process for both self-signed and externally-signed CAs. I did not deal with the externally-signed CA case. This article (and the process of writing it) was long enough without it! But much of the process, and problems encountered, will be the same.</p>
-<p>There are some important concerns and caveats to be aware of.</p>
-<p>First, CRLs generated after the Subject DN change may be bogus. They will be issued by the new CA but will contain serial numbers of revoked certificates that were issued by the old CA. Such assertions are invalid but not harmful in practice because those serial numbers will never be reused with the new CA. This is an implementation detail of Dogtag and not true in general.</p>
-<p>But there is a bigger problem related to CRLs. After the CA name change, the old CA will never issue another CRL. This means that revoked certificates with the old Issuer DN will never again appear on a CRL issued by the old CA. Worse, the Dogtag OCSP responder errors when you query the status of a certificate with the old Issuer DN. In sum, this means that there is no way for Dogtag to revoke a certificate with the old Issuer DN. Because many systems <em>“fail open”</em> in the event of missing or invalid CRLs or OCSP errors, this is a potentially <strong>severe security issue</strong>.</p>
-<p>Changing a FreeIPA installation’s CA Subject DN, whether by the procedure outlined in this post or by any other, is <strong>unsupported</strong>. If you try to do it and break your installation, we (the FreeIPA team) may try to help you recover, to a point. But we can’t guarantee anything. <em>Here be dragons</em> and all that.</p>
-<p>If you think you need to change your CA Subject DN and have not read the <a href="2017-11-20-changing-ca-subject-dn-part-i.html">previous post</a> on this topic, please go and read it. It proposes some alternatives that, if applicable, avoid the messy process and security issues detailed here. Despite showing you how to change a FreeIPA installation’s CA Subject DN, my advice remains: <strong>don’t do it</strong>. I hope you will heed it.</p>]]></summary>
 </entry>
 
 </feed>
