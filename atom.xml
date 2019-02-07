@@ -17,7 +17,7 @@
     <updated>2019-02-07T00:00:00Z</updated>
     <summary type="html"><![CDATA[<h1 id="staticmethod-considered-beneficial"><code>staticmethod</code> considered beneficial</h1>
 <p>Some Python programmers hold that the <code>staticmethod</code> decorator, and to a lesser extent <code>classmethod</code>, are to be avoided where possible. This view is not correct, and in this post I will explain why.</p>
-<p>This post will be useful to programmers in any langauge, but especially Python.</p>
+<p>This post will be useful to programmers in any language, but especially Python.</p>
 <h2 id="the-constructions">The constructions</h2>
 <p>I must begin with a brief overview of the <code>classmethod</code> and <code>staticmethod</code> constructions and their uses.</p>
 <p><code>classmethod</code> is a function that transforms a method into a class method. The class method receives the <em>class object</em> as its first argument, rather than an <em>instance</em> of the class. It is typically used as a method <em>decorator</em>:</p>
