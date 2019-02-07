@@ -6,7 +6,7 @@ and to a lesser extent ``classmethod``, are to be avoided where
 possible.  This view is not correct, and in this post I will explain
 why.
 
-This post will be useful to programmers in any langauge, but
+This post will be useful to programmers in any language, but
 especially Python.
 
 The constructions
