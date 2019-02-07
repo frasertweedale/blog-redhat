@@ -40,7 +40,7 @@ first argument, it does not receive any implicit argument:
 .. code:: python
 
   class C:
-      @classmethod
+      @staticmethod
       def f(arg1, arg2, ...): ...
 
 How are the ``classmethod`` and ``staticmethod`` constructions used?
