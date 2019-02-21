@@ -31,7 +31,7 @@
 <p>For IP addresses is not so simple. There are several complicating factors:</p>
 <ul>
 <li>FreeIPA <em>can</em> manage DNS entries, but it doesn’t have to. If FreeIPA is not a source of authoritative DNS information, should it trust information from external resolvers? Only with DNSSEC?</li>
-<li>There may be multiple, conflicting sources of DNS records. The DNS <em>view</em> presented to FreeIPA clients may be different to that seen by other clients. The FreeIPA DNS may “shadow” public (or other) DNS records.</li>
+<li>There may be multiple, conflicting sources of DNS records. The DNS <em>view</em> presented to FreeIPA clients may differ from that seen by other clients. The FreeIPA DNS may “shadow” public (or other) DNS records.</li>
 <li>For validation, what should be the treatment of forward (<code>A</code> / <code>AAAA</code>) and reverse (<code>PTR</code>) records pertaining to the names involved?</li>
 <li>Should <code>CNAME</code> records be followed? How many times?</li>
 <li>The issued certificate may be used in or presented to clients in environments with a different DNS view from the environment in which validation was performed.</li>
@@ -220,16 +220,16 @@ Certificate:                                                                    
 <p>If we omit the DNS name from the SAN extension, there is nothing linking the IP address to the subject principal and the request will be rejected. Note that the Subject DN Common Name (CN) attribute is ignored for the purposes of SAN IP address validation. The CSR was generated using <code>--extSAN ip:192.168.2.1</code>.</p>
 <pre><code>% ipa cert-request ip-bad.csr --principal host/iptest.ipa.local
 ipa: ERROR: invalid 'csr': IP address in
-  subjectAltName (192.168.2.1) does not match any DNS name</code></pre>
+  subjectAltName (192.168.2.1) unreachable from DNS names</code></pre>
 <p>If we reinstate the DNS name but add an extra IP address that does not relate to the hostname, the request gets rejected. The CSR was generated using <code>--extSAN dns:iptest.ipa.local,ip:192.168.2.1,ip:192.168.2.2</code>.</p>
 <pre><code>% ipa cert-request ip-bad.csr --principal host/iptest.ipa.local
 ipa: ERROR: invalid 'csr': IP address in
-  subjectAltName (192.168.2.2) does not match any DNS name</code></pre>
+  subjectAltName (192.168.2.2) unreachable from DNS names</code></pre>
 <p>Requesting a certificate for a user principal fails. The CSR has Subject DN <code>CN=alice</code> and the SAN extension contain an IP address. The user principal <code>alice</code> does exist.</p>
 <pre><code>% ipa cert-request ip-bad.csr --principal alice
 ipa: ERROR: invalid 'csr': subject alt name type
   IPAddress is forbidden for user principals</code></pre>
-<p>Let’s return to our original, working CSR. If we alter the relevant PTR record so that it no longer references a hostname in the CSR, the request will fail. Likewise if we delete the PTR record, or modify or delete the A record for <code>iptest.ipa.local.</code>.</p>
+<p>Let’s return to our original, working CSR. If we alter the relevant PTR record so that it no longer points a DNS name in the SAN (or the canonical name thereof), the request will fail:</p>
 <pre><code>% ipa dnsrecord-mod 2.168.192.in-addr.arpa. 1 \
       --ptr-rec f29-0.ipa.local.
   Record name: 1
@@ -237,7 +237,17 @@ ipa: ERROR: invalid 'csr': subject alt name type
 
 % ipa cert-request ip.csr --principal host/iptest.ipa.local
 ipa: ERROR: invalid 'csr': IP address in
-  subjectAltName (192.168.2.1) does not match any DNS name</code></pre>
+  subjectAltName (192.168.2.1) does not match A/AAAA records</code></pre>
+<p>Similarly if we delete the PTR record, the request fails (with a different message):</p>
+<pre><code>% ipa dnsrecord-del 2.168.192.in-addr.arpa. 1 \
+      --ptr-rec f29-0.ipa.local.
+------------------
+Deleted record &quot;1&quot;
+------------------
+
+% ipa cert-request ip.csr --principal host/iptest.ipa.local
+ipa: ERROR: invalid 'csr': IP address in
+  subjectAltName (192.168.2.1) does not have PTR record</code></pre>
 <h3 id="ipv6">IPv6</h3>
 <p>Assuming the relevant reverse zone is managed by FreeIPA and contains the correct records, FreeIPA can issue certificates with IPv6 names. First I have to add the relevant zones and records. I’m using the machine’s link-local address but the commands will be similar for other IPv6 addresses.</p>
 <pre><code>% ipa dnsrecord-mod ipa.local. iptest \
