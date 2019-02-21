@@ -56,7 +56,7 @@ factors:
   it trust information from external resolvers?  Only with DNSSEC?
 
 - There may be multiple, conflicting sources of DNS records.  The
-  DNS *view* presented to FreeIPA clients may be different to that
+  DNS *view* presented to FreeIPA clients may differ from that
   seen by other clients.  The FreeIPA DNS may "shadow" public (or
   other) DNS records.
 
@@ -413,7 +413,7 @@ generated using ``--extSAN ip:192.168.2.1``.
 
   % ipa cert-request ip-bad.csr --principal host/iptest.ipa.local
   ipa: ERROR: invalid 'csr': IP address in
-    subjectAltName (192.168.2.1) does not match any DNS name
+    subjectAltName (192.168.2.1) unreachable from DNS names
 
 If we reinstate the DNS name but add an extra IP address that does
 not relate to the hostname, the request gets rejected.  The CSR was
@@ -424,7 +424,7 @@ dns:iptest.ipa.local,ip:192.168.2.1,ip:192.168.2.2``.
 
   % ipa cert-request ip-bad.csr --principal host/iptest.ipa.local
   ipa: ERROR: invalid 'csr': IP address in
-    subjectAltName (192.168.2.2) does not match any DNS name
+    subjectAltName (192.168.2.2) unreachable from DNS names
 
 
 Requesting a certificate for a user principal fails.  The CSR has
@@ -438,11 +438,8 @@ The user principal ``alice`` does exist.
     IPAddress is forbidden for user principals
 
 Let's return to our original, working CSR.  If we alter the relevant
-PTR record so that it no longer references a hostname in the CSR,
-the request will fail.  Likewise if we delete the PTR record, or
-modify or delete the A record for ``iptest.ipa.local.``.
-
-::
+PTR record so that it no longer points a DNS name in the SAN (or the
+canonical name thereof), the request will fail::
 
   % ipa dnsrecord-mod 2.168.192.in-addr.arpa. 1 \
         --ptr-rec f29-0.ipa.local.
@@ -451,7 +448,20 @@ modify or delete the A record for ``iptest.ipa.local.``.
 
   % ipa cert-request ip.csr --principal host/iptest.ipa.local
   ipa: ERROR: invalid 'csr': IP address in
-    subjectAltName (192.168.2.1) does not match any DNS name
+    subjectAltName (192.168.2.1) does not match A/AAAA records
+
+Similarly if we delete the PTR record, the request fails (with a
+different message)::
+
+  % ipa dnsrecord-del 2.168.192.in-addr.arpa. 1 \
+        --ptr-rec f29-0.ipa.local.
+  ------------------
+  Deleted record "1"
+  ------------------
+
+  % ipa cert-request ip.csr --principal host/iptest.ipa.local
+  ipa: ERROR: invalid 'csr': IP address in
+    subjectAltName (192.168.2.1) does not have PTR record
 
 
 IPv6
