@@ -1,3 +1,7 @@
+---
+tags: freeipa, certificates
+---
+
 ..
   Copyright 2016 Red Hat, Inc.
 

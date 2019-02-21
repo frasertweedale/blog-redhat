@@ -1,3 +1,7 @@
+---
+tags: 2fa, certificates
+---
+
 Smart card login with YubiKey NEO
 =================================
 

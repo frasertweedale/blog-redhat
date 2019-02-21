@@ -1,3 +1,7 @@
+---
+tags: freeipa, certificates, profiles
+---
+
 Should FreeIPA ship a subordinate CA profile?
 =============================================
 

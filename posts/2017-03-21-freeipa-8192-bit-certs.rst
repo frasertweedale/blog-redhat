@@ -1,3 +1,7 @@
+---
+tags: freeipa, certificates, profiles
+---
+
 Supporting large key sizes in FreeIPA certificates
 ==================================================
 

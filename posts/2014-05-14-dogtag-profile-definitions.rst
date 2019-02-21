@@ -1,3 +1,7 @@
+---
+tags: dogtag, profiles
+---
+
 ..
   Copyright 2014 Red Hat, Inc.
 

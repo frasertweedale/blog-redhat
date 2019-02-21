@@ -1,3 +1,7 @@
+---
+tags: freeipa, certificates, integration
+---
+
 X.509 Name Constraints and FreeIPA
 ==================================
 

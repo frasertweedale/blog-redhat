@@ -1,3 +1,7 @@
+---
+tags: dogtag, python
+---
+
 Introduction to the Dogtag Python API
 =====================================
 

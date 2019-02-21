@@ -42,12 +42,16 @@ main = hakyll $ do
         >>= loadAndApplyTemplate "templates/default.html" homeContext
         >>= relativizeUrls
 
+  tags <- buildTags "posts/*.rst" (fromCapture "tags/*.html")
+
   create ["archive.html"] $ do
     route idRoute
     compile $ do
       posts <- recentFirst =<< loadAll ("posts/*.rst" .&&. hasNoVersion)
+      tagCloud <- renderTagCloud 75 125 tags
       let archiveContext =
             listField "posts" context (pure posts)
+            `mappend` constField "tagCloud" tagCloud
             `mappend` constField "title" "Archive"
             `mappend` context
       makeItem ""
@@ -55,12 +59,26 @@ main = hakyll $ do
         >>= loadAndApplyTemplate "templates/default.html" archiveContext
         >>= relativizeUrls
 
-
   -- a version of the posts to use for "recent posts" list
   match "posts/*.rst" $ version "recent" $ do
     route $ setExtension "html"
     compile $
       getResourceBody >>= saveSnapshot "source"
+
+  tagsRules tags $ \tag pattern -> do
+    route idRoute
+    compile $ do
+      posts <- recentFirst =<< loadAll pattern
+      let ctx = constField "tag" tag
+                `mappend` listField "posts" context (pure posts)
+                `mappend` constField "title" (tag <> " posts")
+                `mappend` constField "blogTitle" blogTitle
+                `mappend` defaultContext
+
+      makeItem ""
+        >>= loadAndApplyTemplate "templates/tag.html" ctx
+        >>= loadAndApplyTemplate "templates/default.html" ctx
+        >>= relativizeUrls
 
   match "posts/*.rst" $ do
     route $ setExtension "html"
@@ -68,6 +86,7 @@ main = hakyll $ do
       posts <- loadRecentPosts
       let postContext =
             listField "posts" context (pure posts)
+            `mappend` tagsField "tags" tags
             `mappend` context
 
       getResourceBody >>= saveSnapshot "source"

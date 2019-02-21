@@ -1,3 +1,7 @@
+---
+tags: freeipa, dogtag, certificates, internals
+---
+
 ..
   Copyright 2016 Red Hat, Inc.
 

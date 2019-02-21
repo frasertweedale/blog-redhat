@@ -1,3 +1,7 @@
+---
+tags: dogtag, java, haskell, programming
+---
+
 Can we teach an old Dogtag new tricks?
 ======================================
 

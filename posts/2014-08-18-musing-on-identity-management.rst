@@ -1,3 +1,7 @@
+---
+tags: idm, security
+---
+
 Musings on Identity Management
 ==============================
 

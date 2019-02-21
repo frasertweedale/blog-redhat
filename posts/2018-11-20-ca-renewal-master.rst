@@ -1,3 +1,7 @@
+---
+tags: freeipa, certificates, internals, renewal
+---
+
 FreeIPA CA renewal master explained
 ===================================
 

@@ -1,3 +1,7 @@
+---
+tags: security
+---
+
 Daniel J. Bernstein lecture on software (in)security
 ====================================================
 

@@ -1,3 +1,7 @@
+---
+tags: certificates, asn1, gotchas
+---
+
 DN attribute value encoding in X.509
 ====================================
 

@@ -1,3 +1,7 @@
+---
+tags: freeipa, dogtag, internals
+---
+
 FreeIPA PKI: current plans and a future vision
 ==============================================
 

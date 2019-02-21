@@ -1,3 +1,7 @@
+---
+tags: dogtag, sysadmin, troubleshooting
+---
+
 Diagnosing a Dogtag SELinux Issue
 =================================
 

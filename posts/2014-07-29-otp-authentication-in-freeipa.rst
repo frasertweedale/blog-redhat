@@ -1,3 +1,7 @@
+---
+tags: freeipa, 2fa, internals
+---
+
 OTP authentication in FreeIPA
 =============================
 

@@ -1,3 +1,7 @@
+---
+tags: containers
+---
+
 Docker build context and symbolic links
 =======================================
 

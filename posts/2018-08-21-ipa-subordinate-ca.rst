@@ -1,3 +1,7 @@
+---
+tags: freeipa, dogtag, certificates, howto, profiles
+---
+
 Issuing subordinate CA certificates from FreeIPA
 ================================================
 

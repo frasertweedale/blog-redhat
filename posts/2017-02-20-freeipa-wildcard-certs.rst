@@ -1,3 +1,7 @@
+---
+tags: freeipa, dogtag, certificates, profiles
+---
+
 Wildcard certificates in FreeIPA
 ================================
 

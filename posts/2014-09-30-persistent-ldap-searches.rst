@@ -1,3 +1,7 @@
+---
+tags: ldap, java, internals
+---
+
 LDAP persistent searches with ldapjdk
 =====================================
 

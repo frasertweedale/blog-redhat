@@ -1,3 +1,7 @@
+---
+tags: freeipa, certificates
+---
+
 Delegating certifiate issuance in FreeIPA
 =========================================
 

@@ -1,3 +1,7 @@
+---
+tags: vms, sysadmin
+---
+
 More entropy with ``haveged``
 =============================
 

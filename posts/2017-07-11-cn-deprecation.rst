@@ -1,3 +1,7 @@
+---
+tags: freeipa, dogtag, certificates, profiles
+---
+
 Implications of Common Name deprecation for Dogtag and FreeIPA
 ==============================================================
 

@@ -1,3 +1,7 @@
+---
+tags: freeipa, certificates, troubleshooting, howto
+---
+
 Replacing a lost or broken CA in FreeIPA
 ========================================
 

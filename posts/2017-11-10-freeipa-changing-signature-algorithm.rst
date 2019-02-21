@@ -1,3 +1,7 @@
+---
+tags: freeipa, dogtag, certificates, profiles
+---
+
 Changing the X.509 signature algorithm in FreeIPA
 =================================================
 

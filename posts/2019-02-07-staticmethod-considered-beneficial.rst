@@ -1,3 +1,7 @@
+---
+tags: programming, python
+---
+
 ``staticmethod`` considered beneficial
 ======================================
 

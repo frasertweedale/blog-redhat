@@ -1,3 +1,7 @@
+---
+tags: freeipa, certificates
+---
+
 Certificate renewal and revocation in FreeIPA
 =============================================
 

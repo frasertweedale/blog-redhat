@@ -1,3 +1,7 @@
+---
+tags: freeipa, certificates, howto
+---
+
 IP address SAN support in FreeIPA
 =================================
 

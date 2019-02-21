@@ -1,3 +1,7 @@
+---
+tags: freeipa, freebsd
+---
+
 Configuring FreeBSD as a FreeIPA client
 =======================================
 

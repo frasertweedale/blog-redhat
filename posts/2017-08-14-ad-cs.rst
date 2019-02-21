@@ -1,3 +1,7 @@
+---
+tags: freeipa, certificates, integration, howto
+---
+
 Installing FreeIPA with an Active Directory subordinate CA
 ==========================================================
 

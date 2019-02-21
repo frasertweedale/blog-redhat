@@ -1,3 +1,7 @@
+---
+tags: freeipa, certificates, profiles
+---
+
 ..
   Copyright 2015 Red Hat, Inc.
 

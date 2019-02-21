@@ -1,3 +1,7 @@
+---
+tags: dogtag, internals
+---
+
 How does Dogtag PKI spawn?
 ==========================
 

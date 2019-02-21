@@ -1,3 +1,7 @@
+---
+tags: containers, idm, openshift
+---
+
 Running Keycloak in OpenShift
 =============================
 

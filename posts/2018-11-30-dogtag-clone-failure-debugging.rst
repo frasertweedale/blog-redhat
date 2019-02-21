@@ -1,3 +1,7 @@
+---
+tags: dogtag, freeipa, troubleshooting
+---
+
 Diagnosing Dogtag cloning failures
 ==================================
 

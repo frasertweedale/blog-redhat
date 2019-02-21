@@ -1,3 +1,7 @@
+---
+tags: freeipa, certificates
+---
+
 Changing a CA's Subject DN; Part I: Don't Do That
 =================================================
 
