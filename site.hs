@@ -48,7 +48,7 @@ main = hakyll $ do
     route idRoute
     compile $ do
       posts <- recentFirst =<< loadAll ("posts/*.rst" .&&. hasNoVersion)
-      tagCloud <- renderTagCloud 75 125 tags
+      tagCloud <- renderTagCloud 80 120 tags
       let archiveContext =
             listField "posts" context (pure posts)
             `mappend` constField "tagCloud" tagCloud
