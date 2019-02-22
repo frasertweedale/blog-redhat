@@ -18,7 +18,13 @@
         </div>
 
         <div id="content">
-            <div id="postContent">
+            <div class="info">
+    
+    Tags: <a href="../tags/freeipa.html">freeipa</a>, <a href="../tags/dogtag.html">dogtag</a>, <a href="../tags/certificates.html">certificates</a>, <a href="../tags/profiles.html">profiles</a>
+    
+</div>
+
+<div id="postContent">
     <h1 id="changing-the-x.509-signature-algorithm-in-freeipa">Changing the X.509 signature algorithm in FreeIPA</h1>
 <p>X.509 certificates are an application of <em>digital signatures</em> for identity verification. TLS uses X.509 to create a <em>chain of trust</em> from a trusted CA to a service certificate. An X.509 certificate binds a public key to a <em>subject</em> by way of a secure and verifiable <em>signature</em> made by a <em>certificate authority (CA)</em>.</p>
 <p>A signature algorithm has two parts: a public key signing algorithm (determined by the type of the CA’s signing key) and a <em>collision-resistant</em> hash function. The hash function <em>digests</em> the certified data into a small value that is hard to find collision for, which gets signed.</p>

@@ -18,7 +18,13 @@
         </div>
 
         <div id="content">
-            <div id="postContent">
+            <div class="info">
+    
+    Tags: <a href="../tags/containers.html">containers</a>
+    
+</div>
+
+<div id="postContent">
     <h1 id="docker-build-context-and-symbolic-links">Docker build context and symbolic links</h1>
 <p><a href="https://www.docker.io/">Docker</a> is an application container system for Linux. Under the hood it’s like FreeBSD <em>jails</em>, but on top of that it provides powerful <em>image</em> specification and indexing capabilities. Images are built up in <em>layers</em>; each image depends on some other image (down to a <em>base image</em>), so a particular image might be a small delta on some shared dependency.</p>
 <p>In investigating ways to <em>Dockerize</em> FreeIPA, particularly for ease of sharing development builds, it makes sense to base builds on an image that contains all the build dependencies. Since the dependencies are the same for any build, they can be made available in a single image to shave down the build time and reduce the size of the final images.</p>

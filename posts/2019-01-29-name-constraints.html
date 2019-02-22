@@ -18,7 +18,13 @@
         </div>
 
         <div id="content">
-            <div id="postContent">
+            <div class="info">
+    
+    Tags: <a href="../tags/freeipa.html">freeipa</a>, <a href="../tags/certificates.html">certificates</a>, <a href="../tags/integration.html">integration</a>
+    
+</div>
+
+<div id="postContent">
     <h1 id="x.509-name-constraints-and-freeipa">X.509 Name Constraints and FreeIPA</h1>
 <p>The X.509 <em>Name Constraints</em> extension is a mechanism for constraining the name space(s) in which a <em>certificate authority (CA)</em> may (or may not) issue <em>end-entity</em> certificates. For example, a CA could issue to <em>Bob’s Widgets, Inc</em> a contrained CA certificate that only allows the CA to issue server certificates for <code>bobswidgets.com</code>, or subdomains thereof. In a similar way, an enterprise root CA could issue constrained certificates to different departments in a company.</p>
 <p>What is the advantage? Efficiency can be improved without sacrificing security by enabling <em>scoped</em> delegation of certificate issuance capability to subordinate CAs controlled by different organisations. The name constraints extension is essential for the security of such a mechanism. The <em>Bob’s Widgets, Inc</em> CA must not be allowed to issue valid certificates for <code>google.com</code> (and vice versa!)</p>

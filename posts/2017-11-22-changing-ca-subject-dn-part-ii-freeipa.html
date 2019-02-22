@@ -18,7 +18,13 @@
         </div>
 
         <div id="content">
-            <div id="postContent">
+            <div class="info">
+    
+    Tags: <a href="../tags/freeipa.html">freeipa</a>, <a href="../tags/certificates.html">certificates</a>, <a href="../tags/howto.html">howto</a>
+    
+</div>
+
+<div id="postContent">
     <h1 id="changing-a-cas-subject-dn-part-ii-freeipa">Changing a CA’s Subject DN; Part II: FreeIPA</h1>
 <p>In the <a href="2017-11-20-changing-ca-subject-dn-part-i.html">previous post</a> I explained how the CA Subject DN is an integral part of X.509 any why you should not change it. Doing so can break path validation, CRLs and OCSP, and many programs will not copye with the change. I proposed some alternative approaches that avoid these problems: re-chaining the CA, and creating subordinate CAs.</p>
 <p>If you were thinking of changing your CA’s Subject DN, I hope that I dissuaded you. But if I failed, or you absolutely do need to change the Subject DN of your CA, where there’s a will there’s way. The purpose of this post is to explore how to do this in FreeIPA, and discuss the implications.</p>
@@ -132,7 +138,7 @@ authorityDN: CN=IPA.LOCAL CA 2017.11.09
 description: Host authority</code></pre>
 <p>There are now two authority entries when there should be one. During startup, Dogtag makes sure it has an authority entry for the main (“host”) CA. It compares the Subject DN from the signing certificate in its NSSDB to the authority entries. If it doesn’t find a match it creates a new entry, and that’s what happened here.</p>
 <p>The resolution is straightforward:</p>
-<ol style="list-style-type: decimal">
+<ol type="1">
 <li>Stop Dogtag</li>
 <li>Update the <code>authorityDN</code> and <code>authoritySerial</code> attributes of the <em>original</em> host authority entry.</li>
 <li>Delete the <em>new</em> host authority entry.</li>
@@ -158,7 +164,7 @@ description: Host authority</code></pre>
 <p>The other certificate store is <code>cn=certificates,cn=ipa,cn=etc,{basedn}</code>. This store contains trusted CA certificates. FreeIPA clients and servers retrieve certificates from this directory when updating their certificate trust stores. Certificates are stored in this container with a <code>cn</code> based on the Subject DN, except for the IPA CA which is stored with <code>cn={REALM-NAME} IPA CA</code>. (In my case, this is <code>cn=IPA.LOCAL IPA CA</code>.)</p>
 <p>We discovered the failure to update this certificate store earlier (in the Certmonger journal). Now we must fix it up. We still want to trust certificates with the old Issuer DN, otherwise we would have to reissue <em>all of them</em>. So we need to keep the old CA certificate in the store, alongside the new.</p>
 <p>The process to fix up the certificate store is:</p>
-<ol style="list-style-type: decimal">
+<ol type="1">
 <li><p>Export the new CA certificate from the Dogtag NSSDB to a file:</p>
 <pre><code>[root@f27-2 ~]# certutil -d /etc/pki/pki-tomcat/alias \
    -L -a -n 'caSigningCert cert-pki-ca' &gt; new-ca.crt</code></pre></li>

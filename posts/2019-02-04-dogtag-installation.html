@@ -18,7 +18,13 @@
         </div>
 
         <div id="content">
-            <div id="postContent">
+            <div class="info">
+    
+    Tags: <a href="../tags/dogtag.html">dogtag</a>, <a href="../tags/internals.html">internals</a>
+    
+</div>
+
+<div id="postContent">
     <h1 id="how-does-dogtag-pki-spawn">How does Dogtag PKI spawn?</h1>
 <p>Dogtag PKI is a complex program. Anyone who has performed a standalone installation of Dogtag can attest to this (to say nothing of actually using it). The program you invoke to install Dogtag is called <code>pkispawn(8)</code>. When installing standalone, you invoke <code>pkispawn</code> directly. When FreeIPA installs a Dogtag instance, it invokes <code>pkispawn</code> behind the scenes.</p>
 <p>So what does <code>pkispawn</code> actually <em>do</em>? In this post I’ll explain how <code>pkispawn</code> actually spawns a Dogtag instance. This post is not intended to be a guide to the many configuration options <code>pkispawn</code> knows about (although we’ll cover several). Rather, I’ll explain the actions <code>pkispawn</code> performs (or causes to be performed) to go from a fresh system to a working Dogtag CA instance.</p>
@@ -64,12 +70,20 @@ pki_subsystem_nickname=subsystem</code></pre>
 <p>For many more examples of how to install Dogtag subsystems for particular scenarios, see the <a href="https://www.dogtagpki.org/wiki/PKI_10_Installation">PKI 10 Installation guide</a> on the Dogtag wiki.</p>
 <h2 id="terminology">Terminology</h2>
 <p>It is worthwhile to clarify the meaning of some terms:</p>
-<ul>
-<li><strong><em>instance</em></strong> or <strong><em>installation</em></strong>. An installation of Dogtag on a particular machine. An instance may contain one or more <em>subsystems</em>. There may be more than one Dogtag instance on a single machine, although this is uncommon (and each instance must use a disjoint set of network ports). The default instance name is <code>pki-tomcat</code>.</li>
-<li><strong><em>subsystem</em></strong>. Each main function in Dogtag is provided by a subsystem. The subsystems are: <code>CA</code>, <code>KRA</code>, <code>OCSP</code>, <code>TKS</code> and <code>TPS</code>. Every Dogtag instance must have a <code>CA</code> subsystem (hence, the first subsystem installed must be the <code>CA</code> subsystem).</li>
-<li><strong><em>clone</em></strong>. For redundancy, a subsystem may be <em>cloned</em> to a different instance (usually on a different machine; this is not a technical requirement but it does not make sense to do otherwise). Different subsystems may have different numbers of clones in a topology.</li>
-<li><strong><em>topology</em></strong> or <strong><em>deployment</em></strong>. All of the clones of all subsystems derived from some original CA subsystem form a <em>deployment</em> or <em>topology</em>. Typically, each <em>instance</em> in the topology would have a replicated copy of the LDAP database.</li>
-</ul>
+<dl>
+<dt><em>instance</em> or <em>installation</em></dt>
+<dd><p>An installation of Dogtag on a particular machine. An instance may contain one or more <em>subsystems</em>. There may be more than one Dogtag instance on a single machine, although this is uncommon (and each instance must use a disjoint set of network ports). The default instance name is <code>pki-tomcat</code>.</p>
+</dd>
+<dt><em>subsystem</em></dt>
+<dd><p>Each main function in Dogtag is provided by a subsystem. The subsystems are: <code>CA</code>, <code>KRA</code>, <code>OCSP</code>, <code>TKS</code> and <code>TPS</code>. Every Dogtag instance must have a <code>CA</code> subsystem (hence, the first subsystem installed must be the <code>CA</code> subsystem).</p>
+</dd>
+<dt><em>clone</em></dt>
+<dd><p>For redundancy, a subsystem may be <em>cloned</em> to a different instance (usually on a different machine; this is not a technical requirement but it does not make sense to do otherwise). Different subsystems may have different numbers of clones in a topology.</p>
+</dd>
+<dt><em>topology</em> or <em>deployment</em></dt>
+<dd><p>All of the clones of all subsystems derived from some original CA subsystem form a <em>deployment</em> or <em>topology</em>. Typically, each <em>instance</em> in the topology would have a replicated copy of the LDAP database.</p>
+</dd>
+</dl>
 <h2 id="pkispawn-implementation"><code>pkispawn</code> implementation</h2>
 <h3 id="two-main-phases">Two main phases</h3>
 <p><code>pkispawn</code> has two main phases:</p>
@@ -95,7 +109,7 @@ pki_subsystem_nickname=subsystem</code></pre>
 <li><code>finalization</code>: enable PKI to start on boot (by default) and optionally purge client NSS databases that were set up during installation.</li>
 </ol>
 <p>For a two-step externally-signed CA installation, the <code>configuration</code> and <code>finalization</code> scriptlets are skipped during step 1, and in step 2 the scriptlets up to and including <code>keygen</code> are skipped. (A bit of hand-waving here; they not not really skipped but return early).</p>
-<p>In the codebase, scriptlets are located under <code>base/server/python/pki/server/deployment/scriptlets/&lt;name&gt;.py</code>. The list of scriptlets and the order in which they’re run is given by the <code>spawn_scriplets</code> variable in <code>base/server/etc/default.cfg</code>. Note that <em><code>scriplet</code></em> there is not a typo. Or maybe it is, but it’s not <em>my</em> typo. In some parts of the codebase, we say <em>scriplet</em>, and in others it’s <em>scriptlet</em>. This is mildly annoying, but you just have to be careful to use the correct class or variable name.</p>
+<p>In the codebase, scriptlets are located under <code>base/server/python/pki/server/deployment/scriptlets/&lt;name&gt;.py</code>. The list of scriptlets and the order in which they’re run is given by the <code>spawn_scriplets</code> variable in <code>base/server/etc/default.cfg</code>. Note that <code>scriplet</code> there is not a typo. Or maybe it is, but it’s not <em>my</em> typo. In some parts of the codebase, we say <em>scriplet</em>, and in others it’s <em>scriptlet</em>. This is mildly annoying, but you just have to be careful to use the correct class or variable name.</p>
 <p>Some other Python files contain a lot of code used during deployment. It’s not reasonable to make an exhaustive list, but <code>pki.server.deployment.pkihelper</code> and <code>pki.server.deployment.pkiparser</code> in particular include a lot of configuration processing code. If you are implementing or changing <code>pkispawn</code> configuration options, you’ll be defining them and following changes around in these files (and possibly others), as well as in <code>base/server/etc/default.cfg</code>.</p>
 <h4 id="scriptlets-and-uninstallation">Scriptlets and uninstallation</h4>
 <p>The installation scriptlets also implement corresponding uninstallation behaviours. When uninstalling a Dogtag instance or subsystem via the <code>pkidestroy</code> command, each scriptlets’ uninstallation behaviour is invoked. The order in which they’re invoked is different from installation, and is given by the <code>destroy_scriplets</code> variable in <code>base/server/etc/default.cfg</code>.</p>

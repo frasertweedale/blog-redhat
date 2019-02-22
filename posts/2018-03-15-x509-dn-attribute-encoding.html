@@ -18,7 +18,13 @@
         </div>
 
         <div id="content">
-            <div id="postContent">
+            <div class="info">
+    
+    Tags: <a href="../tags/certificates.html">certificates</a>, <a href="../tags/asn1.html">asn1</a>, <a href="../tags/gotchas.html">gotchas</a>
+    
+</div>
+
+<div id="postContent">
     <h1 id="dn-attribute-value-encoding-in-x.509">DN attribute value encoding in X.509</h1>
 <p>X.509 certificates use the X.500 <em>Distinguished Name (DN)</em> data type to represent issuer and subject names. X.500 names may contain a variety of fields including <em>CommonName</em>, <em>OrganizationName</em>, <em>Country</em> and so on. This post discusses how these values are encoded and compared, and problematic circumstances that can arise.</p>
 <h2 id="asn.1-string-types-and-encodings">ASN.1 string types and encodings</h2>
@@ -93,7 +99,7 @@ TeletexString, BMPString, or UniversalString encodings, then
 the subject field of certificates issued to that CA MUST use
 the same encoding.</code></pre>
 <p>This is confusing wording, but in practical terms there are two requirements:</p>
-<ol style="list-style-type: decimal">
+<ol type="1">
 <li>The Issuer DN on a certificate must be byte-identical to the Subject DN of the CA that issued it.</li>
 <li>The attribute encodings in a CA’s Subject DN must not change (e.g. when the CA certificate gets renewed).</li>
 </ol>

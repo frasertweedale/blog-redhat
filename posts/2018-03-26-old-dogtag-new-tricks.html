@@ -18,7 +18,13 @@
         </div>
 
         <div id="content">
-            <div id="postContent">
+            <div class="info">
+    
+    Tags: <a href="../tags/dogtag.html">dogtag</a>, <a href="../tags/java.html">java</a>, <a href="../tags/haskell.html">haskell</a>, <a href="../tags/programming.html">programming</a>
+    
+</div>
+
+<div id="postContent">
     <h1 id="can-we-teach-an-old-dogtag-new-tricks">Can we teach an old Dogtag new tricks?</h1>
 <p>Dogtag is a very old program. It started at <em>Netscape</em>. It is old enough to vote. Most of it was written in the early days of Java, long before generics or first-class functions. A lot of it has hardly been touched since it was first written.</p>
 <p>Old code often follows old practices that are no longer reasonable. This is not an indictment on the original programmers! The capabilities of our tools usually improve over time (certainly true for Java). The way we solve problems often improves over time too, through better libraries and APIs. And back in the ’90s sites like Stack Overflow didn’t exist and there wasn’t as much free software to learn from. Also, observe that Dogtag is still here, 20 years on, used by customers and being actively developed. This is a <em>huge credit</em> to the original developers and everyone who worked on Dogtag in the meantime.</p>
@@ -35,7 +41,7 @@
     ;allow (create,modify,delete) group=&quot;Administrators&quot;
   :Administrators may create and modify lightweight authorities</code></pre>
 <p>The fields are:</p>
-<ol style="list-style-type: decimal">
+<ol type="1">
 <li>Name of the ACL</li>
 <li>List of permissions covered by the ACLs</li>
 <li>List of ACL entries. Each entry either grants or denies the listed permissions to users matching an expression</li>
@@ -46,53 +52,53 @@
 <h3 id="broken-parsing">Broken parsing</h3>
 <p>The <code>ACL.parseACL</code> method (<a href="https://github.com/dogtagpki/pki/blob/223e6980c3f3f7a075890897bbb74140cb95279a/base/common/src/com/netscape/certsrv/acls/ACL.java#L191-L289">source</a>) converts the textual representation of an ACL into an internal representation. It’s about 100 lines of Java. Internally it calls <code>ACLEntry.parseACLEntry</code> which is another 40 lines.</p>
 <p>The implementation is ad-hoc and inflexible. Fields are found by scanning for delimiters, and their contents are handled in a variety of ways. For fields that can have multiple values, <code>StringTokenizer</code> is used, as in the following (simplified) example:</p>
-<div class="sourceCode"><pre class="sourceCode java"><code class="sourceCode java"><span class="bu">StringTokenizer</span> st = <span class="kw">new</span> <span class="bu">StringTokenizer</span>(entriesString, <span class="st">&quot;;&quot;</span>);
-<span class="kw">while</span> (st.<span class="fu">hasMoreTokens</span>()) {
-    <span class="bu">String</span> entryString = st.<span class="fu">nextToken</span>();
-    ACLEntry entry = ACLEntry.<span class="fu">parseACLEntry</span>(acl, entryString);
-    <span class="kw">if</span> (entry == <span class="kw">null</span>)
-        <span class="kw">throw</span> <span class="kw">new</span> <span class="fu">EACLsException</span>(<span class="st">&quot;failed to parse ACL entries&quot;</span>);
-    entry.<span class="fu">setACLEntryString</span>(entryString);
-    acl.<span class="fu">entries</span>.<span class="fu">add</span>(entry);
-}</code></pre></div>
+<div class="sourceCode" id="cb2"><pre class="sourceCode java"><code class="sourceCode java"><a class="sourceLine" id="cb2-1" title="1"><span class="bu">StringTokenizer</span> st = <span class="kw">new</span> <span class="bu">StringTokenizer</span>(entriesString, <span class="st">&quot;;&quot;</span>);</a>
+<a class="sourceLine" id="cb2-2" title="2"><span class="kw">while</span> (st.<span class="fu">hasMoreTokens</span>()) {</a>
+<a class="sourceLine" id="cb2-3" title="3">    <span class="bu">String</span> entryString = st.<span class="fu">nextToken</span>();</a>
+<a class="sourceLine" id="cb2-4" title="4">    ACLEntry entry = ACLEntry.<span class="fu">parseACLEntry</span>(acl, entryString);</a>
+<a class="sourceLine" id="cb2-5" title="5">    <span class="kw">if</span> (entry == <span class="kw">null</span>)</a>
+<a class="sourceLine" id="cb2-6" title="6">        <span class="kw">throw</span> <span class="kw">new</span> <span class="fu">EACLsException</span>(<span class="st">&quot;failed to parse ACL entries&quot;</span>);</a>
+<a class="sourceLine" id="cb2-7" title="7">    entry.<span class="fu">setACLEntryString</span>(entryString);</a>
+<a class="sourceLine" id="cb2-8" title="8">    acl.<span class="fu">entries</span>.<span class="fu">add</span>(entry);</a>
+<a class="sourceLine" id="cb2-9" title="9">}</a></code></pre></div>
 <p>So what happens if you have an ACL like the following? Note the semicolon in the group name.</p>
 <pre><code>certificate:issue:allow (read) group=&quot;sysadmin;pki&quot;
   :PKI sysadmins can read certificates</code></pre>
 <p>The current parser will either fail, or succeed but yield an ACL that makes no sense (I’m not quite sure which). I found a similar issue in real world use where group names contained a colon. The parser was scanning forward for a colon to determine the end of the ACL entries field:</p>
-<div class="sourceCode"><pre class="sourceCode java"><code class="sourceCode java"><span class="dt">int</span> finalDelimIdx = unparsedInput.<span class="fu">indexOf</span>(<span class="st">&quot;:&quot;</span>);
-<span class="bu">String</span> entriesString = unparsedInput.<span class="fu">substring</span>(<span class="dv">0</span>, finalDelimIdx);</code></pre></div>
+<div class="sourceCode" id="cb4"><pre class="sourceCode java"><code class="sourceCode java"><a class="sourceLine" id="cb4-1" title="1"><span class="dt">int</span> finalDelimIdx = unparsedInput.<span class="fu">indexOf</span>(<span class="st">&quot;:&quot;</span>);</a>
+<a class="sourceLine" id="cb4-2" title="2"><span class="bu">String</span> entriesString = unparsedInput.<span class="fu">substring</span>(<span class="dv">0</span>, finalDelimIdx);</a></code></pre></div>
 <p>This was fixed by scanning backwards from the end of the string for the final colon:</p>
-<div class="sourceCode"><pre class="sourceCode java"><code class="sourceCode java"><span class="dt">int</span> finalDelimIdx = unparsedInput.<span class="fu">lastIndexOf</span>(<span class="st">&quot;:&quot;</span>);
-<span class="bu">String</span> entriesString = unparsedInput.<span class="fu">substring</span>(<span class="dv">0</span>, finalDelimIdx);</code></pre></div>
+<div class="sourceCode" id="cb5"><pre class="sourceCode java"><code class="sourceCode java"><a class="sourceLine" id="cb5-1" title="1"><span class="dt">int</span> finalDelimIdx = unparsedInput.<span class="fu">lastIndexOf</span>(<span class="st">&quot;:&quot;</span>);</a>
+<a class="sourceLine" id="cb5-2" title="2"><span class="bu">String</span> entriesString = unparsedInput.<span class="fu">substring</span>(<span class="dv">0</span>, finalDelimIdx);</a></code></pre></div>
 <p>Now colons in group names work as expected. But it is broken in a different way: if the comment contains a colon, parsing will fail. These kinds of defects are symptomatic of the ad-hoc, brittle parser implementation.</p>
 <h3 id="incomplete-parsing">Incomplete parsing</h3>
 <p><code>ACLEntry.parseACLEntry</code> method does not actually parse the access expressions. An ACL expression can look like:</p>
 <pre><code>user=&quot;caadmin&quot; || group=&quot;Administrators&quot;</code></pre>
 <p>The expression is saved in the <code>ACLEntry</code> as-is, i.e. as a string. Parsing is deferred to ACL evaluation. Parsing work is repeated every time the entry is evaluated. The deferral also means that invalid expressions are silently allowed and can only be noticed when they are evaluated. The effect of an invalid expression depends on the kind of syntax error, and the behaviour of the access evaluator.</p>
 <h3 id="access-evaluator-expressions">Access evaluator expressions</h3>
-<p>The code that parses access evaluator expressions (e.g. <code>user=&quot;bob&quot;</code>) will accept any of <code>=</code>, <code>!=</code>, <code>&gt;</code> or <code>&lt;</code>, even when the nominated access evaluator does not handle the given operator. For example, <code>user&gt;&quot;bob&quot;</code> will be accepted, but the <code>user</code> access evaluator only handles <code>=</code> and <code>!=</code>. It is up to each access evaluator to handle invalid operators appropriately. This is a burden on the programmer. It’s also confusing for users in that semantically invalid expressions like <code>user&gt;&quot;bob&quot;</code> do not result in an error.</p>
+<p>The code that parses access evaluator expressions (e.g. <code>user="bob"</code>) will accept any of <code>=</code>, <code>!=</code>, <code>&gt;</code> or <code>&lt;</code>, even when the nominated access evaluator does not handle the given operator. For example, <code>user&gt;"bob"</code> will be accepted, but the <code>user</code> access evaluator only handles <code>=</code> and <code>!=</code>. It is up to each access evaluator to handle invalid operators appropriately. This is a burden on the programmer. It’s also confusing for users in that semantically invalid expressions like <code>user&gt;"bob"</code> do not result in an error.</p>
 <p>Furthermore, the set of access evaluator operators is not extensible. Dogtag administrators can write their own access evaluators and configure Dogtag to use them. But these can only use the <code>=</code>, <code>!=</code>, <code>&gt;</code> or <code>&lt;</code> operators. If you need more than four operators, need non-binary operators, or would prefer different operator symbols, too bad.</p>
 <h3 id="acl-evaluation">ACL evaluation</h3>
 <p>The <code>AAclAuthz</code> class (<a href="https://github.com/dogtagpki/pki/blob/223e6980c3f3f7a075890897bbb74140cb95279a/base/server/cms/src/com/netscape/cms/authorization/AAclAuthz.java">source</a>) contains around 400 lines of code for evaluating an ACLs for a given user and permissions. (This includes the expression parsing discussed above). In addition, the typical access evaluator class (<code>UserAccessEvaluator</code>, <code>GroupAccessEvaluator</code>, etc.) has about 20 to 40 lines of code dealing with evaluation. The logic is not straightforward to follow.</p>
 <p>There is at least one major bug in this code. There is a global configuration that controls whether an ACL’s <em>allow</em> rules or <em>deny</em> rules are processed first. The default is <em>deny,allow</em>, but if you change it to <em>allow,deny</em>, then a matching <em>allow</em> rule will cause denial! Observe (example simplified and commentary added by me):</p>
-<div class="sourceCode"><pre class="sourceCode java"><code class="sourceCode java"><span class="kw">if</span> (order.<span class="fu">equals</span>(<span class="st">&quot;deny&quot;</span>)) {
-    <span class="co">// deny,allow, the default</span>
-    entries = <span class="fu">getDenyEntries</span>(nodes, perm);
-} <span class="kw">else</span> {
-    <span class="co">// allow,deny</span>
-    entries = <span class="fu">getAllowEntries</span>(nodes, perm);
-}
-
-<span class="kw">while</span> (entries.<span class="fu">hasMoreElements</span>()) {
-    ACLEntry entry = entries.<span class="fu">nextElement</span>();
-    <span class="kw">if</span> (<span class="fu">evaluateExpressions</span>(
-            authToken,
-            entry.<span class="fu">getAttributeExpressions</span>())) {
-        <span class="co">// if we are in allow,deny mode, we just hit</span>
-        <span class="co">// a matching *allow* rule, and deny access</span>
-        <span class="kw">throw</span> <span class="kw">new</span> <span class="fu">EACLsException</span>(<span class="st">&quot;permission denied&quot;</span>);
-    }
-}</code></pre></div>
+<div class="sourceCode" id="cb7"><pre class="sourceCode java"><code class="sourceCode java"><a class="sourceLine" id="cb7-1" title="1"><span class="kw">if</span> (order.<span class="fu">equals</span>(<span class="st">&quot;deny&quot;</span>)) {</a>
+<a class="sourceLine" id="cb7-2" title="2">    <span class="co">// deny,allow, the default</span></a>
+<a class="sourceLine" id="cb7-3" title="3">    entries = <span class="fu">getDenyEntries</span>(nodes, perm);</a>
+<a class="sourceLine" id="cb7-4" title="4">} <span class="kw">else</span> {</a>
+<a class="sourceLine" id="cb7-5" title="5">    <span class="co">// allow,deny</span></a>
+<a class="sourceLine" id="cb7-6" title="6">    entries = <span class="fu">getAllowEntries</span>(nodes, perm);</a>
+<a class="sourceLine" id="cb7-7" title="7">}</a>
+<a class="sourceLine" id="cb7-8" title="8"></a>
+<a class="sourceLine" id="cb7-9" title="9"><span class="kw">while</span> (entries.<span class="fu">hasMoreElements</span>()) {</a>
+<a class="sourceLine" id="cb7-10" title="10">    ACLEntry entry = entries.<span class="fu">nextElement</span>();</a>
+<a class="sourceLine" id="cb7-11" title="11">    <span class="kw">if</span> (<span class="fu">evaluateExpressions</span>(</a>
+<a class="sourceLine" id="cb7-12" title="12">            authToken,</a>
+<a class="sourceLine" id="cb7-13" title="13">            entry.<span class="fu">getAttributeExpressions</span>())) {</a>
+<a class="sourceLine" id="cb7-14" title="14">        <span class="co">// if we are in allow,deny mode, we just hit</span></a>
+<a class="sourceLine" id="cb7-15" title="15">        <span class="co">// a matching *allow* rule, and deny access</span></a>
+<a class="sourceLine" id="cb7-16" title="16">        <span class="kw">throw</span> <span class="kw">new</span> <span class="fu">EACLsException</span>(<span class="st">&quot;permission denied&quot;</span>);</a>
+<a class="sourceLine" id="cb7-17" title="17">    }</a>
+<a class="sourceLine" id="cb7-18" title="18">}</a></code></pre></div>
 <p>The next step of this routine is to process the next set of rules. Like above, if we are in <em>allow,deny</em> mode and encounter a matching <em>deny</em> rule, access will be granted.</p>
 <p>This is a serious bug! It completely reverses the meaning of ACLs. In most cases the environment will be completely broken. It also poses a security issue. Because of how broken this setting is, the Dogtag team thinks that it’s unlikely that anyone is running in <em>allow,deny</em> mode. But we can’t be sure, so the bug was assigned <a href="https://bugzilla.redhat.com/show_bug.cgi?id=1556657">CVE-2018-1080</a>.</p>
 <p>This defect is present in the initial commit in the Dogtag Git repository (2008). It might have been present in the original implementation. But whenever it was introduced, the problem was not noticed. Several developers who made small changes over the years to the ACL code (logging, formatting, etc) did not notice it. Including me, until very recently.</p>
@@ -113,78 +119,78 @@
 <p>The prototype is not complete. It does not support serialisation of ACLs or the heirarchical nature of ACL evaluation (i.e. checking an authorisation on resource <code>foo.bar.baz</code> would check ACLs named <code>foo.bar.baz</code>, <code>foo.bar</code> and <code>foo</code>). It does support parsing and evaluation. We shall see that it resolves the problems in the Java implementation discussed above.</p>
 <p>The implementation is about 250 lines of code, roughly ⅓ the size of the Java implementation. It is much easier to read and reason about. Let’s look at a few highlights.</p>
 <p>The definitions of the <code>ACL</code> data type, and its constituents, are straightforward:</p>
-<div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="kw">type</span> <span class="dt">Permission</span> <span class="fu">=</span> <span class="dt">Text</span>  <span class="co">-- type synonym, for convenience</span>
-
-<span class="kw">data</span> <span class="dt">ACLRuleType</span> <span class="fu">=</span> <span class="dt">Allow</span> <span class="fu">|</span> <span class="dt">Deny</span>
-  <span class="kw">deriving</span> (<span class="dt">Eq</span>) <span class="co">-- auto-derive an equality</span>
-                <span class="co">-- test (==) for this type</span>
-
-<span class="co">-- a record type with 3 fields</span>
-<span class="kw">data</span> <span class="dt">ACLRule</span> <span class="fu">=</span> <span class="dt">ACLRule</span>
-  {<span class="ot"> aclRuleType ::</span> <span class="dt">ACLRuleType</span>
-  ,<span class="ot"> aclRulePermissions ::</span> [<span class="dt">Permission</span>]
-  ,<span class="ot"> aclRuleExpression ::</span> <span class="dt">ACLExpression</span>
-  }
-
-<span class="kw">data</span> <span class="dt">ACL</span> <span class="fu">=</span> <span class="dt">ACL</span>
-  {<span class="ot"> aclName ::</span> <span class="dt">Text</span>
-  ,<span class="ot"> aclPermissions ::</span> [<span class="dt">Permission</span>]
-  ,<span class="ot"> aclRules ::</span> [<span class="dt">ACLRule</span>]
-  ,<span class="ot"> aclDescription ::</span> <span class="dt">Text</span>
-  }</code></pre></div>
+<div class="sourceCode" id="cb8"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb8-1" title="1"><span class="kw">type</span> <span class="dt">Permission</span> <span class="ot">=</span> <span class="dt">Text</span>  <span class="co">-- type synonym, for convenience</span></a>
+<a class="sourceLine" id="cb8-2" title="2"></a>
+<a class="sourceLine" id="cb8-3" title="3"><span class="kw">data</span> <span class="dt">ACLRuleType</span> <span class="ot">=</span> <span class="dt">Allow</span> <span class="op">|</span> <span class="dt">Deny</span></a>
+<a class="sourceLine" id="cb8-4" title="4">  <span class="kw">deriving</span> (<span class="dt">Eq</span>) <span class="co">-- auto-derive an equality</span></a>
+<a class="sourceLine" id="cb8-5" title="5">                <span class="co">-- test (==) for this type</span></a>
+<a class="sourceLine" id="cb8-6" title="6"></a>
+<a class="sourceLine" id="cb8-7" title="7"><span class="co">-- a record type with 3 fields</span></a>
+<a class="sourceLine" id="cb8-8" title="8"><span class="kw">data</span> <span class="dt">ACLRule</span> <span class="ot">=</span> <span class="dt">ACLRule</span></a>
+<a class="sourceLine" id="cb8-9" title="9">  {<span class="ot"> aclRuleType ::</span> <span class="dt">ACLRuleType</span></a>
+<a class="sourceLine" id="cb8-10" title="10">  ,<span class="ot"> aclRulePermissions ::</span> [<span class="dt">Permission</span>]</a>
+<a class="sourceLine" id="cb8-11" title="11">  ,<span class="ot"> aclRuleExpression ::</span> <span class="dt">ACLExpression</span></a>
+<a class="sourceLine" id="cb8-12" title="12">  }</a>
+<a class="sourceLine" id="cb8-13" title="13"></a>
+<a class="sourceLine" id="cb8-14" title="14"><span class="kw">data</span> <span class="dt">ACL</span> <span class="ot">=</span> <span class="dt">ACL</span></a>
+<a class="sourceLine" id="cb8-15" title="15">  {<span class="ot"> aclName ::</span> <span class="dt">Text</span></a>
+<a class="sourceLine" id="cb8-16" title="16">  ,<span class="ot"> aclPermissions ::</span> [<span class="dt">Permission</span>]</a>
+<a class="sourceLine" id="cb8-17" title="17">  ,<span class="ot"> aclRules ::</span> [<span class="dt">ACLRule</span>]</a>
+<a class="sourceLine" id="cb8-18" title="18">  ,<span class="ot"> aclDescription ::</span> <span class="dt">Text</span></a>
+<a class="sourceLine" id="cb8-19" title="19">  }</a></code></pre></div>
 <p>The definition of the ACL parser follows the structure of the data type. This aids readability and assists reasoning about correctness:</p>
-<div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="ot">acl ::</span> [<span class="dt">Parser</span> <span class="dt">AccessEvaluator</span>] <span class="ot">-&gt;</span> <span class="dt">Parser</span> <span class="dt">ACL</span>
-acl ps <span class="fu">=</span> <span class="dt">ACL</span>
-  <span class="fu">&lt;$&gt;</span> takeWhile1 (<span class="fu">/=</span> <span class="ch">':'</span>) <span class="fu">&lt;*</span> char <span class="ch">':'</span>
-  <span class="fu">&lt;*&gt;</span> (permission <span class="ot">`sepBy1`</span> char <span class="ch">','</span>) <span class="fu">&lt;*</span> char <span class="ch">':'</span>
-  <span class="fu">&lt;*&gt;</span> (rule ps <span class="ot">`sepBy1`</span> spaced (char <span class="ch">';'</span>)) <span class="fu">&lt;*</span> char <span class="ch">':'</span>
-  <span class="fu">&lt;*&gt;</span> takeText</code></pre></div>
+<div class="sourceCode" id="cb9"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb9-1" title="1"><span class="ot">acl ::</span> [<span class="dt">Parser</span> <span class="dt">AccessEvaluator</span>] <span class="ot">-&gt;</span> <span class="dt">Parser</span> <span class="dt">ACL</span></a>
+<a class="sourceLine" id="cb9-2" title="2">acl ps <span class="ot">=</span> <span class="dt">ACL</span></a>
+<a class="sourceLine" id="cb9-3" title="3">  <span class="op">&lt;$&gt;</span> takeWhile1 (<span class="op">/=</span> <span class="ch">':'</span>) <span class="op">&lt;*</span> char <span class="ch">':'</span></a>
+<a class="sourceLine" id="cb9-4" title="4">  <span class="op">&lt;*&gt;</span> (permission <span class="ot">`sepBy1`</span> char <span class="ch">','</span>) <span class="op">&lt;*</span> char <span class="ch">':'</span></a>
+<a class="sourceLine" id="cb9-5" title="5">  <span class="op">&lt;*&gt;</span> (rule ps <span class="ot">`sepBy1`</span> spaced (char <span class="ch">';'</span>)) <span class="op">&lt;*</span> char <span class="ch">':'</span></a>
+<a class="sourceLine" id="cb9-6" title="6">  <span class="op">&lt;*&gt;</span> takeText</a></code></pre></div>
 <p>Each line is a parser for one of the fields of the <code>ACL</code> data type. The <code>&lt;$&gt;</code> and <code>&lt;*&gt;</code> <em>infix</em> functions combine these smaller parsers into a parser for the whole <code>ACL</code> type. <code>permission</code> and <code>rule</code> are parsers for the <code>Permission</code> and <code>ACLRule</code> data types, respectively. The <code>sepBy1</code> combinator turns a parser for a single thing into a parser for a list of things.</p>
 <p>Note that several of these <em>combinators</em> are not specific to parsers but are derived from, or part of, a common abstraction that parsers happen to inhabit. The actual parser library used is incidental. A simple parser type and all the combinators used in this ACL implementation, written from scratch, would take all of 50 lines.</p>
 <p>The <code>[Parser AccessEvaluator]</code> argument (named <code>ps</code>) is a list of parsers for <code>AccessEvaluator</code>. This provides the access evaluator extensibility we desire while ensuring that invalid expressions are rejected. The details are down inside the implementation of <code>rule</code> and are not discussed here.</p>
 <p>Next we’ll look at how ACLs are evaluated:</p>
-<div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="kw">data</span> <span class="dt">ACLRuleOrder</span> <span class="fu">=</span> <span class="dt">AllowDeny</span> <span class="fu">|</span> <span class="dt">DenyAllow</span>
-
-<span class="kw">data</span> <span class="dt">ACLResult</span> <span class="fu">=</span> <span class="dt">Allowed</span> <span class="fu">|</span> <span class="dt">Denied</span>
-
-evaluateACL
-<span class="ot">  ::</span> <span class="dt">ACLRuleOrder</span>
-  <span class="ot">-&gt;</span> <span class="dt">AuthenticationToken</span>
-  <span class="ot">-&gt;</span> <span class="dt">Permission</span>
-  <span class="ot">-&gt;</span> <span class="dt">ACL</span>
-  <span class="ot">-&gt;</span> <span class="dt">ACLResult</span>
-evaluateACL order tok perm (<span class="dt">ACL</span> _ _ rules _ ) <span class="fu">=</span>
-  fromMaybe <span class="dt">Denied</span> result  <span class="co">-- deny if no rules matched</span>
-  <span class="kw">where</span>
-    permRules <span class="fu">=</span>
-      filter (elem perm <span class="fu">.</span> aclRulePermissions) rules
-
-    orderedRules <span class="fu">=</span> <span class="kw">case</span> order <span class="kw">of</span>
-      <span class="dt">DenyAllow</span> <span class="ot">-&gt;</span> denyRules <span class="fu">&lt;&gt;</span> allowRules
-      <span class="dt">AllowDeny</span> <span class="ot">-&gt;</span> allowRules <span class="fu">&lt;&gt;</span> denyRules
-    denyRules <span class="fu">=</span>
-      filter ((<span class="fu">==</span> <span class="dt">Deny</span>) <span class="fu">.</span> aclRuleType) permRules
-    allowRules <span class="fu">=</span>
-      filter ((<span class="fu">==</span> <span class="dt">Allow</span>) <span class="fu">.</span> aclRuleType) permRules
-
-    <span class="co">-- the first matching rule wins</span>
-    result <span class="fu">=</span> getFirst
-      (foldMap (<span class="dt">First</span> <span class="fu">.</span> evaluateRule tok) orderedRules)</code></pre></div>
+<div class="sourceCode" id="cb10"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb10-1" title="1"><span class="kw">data</span> <span class="dt">ACLRuleOrder</span> <span class="ot">=</span> <span class="dt">AllowDeny</span> <span class="op">|</span> <span class="dt">DenyAllow</span></a>
+<a class="sourceLine" id="cb10-2" title="2"></a>
+<a class="sourceLine" id="cb10-3" title="3"><span class="kw">data</span> <span class="dt">ACLResult</span> <span class="ot">=</span> <span class="dt">Allowed</span> <span class="op">|</span> <span class="dt">Denied</span></a>
+<a class="sourceLine" id="cb10-4" title="4"></a>
+<a class="sourceLine" id="cb10-5" title="5">evaluateACL</a>
+<a class="sourceLine" id="cb10-6" title="6"><span class="ot">  ::</span> <span class="dt">ACLRuleOrder</span></a>
+<a class="sourceLine" id="cb10-7" title="7">  <span class="ot">-&gt;</span> <span class="dt">AuthenticationToken</span></a>
+<a class="sourceLine" id="cb10-8" title="8">  <span class="ot">-&gt;</span> <span class="dt">Permission</span></a>
+<a class="sourceLine" id="cb10-9" title="9">  <span class="ot">-&gt;</span> <span class="dt">ACL</span></a>
+<a class="sourceLine" id="cb10-10" title="10">  <span class="ot">-&gt;</span> <span class="dt">ACLResult</span></a>
+<a class="sourceLine" id="cb10-11" title="11">evaluateACL order tok perm (<span class="dt">ACL</span> _ _ rules _ ) <span class="ot">=</span></a>
+<a class="sourceLine" id="cb10-12" title="12">  fromMaybe <span class="dt">Denied</span> result  <span class="co">-- deny if no rules matched</span></a>
+<a class="sourceLine" id="cb10-13" title="13">  <span class="kw">where</span></a>
+<a class="sourceLine" id="cb10-14" title="14">    permRules <span class="ot">=</span></a>
+<a class="sourceLine" id="cb10-15" title="15">      <span class="fu">filter</span> (<span class="fu">elem</span> perm <span class="op">.</span> aclRulePermissions) rules</a>
+<a class="sourceLine" id="cb10-16" title="16"></a>
+<a class="sourceLine" id="cb10-17" title="17">    orderedRules <span class="ot">=</span> <span class="kw">case</span> order <span class="kw">of</span></a>
+<a class="sourceLine" id="cb10-18" title="18">      <span class="dt">DenyAllow</span> <span class="ot">-&gt;</span> denyRules <span class="op">&lt;&gt;</span> allowRules</a>
+<a class="sourceLine" id="cb10-19" title="19">      <span class="dt">AllowDeny</span> <span class="ot">-&gt;</span> allowRules <span class="op">&lt;&gt;</span> denyRules</a>
+<a class="sourceLine" id="cb10-20" title="20">    denyRules <span class="ot">=</span></a>
+<a class="sourceLine" id="cb10-21" title="21">      <span class="fu">filter</span> ((<span class="op">==</span> <span class="dt">Deny</span>) <span class="op">.</span> aclRuleType) permRules</a>
+<a class="sourceLine" id="cb10-22" title="22">    allowRules <span class="ot">=</span></a>
+<a class="sourceLine" id="cb10-23" title="23">      <span class="fu">filter</span> ((<span class="op">==</span> <span class="dt">Allow</span>) <span class="op">.</span> aclRuleType) permRules</a>
+<a class="sourceLine" id="cb10-24" title="24"></a>
+<a class="sourceLine" id="cb10-25" title="25">    <span class="co">-- the first matching rule wins</span></a>
+<a class="sourceLine" id="cb10-26" title="26">    result <span class="ot">=</span> getFirst</a>
+<a class="sourceLine" id="cb10-27" title="27">      (<span class="fu">foldMap</span> (<span class="dt">First</span> <span class="op">.</span> evaluateRule tok) orderedRules)</a></code></pre></div>
 <p>Given an <code>ACLRuleOrder</code>, an <code>AuthenticationToken</code> bearing user data, a <code>Permission</code> on the resource being accessed and an <code>ACL</code> for that resource, <code>evaluateACL</code> returns an <code>ACLResult</code> (either <code>Allowed</code> or <code>Denied</code>. The implementation filters rules for the given permission, orders the rules according to the <code>ACLRuleOrder</code>, and returns the result of the first matching rule, or <code>Denied</code> if no rules were matched.</p>
-<div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell">evaluateRule
-<span class="ot">  ::</span> <span class="dt">AuthenticationToken</span>
-  <span class="ot">-&gt;</span> <span class="dt">ACLRule</span>
-  <span class="ot">-&gt;</span> <span class="dt">Maybe</span> <span class="dt">ACLResult</span>
-evaluateRule tok (<span class="dt">ACLRule</span> ruleType _ expr) <span class="fu">=</span>
-  <span class="kw">if</span> evaluateExpression tok expr
-    <span class="kw">then</span> <span class="dt">Just</span> (result ruleType)
-    <span class="kw">else</span> <span class="dt">Nothing</span>
-  <span class="kw">where</span>
-    result <span class="dt">Deny</span> <span class="fu">=</span> <span class="dt">Denied</span>
-    result <span class="dt">Allow</span> <span class="fu">=</span> <span class="dt">Allowed</span></code></pre></div>
+<div class="sourceCode" id="cb11"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb11-1" title="1">evaluateRule</a>
+<a class="sourceLine" id="cb11-2" title="2"><span class="ot">  ::</span> <span class="dt">AuthenticationToken</span></a>
+<a class="sourceLine" id="cb11-3" title="3">  <span class="ot">-&gt;</span> <span class="dt">ACLRule</span></a>
+<a class="sourceLine" id="cb11-4" title="4">  <span class="ot">-&gt;</span> <span class="dt">Maybe</span> <span class="dt">ACLResult</span></a>
+<a class="sourceLine" id="cb11-5" title="5">evaluateRule tok (<span class="dt">ACLRule</span> ruleType _ expr) <span class="ot">=</span></a>
+<a class="sourceLine" id="cb11-6" title="6">  <span class="kw">if</span> evaluateExpression tok expr</a>
+<a class="sourceLine" id="cb11-7" title="7">    <span class="kw">then</span> <span class="dt">Just</span> (result ruleType)</a>
+<a class="sourceLine" id="cb11-8" title="8">    <span class="kw">else</span> <span class="dt">Nothing</span></a>
+<a class="sourceLine" id="cb11-9" title="9">  <span class="kw">where</span></a>
+<a class="sourceLine" id="cb11-10" title="10">    result <span class="dt">Deny</span> <span class="ot">=</span> <span class="dt">Denied</span></a>
+<a class="sourceLine" id="cb11-11" title="11">    result <span class="dt">Allow</span> <span class="ot">=</span> <span class="dt">Allowed</span></a></code></pre></div>
 <p>Could the <em>allow,deny</em> bug from the Java implementation occur here? It cannot. Instead of the rule evaluator returning a <code>boolean</code> as in the Java implementation, <code>evaluateRule</code> returns a <code>Maybe ACLResult</code>. If a rule does not match, its result is <code>Nothing</code>. If it does match, the result is <code>Just Denied</code> for <code>Deny</code> rules, or <code>Just Allowed</code> for <code>Allow</code> rules. The first <code>Just</code> result encountered is used directly. It’s still possible to mess up the implementation, for example:</p>
-<div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell">result <span class="dt">Deny</span> <span class="fu">=</span> <span class="dt">Allowed</span>
-result <span class="dt">Allow</span> <span class="fu">=</span> <span class="dt">Deny</span></code></pre></div>
+<div class="sourceCode" id="cb12"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb12-1" title="1">result <span class="dt">Deny</span> <span class="ot">=</span> <span class="dt">Allowed</span></a>
+<a class="sourceLine" id="cb12-2" title="2">result <span class="dt">Allow</span> <span class="ot">=</span> <span class="dt">Deny</span></a></code></pre></div>
 <p>But this kind of error is less likely to occur and more likely to be noticed. Boolean blindness is not a factor.</p>
 <h2 id="benefits-of-fp-for-prototyping">Benefits of FP for prototyping</h2>
 <p>There are benefits to using functional programming for prototyping or re-implementing parts of a system written in less expressive langauges.</p>

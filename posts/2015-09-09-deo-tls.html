@@ -18,7 +18,13 @@
         </div>
 
         <div id="content">
-            <div id="postContent">
+            <div class="info">
+    
+    Tags: <a href="../tags/security.html">security</a>, <a href="../tags/cryptography.html">cryptography</a>
+    
+</div>
+
+<div id="postContent">
     <h1 id="automatic-decryption-of-tls-private-keys-with-deo">Automatic decryption of TLS private keys with Deo</h1>
 <p><a href="https://github.com/npmccallum/deo">Deo</a> is a protocol for <em>network-bound encryption</em> which provides for automatic decryption of secrets when a client is on a given network, and an implementation of the protocol. Importantly, it is <em>not a key escrow service</em>.</p>
 <p>The original use case for Deo was automatic decryption of encrypted disks, e.g. for servers in datacentres or employee laptops when inside the corporate firewall. This provides convenience and time savings for operators but if disks are not on the secure network (e.g. due to warranty service or theft) they cannot be automatically decrypted. A typical configuration will fall back to password-based decryption, so choosing a secure passphrase is still important.</p>
@@ -46,7 +52,7 @@ DEO_FILE=&quot;/etc/httpd/deo.d/$1&quot;
 [ -f &quot;$DEO_FILE&quot; ] &amp;&amp; deo decrypt &lt; &quot;$DEO_FILE&quot; &amp;&amp; echo &amp;&amp; exit
 exec /bin/systemd-ask-password &quot;Enter SSL pass phrase for $1 ($2) : &quot;</code></pre>
 <p>The behaviour of this script is:</p>
-<ol style="list-style-type: decimal">
+<ol type="1">
 <li>Check for the existence of a file in the <code>deo.d/</code> directory relating to the server indicated in the first command argument.</li>
 <li>If the file exists, attempt to <code>deo decrypt</code> it and exit if successful.</li>
 <li>If the file does not exist or if decryption fails, fall back to <code>systemd-ask-password</code>.</li>
@@ -87,8 +93,8 @@ allow httpd_passwd_t unreserved_port_t:tcp_socket name_connect;</code></pre>
 <p>The nginx code base is modern and clean and if the developers are receptive it would be worthwhile to add behaviour similar to Apache’s <code>SSLPassPhraseDialog</code>.</p>
 <p>For other servers, check the documentation. If you wish to implement for Deo in a program that you work on - either directly or by invoking helper programs - you may find the following OpenSSL and NSS API documentation useful:</p>
 <ul>
-<li><a href="https://www.openssl.org/docs/manmaster/ssl/SSL_CTX_set_default_passwd_cb.html" class="uri">https://www.openssl.org/docs/manmaster/ssl/SSL_CTX_set_default_passwd_cb.html</a></li>
-<li><a href="https://developer.mozilla.org/en-US/docs/Mozilla/Projects/NSS/PKCS11_Functions#PK11_SetPasswordFunc" class="uri">https://developer.mozilla.org/en-US/docs/Mozilla/Projects/NSS/PKCS11_Functions#PK11_SetPasswordFunc</a></li>
+<li><a href="https://www.openssl.org/docs/manmaster/ssl/SSL_CTX_set_default_passwd_cb.html">https://www.openssl.org/docs/manmaster/ssl/SSL_CTX_set_default_passwd_cb.html</a></li>
+<li><a href="https://developer.mozilla.org/en-US/docs/Mozilla/Projects/NSS/PKCS11_Functions#PK11_SetPasswordFunc">https://developer.mozilla.org/en-US/docs/Mozilla/Projects/NSS/PKCS11_Functions#PK11_SetPasswordFunc</a></li>
 </ul>
 <h2 id="concluding-notes">Concluding notes</h2>
 <p>Deo emerged from disk encryption use cases but the protocol is useful in other contexts, including operator-less decryption of secrets used by network servers. We examined a straightforward implementation of Deo-based automatic TLS private key decryption for Apache with mod_ssl and also saw that current versions of mod_nss (for Apache) and nginx don’t support the underlying design. Supporting Deo decryption in a PKCS #11 module is an area for further investigation.</p>

@@ -18,7 +18,13 @@
         </div>
 
         <div id="content">
-            <div id="postContent">
+            <div class="info">
+    
+    Tags: <a href="../tags/dogtag.html">dogtag</a>, <a href="../tags/freeipa.html">freeipa</a>, <a href="../tags/troubleshooting.html">troubleshooting</a>
+    
+</div>
+
+<div id="postContent">
     <h1 id="diagnosing-dogtag-cloning-failures">Diagnosing Dogtag cloning failures</h1>
 <p>Sometimes, creating a Dogtag clone or a FreeIPA CA replica fails. I worked with Dogtag and FreeIPA for nearly five years. Over these years I’ve analysed a lot of these clone/replica installation failures and internalised a lot of knowledge about how cloning works, and how it can break. Often when I read a problem report and inspect the logs I quickly get a “gut feeling” about the cause. The purpose of this post is to <em>externalise</em> my internal intuition so that others can benefit. Whether you are an engineer or not, this post explains what you can do to get to the bottom of Dogtag cloning failures faster.</p>
 <h2 id="how-dogtag-clones-are-created">How Dogtag clones are created</h2>
@@ -50,11 +56,11 @@
 <p>During cloning, the <em>clone</em> adds LDAP objects in its own database. It then performs requests against the <em>master</em>, assuming that those objects (or effects of other LDAP operations) have been replicated to the master. Due to replication lag, the data have not been replicated and as a consequence, a request fails.</p>
 <p>In the past couple of years several replication races were discovered and fixed (or mitigated) in Dogtag or FreeIPA:</p>
 <h4 id="updatenumberrange-failure-due-to-missing-session-object"><code>updateNumberRange</code> failure due to missing session object</h4>
-<p><strong>Ticket</strong>: <a href="https://pagure.io/dogtagpki/issue/2557" class="uri">https://pagure.io/dogtagpki/issue/2557</a></p>
+<p><strong>Ticket</strong>: <a href="https://pagure.io/dogtagpki/issue/2557">https://pagure.io/dogtagpki/issue/2557</a></p>
 <p><strong>Description</strong>: After security domain login (locally on the <em>replica</em>) the session object gets replicated to the <em>master</em>. The cookie/token conveyed in the <code>updateNumberRange</code> range referred to a session that the <em>master</em> did not yet know about.</p>
 <p><strong>Resolution</strong>: the <em>replica</em> sleeps (duration configuration; default 5s) after security domain login, giving time for replication. This is not guaranteed the avoid the problem: the complete solution (yet to be implemented) will be to <a href="https://pagure.io/dogtagpki/issue/2831">use a signed/MACed token</a>.</p>
 <h4 id="security-domain-login-failure-due-to-missing-user-or-group-membership">Security domain login failure due to missing user or group membership</h4>
-<p><strong>Ticket</strong>: <a href="https://pagure.io/freeipa/issue/7593" class="uri">https://pagure.io/freeipa/issue/7593</a></p>
+<p><strong>Ticket</strong>: <a href="https://pagure.io/freeipa/issue/7593">https://pagure.io/freeipa/issue/7593</a></p>
 <p><strong>Description</strong>: This bug was actually in FreeIPA, but manifested in <code>pki-tomcatd</code> on <em>master</em> as a failure to log into the security domain. This could occur for one of two reasons: either the user was unknown, or the user was not a member of a required group. FreeIPA performs the relevant LDAP operations on the <em>replica</em>, but they have not replicated to <em>master</em> yet. The <code>pkispawn</code>/<code>ipa-replica-install</code> error message looks something like:</p>
 <pre><code>com.netscape.certsrv.base.PKIException: Failed to obtain
 installation token from security domain:
@@ -64,7 +70,7 @@ Administrators group.</code></pre>
 <p><strong>Workaround</strong>: no supported workaround. (You could hack in a <code>sleep</code> though).</p>
 <p><strong>Resolution</strong>: The user creation routine was already waiting for replication but the wait routine had a timeout bug causing false positives, <em>and</em> the group memberships were not being waited on. The timeout bug was fixed. The wait routine was enhanced to support waiting for particular attribute values; this feature was used to ensure group memberships have been replicated before continuing.</p>
 <h3 id="other-updatenumberrange-failures">Other <code>updateNumberRange</code> failures</h3>
-<p><strong>Ticket</strong>: <a href="https://pagure.io/dogtagpki/issue/3055" class="uri">https://pagure.io/dogtagpki/issue/3055</a></p>
+<p><strong>Ticket</strong>: <a href="https://pagure.io/dogtagpki/issue/3055">https://pagure.io/dogtagpki/issue/3055</a></p>
 <p><strong>Description</strong>: When creating a clone from a master that was itself a clone, an <code>updateNumberRange</code> request fails at <em>master</em> with status 500. A <code>NullPointerException</code> backtrace appears in the journal for the <code>pki-tomcatd@pki-tomcat</code> unit (on <em>master</em>). The problem arises because the initial number range assignment for the second clone is equal to the range size of the first clone (range transfer size is a fixed number). This scenario was not handled correctly, leading to the exception.</p>
 <p><strong>Workaround</strong>: Ensure that each clone services one of each kind of number (e.g. one full certificate request and issuance operation). This ensures that the clone’s range is smaller than the range transfer size, so that a subsequent <code>updateNumberRange</code> request will be satisfied from the master’s “standby” range.</p>
 <p><strong>Resolution</strong>: detect range depletion due to <code>updateNumberRange</code> requests and eagerly switch to the standby range. A better fix (yet to be implemented) will be to <a href="https://pagure.io/dogtagpki/issue/3060">allocate each clone a full-sized range</a> from the unallocated numbers.</p>

@@ -18,7 +18,13 @@
         </div>
 
         <div id="content">
-            <div id="postContent">
+            <div class="info">
+    
+    Tags: <a href="../tags/freeipa.html">freeipa</a>, <a href="../tags/certificates.html">certificates</a>
+    
+</div>
+
+<div id="postContent">
     <h1 id="lightweight-sub-cas-in-freeipa-4.4">Lightweight Sub-CAs in FreeIPA 4.4</h1>
 <p>Last year FreeIPA 4.2 brought us some great new certificate management features, including custom certificate profiles and user certificates. The upcoming FreeIPA 4.4 release builds upon this groundwork and introduces <em>lightweight sub-CAs</em>, a feature that lets admins to mint new CAs under the main FreeIPA CA and allows certificates for different purposes to be issued in different certificate domains. In this post I will review the use cases and demonstrate the process of creating, managing and issuing certificates from sub-CAs. (A follow-up post will detail some of the mechanisms that operate behind the scenes to make the feature work.)</p>
 <h2 id="use-cases">Use cases</h2>

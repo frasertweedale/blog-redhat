@@ -18,7 +18,13 @@
         </div>
 
         <div id="content">
-            <div id="postContent">
+            <div class="info">
+    
+    Tags: <a href="../tags/freeipa.html">freeipa</a>, <a href="../tags/dogtag.html">dogtag</a>, <a href="../tags/certificates.html">certificates</a>, <a href="../tags/internals.html">internals</a>
+    
+</div>
+
+<div id="postContent">
     <h1 id="freeipa-lightweight-ca-internals">FreeIPA Lightweight CA internals</h1>
 <p>In the <a href="2016-07-25-freeipa-subcas.html">preceding post</a>, I explained the use cases for the FreeIPA <em>lightweight sub-CAs</em> feature, how to manage CAs and use them to issue certificates, and current limitations. In this post I detail some of the internals of how the feature works, including how signing keys are distributed to replicas, and how sub-CA certificate renewal works. I conclude with a brief retrospective on delivering the feature.</p>
 <p>Full details of the design of the feature can be found <a href="http://www.freeipa.org/page/V4/Sub-CAs">on the design page</a>. This post does not cover everything from the design page, but we will look at the aspects that are covered from the perspective of the system administrator, i.e. <em>“what is happening on my systems?”</em></p>
@@ -109,7 +115,7 @@ description: Smart Card CA</code></pre>
 <p>FreeIPA servers replicate objects in the FreeIPA directory among themselves, as do Dogtag replicas (note: in Dogtag, the term <em>clone</em> is often used). All Dogtag instances in a replicated environment need to observe changes to lightweight CAs (creation, modification, deletion) that were performed on another replica and update their own view so that they can respond to requests consistently. This is accomplished via an LDAP <em>persistent search</em> which is run in an <em>authority monitor</em> thread. Care was needed to avoid race conditions. Fortunately, the solution for LDAP-based profile storage provided a fine starting point for the authority monitor; although lightweight CAs are more complex, many of the same race conditions can occur and these were already addressed in the LDAP profile monitor implementation.</p>
 <p>But unlike LDAP-based profiles, a lightweight CA consists of more than just an LDAP object; there is also the signing key. The signing key lives in Dogtag’s NSSDB and for security reasons cannot be transported through LDAP. This means that when a Dogtag clone observes the addition of a lightweight CA, an out-of-band mechanism to transport the signing key must also be triggered.</p>
 <p>This mechanism is covered in the design pages but the summarised process is:</p>
-<ol style="list-style-type: decimal">
+<ol type="1">
 <li>A Dogtag clone observes the creation of a CA on another server and starts a <code>KeyRetriever</code> thread. The <code>KeyRetriever</code> is implemented as part of Dogtag, but it is configured to run the <code>/usr/libexec/ipa/ipa-pki-retrieve-key</code> program, which is part of FreeIPA. The program is invoked with arguments of the server to request the key from (this was stored in the <code>authorityKeyHost</code> attribute mentioned earlier), and the nickname of the key to request.</li>
 <li><code>ipa-pki-retrieve-key</code> requests the key from the <em>Custodia</em> daemon on the source server. It authenticates as the <code>dogtag/&lt;requestor-hostname&gt;@REALM</code> service principal. If authenticated and authorised, the Custodia daemon exports the signing key from Dogtag’s NSSDB <strong>wrapped by the main CA’s private key</strong>, and delivers it to the requesting server. <code>ipa-pki-retrieve-key</code> outputs the wrapped key then exits.</li>
 <li>The <code>KeyRetriever</code> reads the wrapped key and imports (<em>unwraps</em>) it into the Dogtag clone’s NSSDB. It then initialises the Dogtag CA’s <em>Signing Unit</em> allowing the CA to service signing requests on that clone, and adds its own hostname to the CA’s <code>authorityKeyHost</code> attribute.</li>

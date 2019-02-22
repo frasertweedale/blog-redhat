@@ -18,7 +18,13 @@
         </div>
 
         <div id="content">
-            <div id="postContent">
+            <div class="info">
+    
+    Tags: <a href="../tags/freeipa.html">freeipa</a>, <a href="../tags/dogtag.html">dogtag</a>, <a href="../tags/certificates.html">certificates</a>, <a href="../tags/profiles.html">profiles</a>
+    
+</div>
+
+<div id="postContent">
     <h1 id="wildcard-certificates-in-freeipa">Wildcard certificates in FreeIPA</h1>
 <p>The FreeIPA team sometimes gets asked about wildcard certificate support. A wildcard certificate is an X.509 certificate where the DNS-ID has a wildcard in it (typically as the most specific domain component, e.g. <code>*.cloudapps.example.com</code>). Most TLS libraries match wildcard domains in the obvious way.</p>
 <p>In this blog post we will discuss the state of wildcard certificates in FreeIPA, but before proceeding it is fitting to point out that <a href="https://tools.ietf.org/html/rfc6125#section-7.2">wildcard certificates are deprecated</a>, and for good reason. While the compromise of any TLS private key is a serious matter, the attacker can only impersonate the entities whose names appear on the certificate (typically one or a handful of DNS addresses). But a wildcard certificate can impersonate <em>any</em> host whose name happens to match the wildcard value.</p>

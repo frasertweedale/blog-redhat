@@ -18,7 +18,13 @@
         </div>
 
         <div id="content">
-            <div id="postContent">
+            <div class="info">
+    
+    Tags: <a href="../tags/freeipa.html">freeipa</a>, <a href="../tags/certificates.html">certificates</a>, <a href="../tags/profiles.html">profiles</a>
+    
+</div>
+
+<div id="postContent">
     <h1 id="should-freeipa-ship-a-subordinate-ca-profile">Should FreeIPA ship a subordinate CA profile?</h1>
 <p>In my <a href="2018-08-21-ipa-subordinate-ca.html">previous post</a> I discussed how to issue subordinate CA (sub-CA) certificates from FreeIPA. In brief, the administrator must create and import a profile configuration for issuing certificates with the needed characteristics. The profile must add a <em>Basic Constraints</em> extension asserting that the subject is a CA.</p>
 <p>After publishing that post, it formed the basis of an official <a href="https://access.redhat.com/solutions/3572691">Red Hat solution</a> (Red Hat subscription required to view). Subsequently, an <a href="https://bugzilla.redhat.com/show_bug.cgi?id=1639441">RFE was filed</a> requesting a sub-CA profile to be included by default in FreeIPA. In this short post I’ll outline the reasons why this might not be a good idea, and what the profile might look like if we did ship one.</p>

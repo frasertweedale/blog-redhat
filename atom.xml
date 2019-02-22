@@ -36,7 +36,7 @@
 <li>If you query external DNS systems, how do you handle failures or slowness?</li>
 <li>The need to mitigate DNS or BGP poisoning attacks</li>
 </ul>
-<p>Taking these factors into account, it is plain to see why we put this feature off for so long. It is just hard to determine what the correct behaviour should be. Nevertheless use cases exist so the feature request is legitimate. The difference with Ian's RFE was that he proposed a strict validation regime that only uses data defined in FreeIPA. It is a fair assumption that the data managed by a FreeIPA instance is <em>trustworthy</em>. That assumption, combined with some sanity checks, gives the validation requirements:</p>
+<p>Taking these factors into account, it is plain to see why we put this feature off for so long. It is just hard to determine what the correct behaviour should be. Nevertheless use cases exist so the feature request is legitimate. The difference with <span class="title-ref">Ian's RFE</span> was that he proposed a strict validation regime that only uses data defined in FreeIPA. It is a fair assumption that the data managed by a FreeIPA instance is <em>trustworthy</em>. That assumption, combined with some sanity checks, gives the validation requirements:</p>
 <ol type="1">
 <li>Only FreeIPA-managed DNS records are considered. There is no communication with external DNS resolvers.</li>
 <li>For each IP address in the SAN, there is a DNS name in the SAN that resolves to it. (As an implementation decision, we permit one level of CNAME indirection).</li>
@@ -323,44 +323,44 @@ Generating key.  This may take a few moments...
 <h2 id="the-constructions">The constructions</h2>
 <p>I must begin with a brief overview of the <code>classmethod</code> and <code>staticmethod</code> constructions and their uses.</p>
 <p><code>classmethod</code> is a function that transforms a method into a class method. The class method receives the <em>class object</em> as its first argument, rather than an <em>instance</em> of the class. It is typically used as a method <em>decorator</em>:</p>
-<div class="sourceCode" id="cb1"><pre class="sourceCode python"><code class="sourceCode python"><a class="sourceLine" id="cb1-1" data-line-number="1"><span class="kw">class</span> C:</a>
-<a class="sourceLine" id="cb1-2" data-line-number="2">    <span class="at">@classmethod</span></a>
-<a class="sourceLine" id="cb1-3" data-line-number="3">    <span class="kw">def</span> f(cls, arg1, arg2, ...): ...</a></code></pre></div>
+<div class="sourceCode" id="cb1"><pre class="sourceCode python"><code class="sourceCode python"><a class="sourceLine" id="cb1-1" title="1"><span class="kw">class</span> C:</a>
+<a class="sourceLine" id="cb1-2" title="2">    <span class="at">@classmethod</span></a>
+<a class="sourceLine" id="cb1-3" title="3">    <span class="kw">def</span> f(cls, arg1, arg2, ...): ...</a></code></pre></div>
 <p>By idiom, the class object argument is bound to the name <code>cls</code>. You can invoke a class method via an instance (<code>C().f()</code>) or via the class object itself (<code>C.f()</code>). In return for this flexibility you give up the ability to access instance methods or attributes from the method body, even when it was called via an instance.</p>
 <p><code>staticmethod</code> is nearly identical to <code>classmethod</code>. The only difference is that instead of receiving the class object as the first argument, it does not receive any implicit argument:</p>
-<div class="sourceCode" id="cb2"><pre class="sourceCode python"><code class="sourceCode python"><a class="sourceLine" id="cb2-1" data-line-number="1"><span class="kw">class</span> C:</a>
-<a class="sourceLine" id="cb2-2" data-line-number="2">    <span class="at">@staticmethod</span></a>
-<a class="sourceLine" id="cb2-3" data-line-number="3">    <span class="kw">def</span> f(arg1, arg2, ...): ...</a></code></pre></div>
+<div class="sourceCode" id="cb2"><pre class="sourceCode python"><code class="sourceCode python"><a class="sourceLine" id="cb2-1" title="1"><span class="kw">class</span> C:</a>
+<a class="sourceLine" id="cb2-2" title="2">    <span class="at">@staticmethod</span></a>
+<a class="sourceLine" id="cb2-3" title="3">    <span class="kw">def</span> f(arg1, arg2, ...): ...</a></code></pre></div>
 <p>How are the <code>classmethod</code> and <code>staticmethod</code> constructions used? Consider the following (contrived) class:</p>
-<div class="sourceCode" id="cb3"><pre class="sourceCode python"><code class="sourceCode python"><a class="sourceLine" id="cb3-1" data-line-number="1"><span class="kw">class</span> Foo(<span class="bu">object</span>):</a>
-<a class="sourceLine" id="cb3-2" data-line-number="2"></a>
-<a class="sourceLine" id="cb3-3" data-line-number="3">  <span class="kw">def</span> <span class="fu">__init__</span>(<span class="va">self</span>, delta):</a>
-<a class="sourceLine" id="cb3-4" data-line-number="4">    <span class="va">self</span>.delta <span class="op">=</span> delta</a>
-<a class="sourceLine" id="cb3-5" data-line-number="5"></a>
-<a class="sourceLine" id="cb3-6" data-line-number="6">  <span class="kw">def</span> forty_two(<span class="va">self</span>):</a>
-<a class="sourceLine" id="cb3-7" data-line-number="7">    <span class="cf">return</span> <span class="dv">42</span></a>
-<a class="sourceLine" id="cb3-8" data-line-number="8"></a>
-<a class="sourceLine" id="cb3-9" data-line-number="9">  <span class="kw">def</span> answer(<span class="va">self</span>):</a>
-<a class="sourceLine" id="cb3-10" data-line-number="10">    <span class="cf">return</span> <span class="va">self</span>.forty_two()</a>
-<a class="sourceLine" id="cb3-11" data-line-number="11"></a>
-<a class="sourceLine" id="cb3-12" data-line-number="12">  <span class="kw">def</span> modified_answer(<span class="va">self</span>):</a>
-<a class="sourceLine" id="cb3-13" data-line-number="13">    <span class="cf">return</span> <span class="va">self</span>.answer() <span class="op">+</span> <span class="va">self</span>.delta</a></code></pre></div>
+<div class="sourceCode" id="cb3"><pre class="sourceCode python"><code class="sourceCode python"><a class="sourceLine" id="cb3-1" title="1"><span class="kw">class</span> Foo(<span class="bu">object</span>):</a>
+<a class="sourceLine" id="cb3-2" title="2"></a>
+<a class="sourceLine" id="cb3-3" title="3">  <span class="kw">def</span> <span class="fu">__init__</span>(<span class="va">self</span>, delta):</a>
+<a class="sourceLine" id="cb3-4" title="4">    <span class="va">self</span>.delta <span class="op">=</span> delta</a>
+<a class="sourceLine" id="cb3-5" title="5"></a>
+<a class="sourceLine" id="cb3-6" title="6">  <span class="kw">def</span> forty_two(<span class="va">self</span>):</a>
+<a class="sourceLine" id="cb3-7" title="7">    <span class="cf">return</span> <span class="dv">42</span></a>
+<a class="sourceLine" id="cb3-8" title="8"></a>
+<a class="sourceLine" id="cb3-9" title="9">  <span class="kw">def</span> answer(<span class="va">self</span>):</a>
+<a class="sourceLine" id="cb3-10" title="10">    <span class="cf">return</span> <span class="va">self</span>.forty_two()</a>
+<a class="sourceLine" id="cb3-11" title="11"></a>
+<a class="sourceLine" id="cb3-12" title="12">  <span class="kw">def</span> modified_answer(<span class="va">self</span>):</a>
+<a class="sourceLine" id="cb3-13" title="13">    <span class="cf">return</span> <span class="va">self</span>.answer() <span class="op">+</span> <span class="va">self</span>.delta</a></code></pre></div>
 <p>There are some places we could use <code>staticmethod</code> and <code>classmethod</code>. Should we? Let’s just do it and discuss the impact of the changes:</p>
-<div class="sourceCode" id="cb4"><pre class="sourceCode python"><code class="sourceCode python"><a class="sourceLine" id="cb4-1" data-line-number="1"><span class="kw">class</span> Foo(<span class="bu">object</span>):</a>
-<a class="sourceLine" id="cb4-2" data-line-number="2"></a>
-<a class="sourceLine" id="cb4-3" data-line-number="3">  <span class="kw">def</span> <span class="fu">__init__</span>(<span class="va">self</span>, delta):</a>
-<a class="sourceLine" id="cb4-4" data-line-number="4">    <span class="va">self</span>.delta <span class="op">=</span> delta</a>
-<a class="sourceLine" id="cb4-5" data-line-number="5"></a>
-<a class="sourceLine" id="cb4-6" data-line-number="6">  <span class="at">@staticmethod</span></a>
-<a class="sourceLine" id="cb4-7" data-line-number="7">  <span class="kw">def</span> forty_two():</a>
-<a class="sourceLine" id="cb4-8" data-line-number="8">    <span class="cf">return</span> <span class="dv">42</span></a>
-<a class="sourceLine" id="cb4-9" data-line-number="9"></a>
-<a class="sourceLine" id="cb4-10" data-line-number="10">  <span class="at">@classmethod</span></a>
-<a class="sourceLine" id="cb4-11" data-line-number="11">  <span class="kw">def</span> answer(cls):</a>
-<a class="sourceLine" id="cb4-12" data-line-number="12">    <span class="cf">return</span> cls.forty_two()</a>
-<a class="sourceLine" id="cb4-13" data-line-number="13"></a>
-<a class="sourceLine" id="cb4-14" data-line-number="14">  <span class="kw">def</span> modified_answer(<span class="va">self</span>):</a>
-<a class="sourceLine" id="cb4-15" data-line-number="15">    <span class="cf">return</span> <span class="va">self</span>.answer() <span class="op">+</span> <span class="va">self</span>.delta</a></code></pre></div>
+<div class="sourceCode" id="cb4"><pre class="sourceCode python"><code class="sourceCode python"><a class="sourceLine" id="cb4-1" title="1"><span class="kw">class</span> Foo(<span class="bu">object</span>):</a>
+<a class="sourceLine" id="cb4-2" title="2"></a>
+<a class="sourceLine" id="cb4-3" title="3">  <span class="kw">def</span> <span class="fu">__init__</span>(<span class="va">self</span>, delta):</a>
+<a class="sourceLine" id="cb4-4" title="4">    <span class="va">self</span>.delta <span class="op">=</span> delta</a>
+<a class="sourceLine" id="cb4-5" title="5"></a>
+<a class="sourceLine" id="cb4-6" title="6">  <span class="at">@staticmethod</span></a>
+<a class="sourceLine" id="cb4-7" title="7">  <span class="kw">def</span> forty_two():</a>
+<a class="sourceLine" id="cb4-8" title="8">    <span class="cf">return</span> <span class="dv">42</span></a>
+<a class="sourceLine" id="cb4-9" title="9"></a>
+<a class="sourceLine" id="cb4-10" title="10">  <span class="at">@classmethod</span></a>
+<a class="sourceLine" id="cb4-11" title="11">  <span class="kw">def</span> answer(cls):</a>
+<a class="sourceLine" id="cb4-12" title="12">    <span class="cf">return</span> cls.forty_two()</a>
+<a class="sourceLine" id="cb4-13" title="13"></a>
+<a class="sourceLine" id="cb4-14" title="14">  <span class="kw">def</span> modified_answer(<span class="va">self</span>):</a>
+<a class="sourceLine" id="cb4-15" title="15">    <span class="cf">return</span> <span class="va">self</span>.answer() <span class="op">+</span> <span class="va">self</span>.delta</a></code></pre></div>
 <p><code>forty_two</code> became a static method, and it no longer takes any argument. <code>answer</code> became a class method, and its <code>self</code> argument became <code>cls</code>. It cannot become a static method, because it references <code>cls.forty_two</code>. <code>modified_answer</code> can’t change at all, because it references an instance attribute (<code>self.delta</code>). <code>forty_two</code> could have been made a class method, but just as it had no need of <code>self</code>, it has no need <code>cls</code> either.</p>
 <p>There is an alternative refactoring for <code>forty_two</code>. Because it doesn’t reference anything in the class, we could have extracted it as a top-level function (i.e. defined not in the class but directly in a module). Conceptually, <code>staticmethod</code> and top-level functions are equivalent modulo namespacing.</p>
 <p>Was the change I made a good one? Well, you already know my answer will be <em>yes</em>. Before I justify my position, let’s discuss some counter-arguments.</p>
@@ -439,12 +439,20 @@ pki_subsystem_nickname=subsystem</code></pre>
 <p>For many more examples of how to install Dogtag subsystems for particular scenarios, see the <a href="https://www.dogtagpki.org/wiki/PKI_10_Installation">PKI 10 Installation guide</a> on the Dogtag wiki.</p>
 <h2 id="terminology">Terminology</h2>
 <p>It is worthwhile to clarify the meaning of some terms:</p>
-<ul>
-<li><strong><em>instance</em></strong> or <strong><em>installation</em></strong>. An installation of Dogtag on a particular machine. An instance may contain one or more <em>subsystems</em>. There may be more than one Dogtag instance on a single machine, although this is uncommon (and each instance must use a disjoint set of network ports). The default instance name is <code>pki-tomcat</code>.</li>
-<li><strong><em>subsystem</em></strong>. Each main function in Dogtag is provided by a subsystem. The subsystems are: <code>CA</code>, <code>KRA</code>, <code>OCSP</code>, <code>TKS</code> and <code>TPS</code>. Every Dogtag instance must have a <code>CA</code> subsystem (hence, the first subsystem installed must be the <code>CA</code> subsystem).</li>
-<li><strong><em>clone</em></strong>. For redundancy, a subsystem may be <em>cloned</em> to a different instance (usually on a different machine; this is not a technical requirement but it does not make sense to do otherwise). Different subsystems may have different numbers of clones in a topology.</li>
-<li><strong><em>topology</em></strong> or <strong><em>deployment</em></strong>. All of the clones of all subsystems derived from some original CA subsystem form a <em>deployment</em> or <em>topology</em>. Typically, each <em>instance</em> in the topology would have a replicated copy of the LDAP database.</li>
-</ul>
+<dl>
+<dt><em>instance</em> or <em>installation</em></dt>
+<dd><p>An installation of Dogtag on a particular machine. An instance may contain one or more <em>subsystems</em>. There may be more than one Dogtag instance on a single machine, although this is uncommon (and each instance must use a disjoint set of network ports). The default instance name is <code>pki-tomcat</code>.</p>
+</dd>
+<dt><em>subsystem</em></dt>
+<dd><p>Each main function in Dogtag is provided by a subsystem. The subsystems are: <code>CA</code>, <code>KRA</code>, <code>OCSP</code>, <code>TKS</code> and <code>TPS</code>. Every Dogtag instance must have a <code>CA</code> subsystem (hence, the first subsystem installed must be the <code>CA</code> subsystem).</p>
+</dd>
+<dt><em>clone</em></dt>
+<dd><p>For redundancy, a subsystem may be <em>cloned</em> to a different instance (usually on a different machine; this is not a technical requirement but it does not make sense to do otherwise). Different subsystems may have different numbers of clones in a topology.</p>
+</dd>
+<dt><em>topology</em> or <em>deployment</em></dt>
+<dd><p>All of the clones of all subsystems derived from some original CA subsystem form a <em>deployment</em> or <em>topology</em>. Typically, each <em>instance</em> in the topology would have a replicated copy of the LDAP database.</p>
+</dd>
+</dl>
 <h2 id="pkispawn-implementation"><code>pkispawn</code> implementation</h2>
 <h3 id="two-main-phases">Two main phases</h3>
 <p><code>pkispawn</code> has two main phases:</p>
@@ -470,7 +478,7 @@ pki_subsystem_nickname=subsystem</code></pre>
 <li><code>finalization</code>: enable PKI to start on boot (by default) and optionally purge client NSS databases that were set up during installation.</li>
 </ol>
 <p>For a two-step externally-signed CA installation, the <code>configuration</code> and <code>finalization</code> scriptlets are skipped during step 1, and in step 2 the scriptlets up to and including <code>keygen</code> are skipped. (A bit of hand-waving here; they not not really skipped but return early).</p>
-<p>In the codebase, scriptlets are located under <code>base/server/python/pki/server/deployment/scriptlets/&lt;name&gt;.py</code>. The list of scriptlets and the order in which they’re run is given by the <code>spawn_scriplets</code> variable in <code>base/server/etc/default.cfg</code>. Note that <em><code>scriplet</code></em> there is not a typo. Or maybe it is, but it’s not <em>my</em> typo. In some parts of the codebase, we say <em>scriplet</em>, and in others it’s <em>scriptlet</em>. This is mildly annoying, but you just have to be careful to use the correct class or variable name.</p>
+<p>In the codebase, scriptlets are located under <code>base/server/python/pki/server/deployment/scriptlets/&lt;name&gt;.py</code>. The list of scriptlets and the order in which they’re run is given by the <code>spawn_scriplets</code> variable in <code>base/server/etc/default.cfg</code>. Note that <code>scriplet</code> there is not a typo. Or maybe it is, but it’s not <em>my</em> typo. In some parts of the codebase, we say <em>scriplet</em>, and in others it’s <em>scriptlet</em>. This is mildly annoying, but you just have to be careful to use the correct class or variable name.</p>
 <p>Some other Python files contain a lot of code used during deployment. It’s not reasonable to make an exhaustive list, but <code>pki.server.deployment.pkihelper</code> and <code>pki.server.deployment.pkiparser</code> in particular include a lot of configuration processing code. If you are implementing or changing <code>pkispawn</code> configuration options, you’ll be defining them and following changes around in these files (and possibly others), as well as in <code>base/server/etc/default.cfg</code>.</p>
 <h4 id="scriptlets-and-uninstallation">Scriptlets and uninstallation</h4>
 <p>The installation scriptlets also implement corresponding uninstallation behaviours. When uninstalling a Dogtag instance or subsystem via the <code>pkidestroy</code> command, each scriptlets’ uninstallation behaviour is invoked. The order in which they’re invoked is different from installation, and is given by the <code>destroy_scriplets</code> variable in <code>base/server/etc/default.cfg</code>.</p>
@@ -620,11 +628,11 @@ cert_VerifyCertChain(CERTCertDBHandle *handle, CERTCertificate *cert,
 <p>During cloning, the <em>clone</em> adds LDAP objects in its own database. It then performs requests against the <em>master</em>, assuming that those objects (or effects of other LDAP operations) have been replicated to the master. Due to replication lag, the data have not been replicated and as a consequence, a request fails.</p>
 <p>In the past couple of years several replication races were discovered and fixed (or mitigated) in Dogtag or FreeIPA:</p>
 <h4 id="updatenumberrange-failure-due-to-missing-session-object"><code>updateNumberRange</code> failure due to missing session object</h4>
-<p><strong>Ticket</strong>: <a href="https://pagure.io/dogtagpki/issue/2557" class="uri">https://pagure.io/dogtagpki/issue/2557</a></p>
+<p><strong>Ticket</strong>: <a href="https://pagure.io/dogtagpki/issue/2557">https://pagure.io/dogtagpki/issue/2557</a></p>
 <p><strong>Description</strong>: After security domain login (locally on the <em>replica</em>) the session object gets replicated to the <em>master</em>. The cookie/token conveyed in the <code>updateNumberRange</code> range referred to a session that the <em>master</em> did not yet know about.</p>
 <p><strong>Resolution</strong>: the <em>replica</em> sleeps (duration configuration; default 5s) after security domain login, giving time for replication. This is not guaranteed the avoid the problem: the complete solution (yet to be implemented) will be to <a href="https://pagure.io/dogtagpki/issue/2831">use a signed/MACed token</a>.</p>
 <h4 id="security-domain-login-failure-due-to-missing-user-or-group-membership">Security domain login failure due to missing user or group membership</h4>
-<p><strong>Ticket</strong>: <a href="https://pagure.io/freeipa/issue/7593" class="uri">https://pagure.io/freeipa/issue/7593</a></p>
+<p><strong>Ticket</strong>: <a href="https://pagure.io/freeipa/issue/7593">https://pagure.io/freeipa/issue/7593</a></p>
 <p><strong>Description</strong>: This bug was actually in FreeIPA, but manifested in <code>pki-tomcatd</code> on <em>master</em> as a failure to log into the security domain. This could occur for one of two reasons: either the user was unknown, or the user was not a member of a required group. FreeIPA performs the relevant LDAP operations on the <em>replica</em>, but they have not replicated to <em>master</em> yet. The <code>pkispawn</code>/<code>ipa-replica-install</code> error message looks something like:</p>
 <pre><code>com.netscape.certsrv.base.PKIException: Failed to obtain
 installation token from security domain:
@@ -634,7 +642,7 @@ Administrators group.</code></pre>
 <p><strong>Workaround</strong>: no supported workaround. (You could hack in a <code>sleep</code> though).</p>
 <p><strong>Resolution</strong>: The user creation routine was already waiting for replication but the wait routine had a timeout bug causing false positives, <em>and</em> the group memberships were not being waited on. The timeout bug was fixed. The wait routine was enhanced to support waiting for particular attribute values; this feature was used to ensure group memberships have been replicated before continuing.</p>
 <h3 id="other-updatenumberrange-failures">Other <code>updateNumberRange</code> failures</h3>
-<p><strong>Ticket</strong>: <a href="https://pagure.io/dogtagpki/issue/3055" class="uri">https://pagure.io/dogtagpki/issue/3055</a></p>
+<p><strong>Ticket</strong>: <a href="https://pagure.io/dogtagpki/issue/3055">https://pagure.io/dogtagpki/issue/3055</a></p>
 <p><strong>Description</strong>: When creating a clone from a master that was itself a clone, an <code>updateNumberRange</code> request fails at <em>master</em> with status 500. A <code>NullPointerException</code> backtrace appears in the journal for the <code>pki-tomcatd@pki-tomcat</code> unit (on <em>master</em>). The problem arises because the initial number range assignment for the second clone is equal to the range size of the first clone (range transfer size is a fixed number). This scenario was not handled correctly, leading to the exception.</p>
 <p><strong>Workaround</strong>: Ensure that each clone services one of each kind of number (e.g. one full certificate request and issuance operation). This ensures that the clone’s range is smaller than the range transfer size, so that a subsequent <code>updateNumberRange</code> request will be satisfied from the master’s “standby” range.</p>
 <p><strong>Resolution</strong>: detect range depletion due to <code>updateNumberRange</code> requests and eagerly switch to the standby range. A better fix (yet to be implemented) will be to <a href="https://pagure.io/dogtagpki/issue/3060">allocate each clone a full-sized range</a> from the unallocated numbers.</p>
@@ -1054,7 +1062,7 @@ The ipa-server-install command was successful</code></pre>
     <published>2018-05-31T00:00:00Z</published>
     <updated>2018-05-31T00:00:00Z</updated>
     <summary type="html"><![CDATA[<h1 id="replacing-a-lost-or-broken-ca-in-freeipa">Replacing a lost or broken CA in FreeIPA</h1>
-<p><em>This is a</em> <strong><em>long post</em></strong><em>. If you just want some steps to follow feel free to <a href="#recovery-procedure-summarised">skip ahead</a>.</em></p>
+<p><em>This is a</em> <strong>long post</strong>. <em>If you just want some steps to follow feel free to</em> <a href="#recovery-procedure-summarised">skip ahead</a>.</p>
 <p>Every now and then we have a customer case or a question on the <code>freeipa-users</code> mailing list about replacing a lost CA. Usually the scenario goes something like this:</p>
 <ul>
 <li>FreeIPA was installed (with a CA)</li>
@@ -1585,7 +1593,7 @@ removed &#39;/var/lib/ipa/ra-agent.pem&#39;</code></pre></li>
 <h2 id="conclusion">Conclusion</h2>
 <p>In this post I discussed how the current revocation behaviour of FreeIPA prevents hosts and services from using multiple certificates for different purposes. This is not the majority use case but I feel that we should support the use case. And we can, with a refinement of <code>ipa cert-request</code> behaviour.</p>
 <p>We ought to make it possible to revoke <em>only the certificate being renewed</em>. We can do this by preventing <code>ipa cert-request</code> from revoking certs and requiring a separate call to <code>ipa cert-revoke</code>. behaviour of <code>cert-request</code> Alternatively, we can add an option to <code>ipa cert-request</code> for explicitly specifying the certificate(s) to revoke. In either case, the Certmonger renewal helpers can be changed to ensure that renewals via Certmonger revoke the old certificate (while leaving the subject’s other certificates alone!)</p>
-<p>What do you think of the changes I’ve suggested? You can contribute to the <a href="https://lists.fedoraproject.org/archives/list/freeipa-devel@lists.fedorahosted.org/thread/G2BXRJNU5ATVXRNUPGE2Y4V3YJVXR7EC/">discussion on the <em>freeipa-devel</em> mailing list</a>.</p>]]></summary>
+<p>What do you think of the changes I’ve suggested? You can contribute to the <a href="https://lists.fedoraproject.org/archives/list/freeipa-devel@lists.fedorahosted.org/thread/G2BXRJNU5ATVXRNUPGE2Y4V3YJVXR7EC/">discussion</a> on the <em>freeipa-devel</em> mailing list.</p>]]></summary>
 </entry>
 
 </feed>

@@ -18,7 +18,13 @@
         </div>
 
         <div id="content">
-            <div id="postContent">
+            <div class="info">
+    
+    Tags: <a href="../tags/ldap.html">ldap</a>, <a href="../tags/java.html">java</a>, <a href="../tags/internals.html">internals</a>
+    
+</div>
+
+<div id="postContent">
     <h1 id="ldap-persistent-searches-with-ldapjdk">LDAP persistent searches with ldapjdk</h1>
 <p>As part of the <a href="http://pki.fedoraproject.org/wiki/LDAP_Profile_Storage">LDAP-based profiles</a> feature I’ve been working on for the <a href="http://pki.fedoraproject.org/wiki/PKI_Main_Page">Dogtag</a>, it was necessary to implement a feature where the database is monitored for changes to the LDAP profiles. For example, when a profile is updated on a clone, that change is replicated to other clones, and those other clones have to detect that change and each instance must update its view of the profiles accordingly. This post details how the LDAP <em>persistent search</em> feature was used to implement this behaviour.</p>
 <p>A naïve approach to solving this problem would have been to unconditionally refresh all profiles at a certain interval. Slightly better would be to <em>check</em> all profiles at a certain interval and update those that have changed. Both of these methods involve some non-trivial delay between changes being replicated to the local database, and the profile subsystem reflecting those changes.</p>
@@ -40,74 +46,74 @@
 </dd>
 </dl>
 <p>The <code>LDAPPersistSearchControl</code> object used for our persistent search is constructed in the following way:</p>
-<div class="sourceCode"><pre class="sourceCode java"><code class="sourceCode java"><span class="dt">int</span> op = LDAPPersistSearchControl.<span class="fu">ADD</span>
-    | LDAPPersistSearchControl.<span class="fu">MODIFY</span>
-    | LDAPPersistSearchControl.<span class="fu">DELETE</span>
-    | LDAPPersistSearchControl.<span class="fu">MODDN</span>;
-LDAPPersistSearchControl persistCtrl =
-    <span class="kw">new</span> <span class="fu">LDAPPersistSearchControl</span>(op, <span class="kw">true</span>, <span class="kw">true</span>, <span class="kw">true</span>);</code></pre></div>
+<div class="sourceCode" id="cb1"><pre class="sourceCode java"><code class="sourceCode java"><a class="sourceLine" id="cb1-1" title="1"><span class="dt">int</span> op = LDAPPersistSearchControl.<span class="fu">ADD</span></a>
+<a class="sourceLine" id="cb1-2" title="2">    | LDAPPersistSearchControl.<span class="fu">MODIFY</span></a>
+<a class="sourceLine" id="cb1-3" title="3">    | LDAPPersistSearchControl.<span class="fu">DELETE</span></a>
+<a class="sourceLine" id="cb1-4" title="4">    | LDAPPersistSearchControl.<span class="fu">MODDN</span>;</a>
+<a class="sourceLine" id="cb1-5" title="5">LDAPPersistSearchControl persistCtrl =</a>
+<a class="sourceLine" id="cb1-6" title="6">    <span class="kw">new</span> <span class="fu">LDAPPersistSearchControl</span>(op, <span class="kw">true</span>, <span class="kw">true</span>, <span class="kw">true</span>);</a></code></pre></div>
 <h3 id="ldapsearchconstraints"><code>LDAPSearchConstraints</code></h3>
 <p>The <code>LDAPSearchConstraints</code> object sets various controls and parameters for an LDAP search, persistent or otherwise. In our case, we need to attach the <code>LDAPPersistSearchControl</code> to the constraints, as well as disable the timeout of the search, and set the results batch size to <code>1</code> so that no buffering of results will occur at the server:</p>
-<div class="sourceCode"><pre class="sourceCode java"><code class="sourceCode java">LDAPSearchConstraints cons = conn.<span class="fu">getSearchConstraints</span>();
-cons.<span class="fu">setServerControls</span>(persistCtrl);
-cons.<span class="fu">setBatchSize</span>(<span class="dv">1</span>);
-cons.<span class="fu">setServerTimeLimit</span>(<span class="dv">0</span> <span class="co">/* seconds */</span>);</code></pre></div>
+<div class="sourceCode" id="cb2"><pre class="sourceCode java"><code class="sourceCode java"><a class="sourceLine" id="cb2-1" title="1">LDAPSearchConstraints cons = conn.<span class="fu">getSearchConstraints</span>();</a>
+<a class="sourceLine" id="cb2-2" title="2">cons.<span class="fu">setServerControls</span>(persistCtrl);</a>
+<a class="sourceLine" id="cb2-3" title="3">cons.<span class="fu">setBatchSize</span>(<span class="dv">1</span>);</a>
+<a class="sourceLine" id="cb2-4" title="4">cons.<span class="fu">setServerTimeLimit</span>(<span class="dv">0</span> <span class="co">/* seconds */</span>);</a></code></pre></div>
 <h3 id="ldapsearchresults"><code>LDAPSearchResults</code></h3>
 <p>Executing the <code>search</code> method of an <code>LDAPConnection</code> (here named <code>conn</code>), yields an <code>LDAPSearchResults</code> object. This is the same whether or the search was a persistent search according to the <code>LDAPSearchConstraints</code>. The different between persistent and non-persistent searches is in how results are retrieved from the results object: if the search is persistent, the <code>hasMoreElement</code> method will block until the next result is received from the server (or the search times out, the connection dies, et cetera).</p>
 <p>Let’s see what it looks like to actually execute the persistent search and process its results:</p>
-<div class="sourceCode"><pre class="sourceCode java"><code class="sourceCode java">LDAPConnection conn = <span class="kw">... </span><span class="co">/* an open LDAPConnection */</span>
-
-LDAPSearchResults results = conn.<span class="fu">search</span>(
-    <span class="st">&quot;ou=certificateProfiles,ou=ca,&quot;</span> + basedn, <span class="co">/* search DN */</span>
-    LDAPConnection.<span class="fu">SCOPE_ONE</span>, <span class="co">/* search at one level below DN */</span>
-    <span class="st">&quot;(objectclass=*)&quot;</span>,        <span class="co">/* search filter */</span>
-    <span class="kw">null</span>,   <span class="co">/* list of attributes we care about */</span>
-    <span class="kw">false</span>,  <span class="co">/* whether to only include specified attributes */</span>
-    cons    <span class="co">/* LDAPSearchConstraints defined above */</span>
-);
-<span class="kw">while</span> (results.<span class="fu">hasMoreElements</span>()) <span class="co">/* blocks */</span> {
-    LDAPEntry entry = results.<span class="fu">next</span>();
-    <span class="co">/* ... process result ... */</span>
-}</code></pre></div>
+<div class="sourceCode" id="cb3"><pre class="sourceCode java"><code class="sourceCode java"><a class="sourceLine" id="cb3-1" title="1">LDAPConnection conn = <span class="kw">... </span><span class="co">/* an open LDAPConnection */</span></a>
+<a class="sourceLine" id="cb3-2" title="2"></a>
+<a class="sourceLine" id="cb3-3" title="3">LDAPSearchResults results = conn.<span class="fu">search</span>(</a>
+<a class="sourceLine" id="cb3-4" title="4">    <span class="st">&quot;ou=certificateProfiles,ou=ca,&quot;</span> + basedn, <span class="co">/* search DN */</span></a>
+<a class="sourceLine" id="cb3-5" title="5">    LDAPConnection.<span class="fu">SCOPE_ONE</span>, <span class="co">/* search at one level below DN */</span></a>
+<a class="sourceLine" id="cb3-6" title="6">    <span class="st">&quot;(objectclass=*)&quot;</span>,        <span class="co">/* search filter */</span></a>
+<a class="sourceLine" id="cb3-7" title="7">    <span class="kw">null</span>,   <span class="co">/* list of attributes we care about */</span></a>
+<a class="sourceLine" id="cb3-8" title="8">    <span class="kw">false</span>,  <span class="co">/* whether to only include specified attributes */</span></a>
+<a class="sourceLine" id="cb3-9" title="9">    cons    <span class="co">/* LDAPSearchConstraints defined above */</span></a>
+<a class="sourceLine" id="cb3-10" title="10">);</a>
+<a class="sourceLine" id="cb3-11" title="11"><span class="kw">while</span> (results.<span class="fu">hasMoreElements</span>()) <span class="co">/* blocks */</span> {</a>
+<a class="sourceLine" id="cb3-12" title="12">    LDAPEntry entry = results.<span class="fu">next</span>();</a>
+<a class="sourceLine" id="cb3-13" title="13">    <span class="co">/* ... process result ... */</span></a>
+<a class="sourceLine" id="cb3-14" title="14">}</a></code></pre></div>
 <p>We see that apart from the use of the <code>LDAPSearchConstraints</code> to specify a persistent search and the blocking behaviour of <code>LDAPSearchResults.hasMoreElements</code>, performing a persistent search is the same as performing a regular search.</p>
 <p>Let us next examine what happens inside that <code>while</code> loop.</p>
 <h3 id="ldapentrychangecontrol"><code>LDAPEntryChangeControl</code></h3>
 <p>Do you recall the <code>returnControls</code> parameter for <code>LDAPPersistSearchControl</code>? If <code>true</code>, it ensures that each entry returned by the persistent search is accompanied by a control that indicates the type of change that affected the entry. We need to know this information so that we can update the <em>profile subsystem</em> in the appropriate way (<em>was this profile added, updated, or deleted?</em>)</p>
 <p>Let’s look at how we do this. We are inside the <code>while</code> loop from above, starting exactly where we left off:</p>
-<div class="sourceCode"><pre class="sourceCode java"><code class="sourceCode java">LDAPEntry entry = results.<span class="fu">next</span>();
-LDAPEntryChangeControl changeControl = <span class="kw">null</span>;
-<span class="kw">for</span> (LDAPControl control : results.<span class="fu">getResponseControls</span>()) {
-    <span class="kw">if</span> (control <span class="kw">instanceof</span> LDAPEntryChangeControl) {
-        changeControl = (LDAPEntryChangeControl) control;
-        <span class="kw">break</span>;
-    }
-}
-<span class="kw">if</span> (changeControl != <span class="kw">null</span>) {
-    <span class="dt">int</span> changeType = changeControl.<span class="fu">getChangeType</span>();
-    <span class="kw">switch</span> (changeType) {
-    <span class="kw">case</span> LDAPPersistSearchControl.<span class="fu">ADD</span>:
-        <span class="fu">readProfile</span>(entry);
-        <span class="kw">break</span>;
-    <span class="kw">case</span> LDAPPersistSearchControl.<span class="fu">DELETE</span>:
-        <span class="fu">forgetProfile</span>(entry);
-        <span class="kw">break</span>;
-    <span class="kw">case</span> LDAPPersistSearchControl.<span class="fu">MODIFY</span>:
-        <span class="fu">forgetProfile</span>(entry);
-        <span class="fu">readProfile</span>(entry);
-        <span class="kw">break</span>;
-    <span class="kw">case</span> LDAPPersistSearchControl.<span class="fu">MODDN</span>:
-        <span class="co">/* shouldn't happen; log a warning and continue */</span>
-        CMS.<span class="fu">debug</span>(<span class="st">&quot;Profile change monitor: MODDN shouldn't happen; ignoring.&quot;</span>);
-        <span class="kw">break</span>;
-    <span class="kw">default</span>:
-        <span class="co">/* shouldn't happen; log a warning and continue */</span>
-        CMS.<span class="fu">debug</span>(<span class="st">&quot;Profile change monitor: unknown change type: &quot;</span> + changeType);
-        <span class="kw">break</span>;
-    }
-} <span class="kw">else</span> {
-    <span class="co">/* shouldn't happen; log a warning and continue */</span>
-    CMS.<span class="fu">debug</span>(<span class="st">&quot;Profile change monitor: no LDAPEntryChangeControl in result.&quot;</span>);
-}</code></pre></div>
+<div class="sourceCode" id="cb4"><pre class="sourceCode java"><code class="sourceCode java"><a class="sourceLine" id="cb4-1" title="1">LDAPEntry entry = results.<span class="fu">next</span>();</a>
+<a class="sourceLine" id="cb4-2" title="2">LDAPEntryChangeControl changeControl = <span class="kw">null</span>;</a>
+<a class="sourceLine" id="cb4-3" title="3"><span class="kw">for</span> (LDAPControl control : results.<span class="fu">getResponseControls</span>()) {</a>
+<a class="sourceLine" id="cb4-4" title="4">    <span class="kw">if</span> (control <span class="kw">instanceof</span> LDAPEntryChangeControl) {</a>
+<a class="sourceLine" id="cb4-5" title="5">        changeControl = (LDAPEntryChangeControl) control;</a>
+<a class="sourceLine" id="cb4-6" title="6">        <span class="kw">break</span>;</a>
+<a class="sourceLine" id="cb4-7" title="7">    }</a>
+<a class="sourceLine" id="cb4-8" title="8">}</a>
+<a class="sourceLine" id="cb4-9" title="9"><span class="kw">if</span> (changeControl != <span class="kw">null</span>) {</a>
+<a class="sourceLine" id="cb4-10" title="10">    <span class="dt">int</span> changeType = changeControl.<span class="fu">getChangeType</span>();</a>
+<a class="sourceLine" id="cb4-11" title="11">    <span class="kw">switch</span> (changeType) {</a>
+<a class="sourceLine" id="cb4-12" title="12">    <span class="kw">case</span> LDAPPersistSearchControl.<span class="fu">ADD</span>:</a>
+<a class="sourceLine" id="cb4-13" title="13">        <span class="fu">readProfile</span>(entry);</a>
+<a class="sourceLine" id="cb4-14" title="14">        <span class="kw">break</span>;</a>
+<a class="sourceLine" id="cb4-15" title="15">    <span class="kw">case</span> LDAPPersistSearchControl.<span class="fu">DELETE</span>:</a>
+<a class="sourceLine" id="cb4-16" title="16">        <span class="fu">forgetProfile</span>(entry);</a>
+<a class="sourceLine" id="cb4-17" title="17">        <span class="kw">break</span>;</a>
+<a class="sourceLine" id="cb4-18" title="18">    <span class="kw">case</span> LDAPPersistSearchControl.<span class="fu">MODIFY</span>:</a>
+<a class="sourceLine" id="cb4-19" title="19">        <span class="fu">forgetProfile</span>(entry);</a>
+<a class="sourceLine" id="cb4-20" title="20">        <span class="fu">readProfile</span>(entry);</a>
+<a class="sourceLine" id="cb4-21" title="21">        <span class="kw">break</span>;</a>
+<a class="sourceLine" id="cb4-22" title="22">    <span class="kw">case</span> LDAPPersistSearchControl.<span class="fu">MODDN</span>:</a>
+<a class="sourceLine" id="cb4-23" title="23">        <span class="co">/* shouldn't happen; log a warning and continue */</span></a>
+<a class="sourceLine" id="cb4-24" title="24">        CMS.<span class="fu">debug</span>(<span class="st">&quot;Profile change monitor: MODDN shouldn't happen; ignoring.&quot;</span>);</a>
+<a class="sourceLine" id="cb4-25" title="25">        <span class="kw">break</span>;</a>
+<a class="sourceLine" id="cb4-26" title="26">    <span class="kw">default</span>:</a>
+<a class="sourceLine" id="cb4-27" title="27">        <span class="co">/* shouldn't happen; log a warning and continue */</span></a>
+<a class="sourceLine" id="cb4-28" title="28">        CMS.<span class="fu">debug</span>(<span class="st">&quot;Profile change monitor: unknown change type: &quot;</span> + changeType);</a>
+<a class="sourceLine" id="cb4-29" title="29">        <span class="kw">break</span>;</a>
+<a class="sourceLine" id="cb4-30" title="30">    }</a>
+<a class="sourceLine" id="cb4-31" title="31">} <span class="kw">else</span> {</a>
+<a class="sourceLine" id="cb4-32" title="32">    <span class="co">/* shouldn't happen; log a warning and continue */</span></a>
+<a class="sourceLine" id="cb4-33" title="33">    CMS.<span class="fu">debug</span>(<span class="st">&quot;Profile change monitor: no LDAPEntryChangeControl in result.&quot;</span>);</a>
+<a class="sourceLine" id="cb4-34" title="34">}</a></code></pre></div>
 <p>The first thing that has to be done is to retrieve from the <code>LDAPSearchResults</code> object the <code>LDAPEntryChangeControl</code> for the most recent search result. To do this we call <code>results.getResponseControls()</code>, which returns an <code>LDAPControl[]</code>. Each search result can arrive with multiple change controls, but we are specifically interested in the <code>LDAPEntryChangeControl</code> so we iterate over the <code>LDAPControl[]</code> until we find what we want, then <code>break</code>.</p>
 <p>Next we ensure that we did in fact find the <code>LDAPEntryChangeControl</code>. This <em>should</em> always hold in our implementation but the code should handle the failure case anyway - we just log a warning and move on.</p>
 <p>Finally, we call <code>changeControl.getChangeType()</code> and dispatch to the appropriate behaviour according to its value.</p>
@@ -115,46 +121,46 @@ LDAPEntryChangeControl changeControl = <span class="kw">null</span>;
 <p>Up to this point, we have seen how to use the ldapjdk API to execute a persistent LDAP search and process its results. Of course, this is just part of the story - the search somehow needs to be run in a way that doesn’t impede the regular operation of the Dogtag PKI, and needs to safely interact with the <em>profile subsystem</em>. Because the persistent search involves blocking calls, the procedure needs to run in its own <em>thread</em>.</p>
 <p>Because this persistent search only concerns the <code>ProfileSubsystem</code> class, it was possible to completely encapsulate it within this class such that no changes to its API (including constructors) were necessary. An <em>inner class</em> <code>Monitor</code>, which extends <code>Thread</code>, actually runs the search. In this way, the code we saw above is neatly segregated from the rest of the <code>ProfileSubsystem</code> class, and there are no visibility issues when calling the <code>readProfile</code> and <code>forgetProfile</code> methods of the other class.</p>
 <p>The following simplified code conveys the essence of the complete implementation:</p>
-<div class="sourceCode"><pre class="sourceCode java"><code class="sourceCode java"><span class="kw">public</span> <span class="kw">class</span> ProfileSubsystem <span class="kw">implements</span> IProfileSubsystem {
-    <span class="kw">public</span> <span class="dt">void</span> <span class="fu">init</span>(...) {
-        <span class="co">// Read profiles from LDAP into the subsystem.</span>
-        <span class="co">// Calls readProfile for each existing LDAPEntry.</span>
-
-        monitor = <span class="kw">new</span> <span class="bu">Monitor</span>(<span class="kw">this</span>, dn, dbFactory);
-        monitor.<span class="fu">start</span>();
-    }
-
-    <span class="kw">public</span> <span class="kw">synchronized</span> IProfile <span class="fu">createProfile</span>(...) {
-        <span class="co">// Create the profile</span>
-    }
-
-    <span class="kw">public</span> <span class="dt">void</span> <span class="fu">readProfile</span>(LDAPEntry entry) {
-        <span class="co">// Read some LDAP attributes into local vars</span>
-        <span class="fu">createProfile</span>(...);
-    }
-
-    <span class="kw">private</span> <span class="dt">void</span> <span class="fu">forgetProfile</span>(LDAPEntry entry) {
-        profileId = <span class="co">/* read from entry */</span>
-        <span class="fu">forgetProfile</span>(profileId);
-    }
-
-    <span class="kw">private</span> <span class="dt">void</span> <span class="fu">forgetProfile</span>(<span class="bu">String</span> profileId) {
-        <span class="co">// Forget about this profile.</span>
-    }
-
-    <span class="kw">private</span> <span class="kw">class</span> <span class="bu">Monitor</span> <span class="kw">extends</span> <span class="bu">Thread</span> {
-        <span class="kw">public</span> <span class="bu">Monitor</span>(...) {
-            <span class="co">// constructor</span>
-        }
-
-        <span class="kw">public</span> <span class="dt">void</span> <span class="fu">run</span>() {
-            <span class="co">// Execute the persistent search as above.</span>
-            <span class="co">//</span>
-            <span class="co">// Calls readProfile and forgetProfile depending</span>
-            <span class="co">// on changes that occur.</span>
-        }
-    }
-}</code></pre></div>
+<div class="sourceCode" id="cb5"><pre class="sourceCode java"><code class="sourceCode java"><a class="sourceLine" id="cb5-1" title="1"><span class="kw">public</span> <span class="kw">class</span> ProfileSubsystem <span class="kw">implements</span> IProfileSubsystem {</a>
+<a class="sourceLine" id="cb5-2" title="2">    <span class="kw">public</span> <span class="dt">void</span> <span class="fu">init</span>(...) {</a>
+<a class="sourceLine" id="cb5-3" title="3">        <span class="co">// Read profiles from LDAP into the subsystem.</span></a>
+<a class="sourceLine" id="cb5-4" title="4">        <span class="co">// Calls readProfile for each existing LDAPEntry.</span></a>
+<a class="sourceLine" id="cb5-5" title="5"></a>
+<a class="sourceLine" id="cb5-6" title="6">        monitor = <span class="kw">new</span> <span class="bu">Monitor</span>(<span class="kw">this</span>, dn, dbFactory);</a>
+<a class="sourceLine" id="cb5-7" title="7">        monitor.<span class="fu">start</span>();</a>
+<a class="sourceLine" id="cb5-8" title="8">    }</a>
+<a class="sourceLine" id="cb5-9" title="9"></a>
+<a class="sourceLine" id="cb5-10" title="10">    <span class="kw">public</span> <span class="kw">synchronized</span> IProfile <span class="fu">createProfile</span>(...) {</a>
+<a class="sourceLine" id="cb5-11" title="11">        <span class="co">// Create the profile</span></a>
+<a class="sourceLine" id="cb5-12" title="12">    }</a>
+<a class="sourceLine" id="cb5-13" title="13"></a>
+<a class="sourceLine" id="cb5-14" title="14">    <span class="kw">public</span> <span class="dt">void</span> <span class="fu">readProfile</span>(LDAPEntry entry) {</a>
+<a class="sourceLine" id="cb5-15" title="15">        <span class="co">// Read some LDAP attributes into local vars</span></a>
+<a class="sourceLine" id="cb5-16" title="16">        <span class="fu">createProfile</span>(...);</a>
+<a class="sourceLine" id="cb5-17" title="17">    }</a>
+<a class="sourceLine" id="cb5-18" title="18"></a>
+<a class="sourceLine" id="cb5-19" title="19">    <span class="kw">private</span> <span class="dt">void</span> <span class="fu">forgetProfile</span>(LDAPEntry entry) {</a>
+<a class="sourceLine" id="cb5-20" title="20">        profileId = <span class="co">/* read from entry */</span></a>
+<a class="sourceLine" id="cb5-21" title="21">        <span class="fu">forgetProfile</span>(profileId);</a>
+<a class="sourceLine" id="cb5-22" title="22">    }</a>
+<a class="sourceLine" id="cb5-23" title="23"></a>
+<a class="sourceLine" id="cb5-24" title="24">    <span class="kw">private</span> <span class="dt">void</span> <span class="fu">forgetProfile</span>(<span class="bu">String</span> profileId) {</a>
+<a class="sourceLine" id="cb5-25" title="25">        <span class="co">// Forget about this profile.</span></a>
+<a class="sourceLine" id="cb5-26" title="26">    }</a>
+<a class="sourceLine" id="cb5-27" title="27"></a>
+<a class="sourceLine" id="cb5-28" title="28">    <span class="kw">private</span> <span class="kw">class</span> <span class="bu">Monitor</span> <span class="kw">extends</span> <span class="bu">Thread</span> {</a>
+<a class="sourceLine" id="cb5-29" title="29">        <span class="kw">public</span> <span class="bu">Monitor</span>(...) {</a>
+<a class="sourceLine" id="cb5-30" title="30">            <span class="co">// constructor</span></a>
+<a class="sourceLine" id="cb5-31" title="31">        }</a>
+<a class="sourceLine" id="cb5-32" title="32"></a>
+<a class="sourceLine" id="cb5-33" title="33">        <span class="kw">public</span> <span class="dt">void</span> <span class="fu">run</span>() {</a>
+<a class="sourceLine" id="cb5-34" title="34">            <span class="co">// Execute the persistent search as above.</span></a>
+<a class="sourceLine" id="cb5-35" title="35">            <span class="co">//</span></a>
+<a class="sourceLine" id="cb5-36" title="36">            <span class="co">// Calls readProfile and forgetProfile depending</span></a>
+<a class="sourceLine" id="cb5-37" title="37">            <span class="co">// on changes that occur.</span></a>
+<a class="sourceLine" id="cb5-38" title="38">        }</a>
+<a class="sourceLine" id="cb5-39" title="39">    }</a>
+<a class="sourceLine" id="cb5-40" title="40">}</a></code></pre></div>
 <p>So, what’s going on here? First of all, it must be emphasised that this example is simplified. For example, I have omitted details of how the monitor thread is stopped when the subsystem is shut down or reinitialised.</p>
 <p>The monitor thread is started by the <code>init</code> method, once the existing profiles have been read into the profile subsystem. Executing the persistent search and handling results is the one job this the monitor has to do, so it can block without affecting any other part of the system. When it receives results, it calls the <code>readProfile</code> and <code>forgetProfiles</code> methods of the outer class - the <code>ProfileSubsystem</code> - to keep it up to date with the contents of the database.</p>
 <p>Other parts of the system access the <code>ProfileSubsystem</code> as well, so consideration had to be given to synchronisation and making sure that changes to the contents of the <code>ProfileSubsystem</code> are done safely. In the end, the only method that was made <code>synchronized</code> was <code>createProfile</code>, which is also called by the REST interface. The behaviour of the handful of other methods that could be called simultaneously should be fine by virtue of the fact that the internal data structures used are themselves synchronised and idempotent. Hopefully I have not overlooked something important!</p>

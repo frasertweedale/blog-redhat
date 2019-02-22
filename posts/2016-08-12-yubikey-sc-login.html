@@ -18,7 +18,13 @@
         </div>
 
         <div id="content">
-            <div id="postContent">
+            <div class="info">
+    
+    Tags: <a href="../tags/2fa.html">2fa</a>, <a href="../tags/certificates.html">certificates</a>, <a href="../tags/sysadmin.html">sysadmin</a>
+    
+</div>
+
+<div id="postContent">
     <h1 id="smart-card-login-with-yubikey-neo">Smart card login with YubiKey NEO</h1>
 <p>In this post I give an overview of smart cards and their potential advantages, and share my adventures in using a Yubico <a href="https://www.yubico.com/products/yubikey-hardware/yubikey-neo/">YubiKey NEO</a> device for smart card authentication with <a href="https://www.freeipa.org/page/Main_Page">FreeIPA</a> and <a href="https://fedorahosted.org/sssd/">SSSD</a>.</p>
 <h2 id="smart-card-overview">Smart card overview</h2>
@@ -32,7 +38,7 @@
 <p>Finally, on the <em>host</em> I stopped the <code>pcscd</code> smart card daemon to prevent it from interfering with passthrough:</p>
 <pre><code># systemctl stop pcscd.service pcscd.socket</code></pre>
 <h2 id="provisioning-the-yubikey">Provisioning the YubiKey</h2>
-<p>For general smart card provisioning steps, I recommend <a href="https://blog-nkinder.rhcloud.com/?p=179">Nathan Kinder’s post</a> on the topic. But the YubiKey NEO is <em>special</em> with its own steps to follow! First install the <code>ykpers</code> and <code>yubico-piv-tool</code> packages:</p>
+<p>For general smart card provisioning steps, I recommend <a href="https://blog-nkinder.rhcloud.com/?p=179">Nathan Kinder's post</a> on the topic. But the YubiKey NEO is <em>special</em> with its own steps to follow! First install the <code>ykpers</code> and <code>yubico-piv-tool</code> packages:</p>
 <pre><code>sudo dnf install -y ykpers yubico-piv-tool</code></pre>
 <p>If we run <code>yubico-piv-tool</code> to find out the version of the PIV applet, we run into a problem because a new YubiKey comes configured in OTP mode:</p>
 <pre><code>[dhcp-40-8:~] ftweedal% yubico-piv-tool -a version
@@ -117,7 +123,7 @@ VE4gBBNhQa9jN8E9VMQXEPxYVH1tDrp7bRxg6V5spJb2oit6H+7Pe7xSC95ByCXw
 Msprhk+B2nkrVaco5R/ZOG0jZdMOMOJXCuTbWKOaCDEN5hsLNdua6uBpiDCJ5v1I
 l0Xmf53DC7jceF/XgZ0LUzbGzTDcr3o=
 -----END CERTIFICATE REQUEST-----</code></pre>
-<p><code>yubico-piv-tool -a request-certificate</code> is not very flexible; for example, it cannot create a CSR with <em>request extensions</em> such as including the user’s email address or Kerberos principal name in the <em>Subject Alternative Name</em> extension. For such non-trivial use cases, <code>openssl req</code> or other programs can be used instead, with a PKCS #11 module providing acesss to the smart card’s signing capability. <a href="https://blog-nkinder.rhcloud.com/?p=179">Nathan Kinder’s post</a> provides full details.</p>
+<p><code>yubico-piv-tool -a request-certificate</code> is not very flexible; for example, it cannot create a CSR with <em>request extensions</em> such as including the user’s email address or Kerberos principal name in the <em>Subject Alternative Name</em> extension. For such non-trivial use cases, <code>openssl req</code> or other programs can be used instead, with a PKCS #11 module providing acesss to the smart card’s signing capability. <a href="https://blog-nkinder.rhcloud.com/?p=179">Nathan Kinder's post</a> provides full details.</p>
 <p>With CSR in hand, <code>alice</code> can now request a certificate from the IPA CA. I have covered this procedure in previous articles so I’ll skip it here, except to add that it is necessary to use a profile that saves the newly issued certificate to the subject’s <code>userCertificate</code> LDAP attribute. This is how SSSD matches certificates in smart cards with users.</p>
 <p>Once we have the certificate (in file <code>alice.pem</code>) we can import it onto the card:</p>
 <pre><code>% yubico-piv-tool -k $KEY -a import-certificate -s 9e -i alice.pem
@@ -151,8 +157,8 @@ certificate_verification = no_ocsp</code></pre>
 <li>PKCS #15 is a token information format. OpenSC provides an PKCS #15 emulation layer for PIV cards.</li>
 <li>PKCS #11 is a software interface to cryptographic tokens. Token and HSM vendors provide PKCS #11 <em>modules</em> for their devices. OpenSC provides a PKCS #11 interface to PKCS #15 tokens (including emulated PIV tokens).</li>
 </ul>
-<p>It is appropriate to mention <a href="https://github.com/OpenSC/pam_pkcs11"><em>pam_pkcs11</em></a>, which is also part of the OpenSC project, as an alternative to SSSD. More configuration is involved, but if you don’t have (or don’t want) an external identity management system it looks like a good approach.</p>
-<p>You might remember that I was using slot <code>9e</code> which doesn’t require a PIN, yet I was still prompted for a PIN when logging in. There are a couple of issues to tease apart here. The first issue is that although PIV cards do not require the PIN for private key operations on slot <code>9e</code>, the <code>opensc-pkcs11.so</code> PKCS #11 module does not correctly report this. As an alternative to OpenSC, Yubico provide their own PKCS #11 module called <a href="https://developers.yubico.com/yubico-piv-tool/YKCS11_release_notes.html"><em>YKCS11</em></a> as part of <code>yubico-piv-tool</code> but <code>modutil</code> did not like it. Nevertheless, a peek at its source code leads me to believe that it too declares that the PIN is required regardless of the slot in use. I could not find much discussion of this discrepancy so I will raise some tickets and hopefully it can be addressed.</p>
+<p>It is appropriate to mention <a href="https://github.com/OpenSC/pam_pkcs11">pam_pkcs11</a>, which is also part of the OpenSC project, as an alternative to SSSD. More configuration is involved, but if you don’t have (or don’t want) an external identity management system it looks like a good approach.</p>
+<p>You might remember that I was using slot <code>9e</code> which doesn’t require a PIN, yet I was still prompted for a PIN when logging in. There are a couple of issues to tease apart here. The first issue is that although PIV cards do not require the PIN for private key operations on slot <code>9e</code>, the <code>opensc-pkcs11.so</code> PKCS #11 module does not correctly report this. As an alternative to OpenSC, Yubico provide their own PKCS #11 module called <a href="https://developers.yubico.com/yubico-piv-tool/YKCS11_release_notes.html">YKCS11</a> as part of <code>yubico-piv-tool</code> but <code>modutil</code> did not like it. Nevertheless, a peek at its source code leads me to believe that it too declares that the PIN is required regardless of the slot in use. I could not find much discussion of this discrepancy so I will raise some tickets and hopefully it can be addressed.</p>
 <p>The second issue is that SSSD requires the PIN and uses it to log into the token, even if the token says that a PIN is not required. Again, I will start a discussion to see if this is really the intended behaviour (perhaps it is).</p>
 <p>The YubiKey NEO features a wireless (NFC) interface. I haven’t played with it yet, but all the smart card features are available over that interface. This lends weight to fixing the issues preventing PIN-less usage.</p>
 <p>A final thought I have about the user experience is that it would be nice if user information could be derived or looked up based on the certificate(s) in the smart card, and a user automatically selected, instead of having to first specify “I am <code>alice</code>” or whoever. The information is there on the card after all, and it is one less step for users to perform. If PIN-less usage can be addressed, it would mean that a user can just approach a machine, plug in their smart card and hi ho, off to work they go. There are some indications that this does work with GDM and <code>pam_pkcs11</code>, so if you know how to get it going with SSSD I would love to know!</p>

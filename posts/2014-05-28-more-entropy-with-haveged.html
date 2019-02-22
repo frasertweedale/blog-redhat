@@ -18,7 +18,13 @@
         </div>
 
         <div id="content">
-            <div id="postContent">
+            <div class="info">
+    
+    Tags: <a href="../tags/sysadmin.html">sysadmin</a>
+    
+</div>
+
+<div id="postContent">
     <h1 id="more-entropy-with-haveged">More entropy with <code>haveged</code></h1>
 <p>When a system’s entropy pool is depleted, reads from <code>/dev/random</code> will block. For applications that require lots of entropy, in environments where little entropy is available, long delays can result.</p>
 <p>A side-note: on Linux, information about the amount of entropy available can be found under <code>/proc/sys/kernel/random/</code>, along with other parameters of the kernel entropy device and a UUID source. Be aware that other systems may not have this interface.</p>

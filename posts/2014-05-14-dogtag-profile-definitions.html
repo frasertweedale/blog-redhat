@@ -18,7 +18,13 @@
         </div>
 
         <div id="content">
-            <div id="postContent">
+            <div class="info">
+    
+    Tags: <a href="../tags/dogtag.html">dogtag</a>, <a href="../tags/profiles.html">profiles</a>
+    
+</div>
+
+<div id="postContent">
     <h1 id="dogtag-profile-definitions">Dogtag profile definitions</h1>
 <p>In the <a href="2014-05-12-dogtag-profiles-cert-requests.html">previous post</a> I began an exploration of Dogtag’s <em>certificate profiles</em> feature by looking at the certificate request process and the relationship between PKCS #10 CSRs and Dogtag certificate enrolment requests, which are used to submit CSRs in the context of a <em>profile</em>. In this post we will look at how Dogtag profiles are defined and learn a little about how Dogtag uses them in the certificate enrolment process.</p>
 <p>Each instance of Dogtag or Certificate Server starts out with a default set of profiles; these are found in the Dogtag instance directory in <code>/var/lib/pki/&lt;instance-name&gt;/ca/profiles/ca/</code>. There are dozens of profiles but since we are already familiar with <code>caServerCert</code> let’s open up <code>caServerCert.cfg</code> and have a look:</p>

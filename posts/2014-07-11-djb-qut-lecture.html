@@ -18,7 +18,13 @@
         </div>
 
         <div id="content">
-            <div id="postContent">
+            <div class="info">
+    
+    Tags: <a href="../tags/security.html">security</a>
+    
+</div>
+
+<div id="postContent">
     <h1 id="daniel-j.-bernstein-lecture-on-software-insecurity">Daniel J. Bernstein lecture on software (in)security</h1>
 <p>Building secure software and secure software systems is obviously an important part of my job as a developer on the <a href="http://www.freeipa.org/page/Main_Page">FreeIPA identity management</a> and <a href="http://pki.fedoraproject.org/wiki/PKI_Main_Page">Dogtag PKI</a> projects here at Red Hat. Last night I had the privilege of attending a lecture by the renowned Research Professor <a href="http://cr.yp.to/djb.html">Daniel J. Bernstein</a> at Queensland University of Technology entitled <em>Making sure software stays insecure</em> (<a href="http://cr.yp.to/talks.html#2014.07.10">slides</a>). The abstract of his talk:</p>
 <blockquote>
@@ -62,7 +68,7 @@
 <ul>
 <li><em>Integrity policy #1</em>: Whenever a computer shows a file, it also tells me the <em>source</em> of the file.</li>
 <li>Example: UNIX file ownership and permissions. Multi-user system, no file sharing. If users are not sharing files, the UNIX model if implemented correctly can enforce integrity policy #1. How can we check?
-<ol style="list-style-type: decimal">
+<ol type="1">
 <li>Check the code that enforces the file permission rules.</li>
 <li>Check the code that allocates memory, reads and writes files, and authenticates users.</li>
 <li>Check <em>all the kernel code</em> (beacuse it is all privileged).</li>

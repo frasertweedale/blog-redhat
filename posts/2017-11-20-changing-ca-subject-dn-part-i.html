@@ -18,7 +18,13 @@
         </div>
 
         <div id="content">
-            <div id="postContent">
+            <div class="info">
+    
+    Tags: <a href="../tags/freeipa.html">freeipa</a>, <a href="../tags/certificates.html">certificates</a>
+    
+</div>
+
+<div id="postContent">
     <h1 id="changing-a-cas-subject-dn-part-i-dont-do-that">Changing a CA’s Subject DN; Part I: Don’t Do That</h1>
 <p>When you deploy an X.509 certificate authority (CA), you choose a <em>Subject Distinguished Name</em> for that CA. It is sometimes abbreviated as <em>Subject DN</em>, <em>Subject Name</em>, <em>SDN</em> or just <em>Subject</em>.</p>
 <p>The Subject DN cannot be changed; it is “for life”. But sometimes someone wants to change it anyway. In this article I’ll speculate why someone might want to change a CA’s Subject DN, discuss why it is problematic to do so, and propose some alternative approaches.</p>

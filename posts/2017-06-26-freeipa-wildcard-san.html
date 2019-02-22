@@ -18,7 +18,13 @@
         </div>
 
         <div id="content">
-            <div id="postContent">
+            <div class="info">
+    
+    Tags: <a href="../tags/freeipa.html">freeipa</a>, <a href="../tags/dogtag.html">dogtag</a>, <a href="../tags/certificates.html">certificates</a>, <a href="../tags/profiles.html">profiles</a>
+    
+</div>
+
+<div id="postContent">
     <h1 id="wildcard-san-certificates-in-freeipa">Wildcard SAN certificates in FreeIPA</h1>
 <p>In <a href="2017-02-20-freeipa-wildcard-certs.html">an earlier post</a> I discussed how to make a certificate profile for wildcard certificates in FreeIPA, where the wildcard name appeared in the <em>Subject Common Name (CN)</em> (but not the <em>Subject Alternative Name (SAN)</em> extension). Apart from the technical details that post also explained that wildcard certificates are deprecated, <em>why</em> they are deprecated, and therefore why I was not particularly interested in pursuing a way to get wildcard DNS names into the SAN extension.</p>
 <p>But, as was portended long ago (more than 15 years, when <a href="https://tools.ietf.org/html/rfc2818">RFC 2818</a> was published) DNS name assertions via the CN field are deprecated, and finally some client software removed CN name processing support. The Chrome browser is first off the rank, but it won’t be the last!</p>

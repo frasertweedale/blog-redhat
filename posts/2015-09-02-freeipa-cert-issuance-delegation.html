@@ -18,7 +18,13 @@
         </div>
 
         <div id="content">
-            <div id="postContent">
+            <div class="info">
+    
+    Tags: <a href="../tags/freeipa.html">freeipa</a>, <a href="../tags/certificates.html">certificates</a>
+    
+</div>
+
+<div id="postContent">
     <h1 id="delegating-certifiate-issuance-in-freeipa">Delegating certifiate issuance in FreeIPA</h1>
 <p><a href="http://www.freeipa.org/page/Releases/4.2.0">FreeIPA 4.2</a> brings several certificate management improvements including custom profiles and user certificates. Along with the explosion in certificate use cases that are now support comes the question of how to manage certificate issuance, along two dimensions: which entities can be issued what kinds of certificates, and who can actually request a certificate? The first aspect is managed via CA ACLs, which were <a href="2015-08-06-freeipa-custom-certprofile.html">explained in a previous article</a>. In this post I detail how FreeIPA decides whether a requesting principal is allowed to request a certificate for the subject principal, and how to delegate the authority to issue certificates.</p>
 <h2 id="self-service-requests">Self-service requests</h2>

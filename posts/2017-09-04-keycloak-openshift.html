@@ -18,7 +18,13 @@
         </div>
 
         <div id="content">
-            <div id="postContent">
+            <div class="info">
+    
+    Tags: <a href="../tags/containers.html">containers</a>, <a href="../tags/idm.html">idm</a>, <a href="../tags/openshift.html">openshift</a>
+    
+</div>
+
+<div id="postContent">
     <h1 id="running-keycloak-in-openshift">Running Keycloak in OpenShift</h1>
 <p>At PyCon Australia in August I gave a presentation about federated and social identity. I demonstrated concepts using <a href="http://www.keycloak.org/">Keycloak</a>, an Open Source, feature rich <em>identity broker</em>. Keycloak is deployed in JBoss, so I wasn’t excited about the prospect of setting up Keycloak from scratch. Fortunately there is an <a href="https://hub.docker.com/r/jboss/keycloak/">official Docker image</a> for Keycloak, so with that as the starting point I took an opportunity to finally learn about OpenShift v3, too.</p>
 <p>This post is simply a recounting of how I ran Keycloak on OpenShift. Along the way we will look at how to get the containerised Keycloak to trust a private certificate authority (CA).</p>
@@ -87,7 +93,7 @@
 <h3 id="minishift"><em>Minishift</em></h3>
 <p><a href="https://www.openshift.org/minishift/">Minishift</a> is a tool that launches a single-node OpenShift cluster in a VM. It supports a variety of operating systems and hypervisors. On GNU+Linux it supports KVM and VirtualBox.</p>
 <p>First install <a href="https://github.com/docker/machine/releases">docker-machine</a> and <a href="https://github.com/dhiltgen/docker-machine-kvm/releases">docker-machine-driver-kvm</a>. (follow the instructions at the preceding links). Unfortunately these are not yet packaged for Fedora.</p>
-<p>Download and extract the Minishift release for your OS from <a href="https://github.com/minishift/minishift/releases" class="uri">https://github.com/minishift/minishift/releases</a>.</p>
+<p>Download and extract the Minishift release for your OS from <a href="https://github.com/minishift/minishift/releases">https://github.com/minishift/minishift/releases</a>.</p>
 <p>Run <code>minishift start</code>:</p>
 <pre><code>% ./minishift start
 -- Installing default add-ons ... OK
@@ -95,11 +101,11 @@ Starting local OpenShift cluster using 'kvm' hypervisor...
 Downloading ISO 'https://github.com/minishift/minishift-b2d-iso/releases/download/v1.0.2/minishift-b2d.iso'
 
 ... wait a while ...</code></pre>
-<p>It downloads a <a href="http://boot2docker.io/"><em>boot2docker</em></a> VM image containing the openshift cluster, boots the VM, and the console output then resembles the output of <code>oc cluster up</code>. I deduce that <code>oc cluster up</code> is being executed on the VM.</p>
+<p>It downloads a <a href="http://boot2docker.io/">boot2docker</a> VM image containing the openshift cluster, boots the VM, and the console output then resembles the output of <code>oc cluster up</code>. I deduce that <code>oc cluster up</code> is being executed on the VM.</p>
 <p>At this point, we’re ready to go. Before I continue, it is important to note that once you have access to an OpenShift cluster, the user experience of creating and managing applications is essentially the same. The commands in the following sections are relevant, regardless whether you are running your app on OpenShift online, on a cluster running on your workstation, or anything in between.</p>
 <h2 id="preparing-the-keycloak-image">Preparing the Keycloak image</h2>
 <p>The JBoss project provides official Docker images, including an <a href="https://hub.docker.com/r/jboss/keycloak/">official Docker image</a> for Keycloak. This image runs fine in plain Docker but the directory permissions are not correct for running in OpenShift.</p>
-<p>The <code>Dockerfile</code> for this image is found in the <a href="https://github.com/jboss-dockerfiles/keycloak"><em>jboss-dockerfiles/keycloak</em> repository</a> on GitHub. Although they do not publish an official image for it, this repository also contains a <code>Dockerfile</code> for Keycloak on OpenShift! I was able to build that image myself and upload it to <a href="https://hub.docker.com/r/frasertweedale/keycloak-openshift/">my <em>Docker Hub</em> account</a>. The steps were as follows.</p>
+<p>The <code>Dockerfile</code> for this image is found in the <a href="https://github.com/jboss-dockerfiles/keycloak">jboss-dockerfiles/keycloak repository</a> on GitHub. Although they do not publish an official image for it, this repository also contains a <code>Dockerfile</code> for Keycloak on OpenShift! I was able to build that image myself and upload it to <a href="https://hub.docker.com/r/frasertweedale/keycloak-openshift/">my Docker Hub account</a>. The steps were as follows.</p>
 <p>First clone the <code>jboss-dockerfiles</code> repo:</p>
 <pre><code>% git clone https://github.com/jboss-dockerfiles/keycloak docker-keycloak
 Cloning into 'docker-keycloak'...

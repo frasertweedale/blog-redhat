@@ -18,7 +18,13 @@
         </div>
 
         <div id="content">
-            <div id="postContent">
+            <div class="info">
+    
+    Tags: <a href="../tags/freeipa.html">freeipa</a>, <a href="../tags/certificates.html">certificates</a>, <a href="../tags/renewal.html">renewal</a>
+    
+</div>
+
+<div id="postContent">
     <h1 id="certificate-renewal-and-revocation-in-freeipa">Certificate renewal and revocation in FreeIPA</h1>
 <p>A <a href="https://pagure.io/freeipa/issue/7482">recent FreeIPA ticket</a> has prompted a discussion about what revocation behaviour should occur upon certificate renewal. The ticket reported a regression: when renewing a certificate, <code>ipa cert-request</code> was no longer revoking the old certificate. But is revoking the certificate the correct behaviour in the first place?</p>
 <p>This post discusses the motivations and benefits of automatically revoking a principal’s certificates when a new certificate is issued. It is assumed that subjects of certificates are FreeIPA principals. Conclusions do not necessarily apply to other environments or use cases.</p>
@@ -57,7 +63,7 @@
 <h2 id="conclusion">Conclusion</h2>
 <p>In this post I discussed how the current revocation behaviour of FreeIPA prevents hosts and services from using multiple certificates for different purposes. This is not the majority use case but I feel that we should support the use case. And we can, with a refinement of <code>ipa cert-request</code> behaviour.</p>
 <p>We ought to make it possible to revoke <em>only the certificate being renewed</em>. We can do this by preventing <code>ipa cert-request</code> from revoking certs and requiring a separate call to <code>ipa cert-revoke</code>. behaviour of <code>cert-request</code> Alternatively, we can add an option to <code>ipa cert-request</code> for explicitly specifying the certificate(s) to revoke. In either case, the Certmonger renewal helpers can be changed to ensure that renewals via Certmonger revoke the old certificate (while leaving the subject’s other certificates alone!)</p>
-<p>What do you think of the changes I’ve suggested? You can contribute to the <a href="https://lists.fedoraproject.org/archives/list/freeipa-devel@lists.fedorahosted.org/thread/G2BXRJNU5ATVXRNUPGE2Y4V3YJVXR7EC/">discussion on the <em>freeipa-devel</em> mailing list</a>.</p>
+<p>What do you think of the changes I’ve suggested? You can contribute to the <a href="https://lists.fedoraproject.org/archives/list/freeipa-devel@lists.fedorahosted.org/thread/G2BXRJNU5ATVXRNUPGE2Y4V3YJVXR7EC/">discussion</a> on the <em>freeipa-devel</em> mailing list.</p>
 </div>
 <div id="postFooter">
     <div id="recent">

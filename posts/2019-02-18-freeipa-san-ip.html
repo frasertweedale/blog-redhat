@@ -18,7 +18,13 @@
         </div>
 
         <div id="content">
-            <div id="postContent">
+            <div class="info">
+    
+    Tags: <a href="../tags/freeipa.html">freeipa</a>, <a href="../tags/certificates.html">certificates</a>, <a href="../tags/howto.html">howto</a>
+    
+</div>
+
+<div id="postContent">
     <h1 id="ip-address-san-support-in-freeipa">IP address SAN support in FreeIPA</h1>
 <p>The X.509 <em>Subject Alternative Name (SAN)</em> certificate extension carries subject names that cannot (or cannot easily) be expressed in the Subject Distinguished Name field. The extension supports various name types, including DNS names (the most common), IP addresses, email addresses (for users) and Kerberos principal names, among others.</p>
 <p>When issuing a certificate, FreeIPA has to validate that requested SAN name values match the principal to whom the certificate is being issued. There has long been support for DNS names, Kerberos and Microsoft principal names, and email addresses. Over the years we have received many requests to support IP address SAN names. And now we are finally <a href="https://pagure.io/freeipa/issue/7451">adding support</a>!</p>
@@ -40,7 +46,7 @@
 <li>If you query external DNS systems, how do you handle failures or slowness?</li>
 <li>The need to mitigate DNS or BGP poisoning attacks</li>
 </ul>
-<p>Taking these factors into account, it is plain to see why we put this feature off for so long. It is just hard to determine what the correct behaviour should be. Nevertheless use cases exist so the feature request is legitimate. The difference with Ian's RFE was that he proposed a strict validation regime that only uses data defined in FreeIPA. It is a fair assumption that the data managed by a FreeIPA instance is <em>trustworthy</em>. That assumption, combined with some sanity checks, gives the validation requirements:</p>
+<p>Taking these factors into account, it is plain to see why we put this feature off for so long. It is just hard to determine what the correct behaviour should be. Nevertheless use cases exist so the feature request is legitimate. The difference with <span class="title-ref">Ian's RFE</span> was that he proposed a strict validation regime that only uses data defined in FreeIPA. It is a fair assumption that the data managed by a FreeIPA instance is <em>trustworthy</em>. That assumption, combined with some sanity checks, gives the validation requirements:</p>
 <ol type="1">
 <li>Only FreeIPA-managed DNS records are considered. There is no communication with external DNS resolvers.</li>
 <li>For each IP address in the SAN, there is a DNS name in the SAN that resolves to it. (As an implementation decision, we permit one level of CNAME indirection).</li>
