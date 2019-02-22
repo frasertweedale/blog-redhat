@@ -1,5 +1,5 @@
 ---
-tags: freeipa, certificates
+tags: freeipa, certificates, renewal
 ---
 
 Certificate renewal and revocation in FreeIPA
@@ -173,6 +173,6 @@ changed to ensure that renewals via Certmonger revoke the old
 certificate (while leaving the subject's other certificates alone!)
 
 What do you think of the changes I've suggested?  You can contribute
-to the `discussion on the *freeipa-devel* mailing list`_.
+to the `discussion`_ on the *freeipa-devel* mailing list.
 
-.. _discussion on the *freeipa-devel* mailing list: https://lists.fedoraproject.org/archives/list/freeipa-devel@lists.fedorahosted.org/thread/G2BXRJNU5ATVXRNUPGE2Y4V3YJVXR7EC/
+.. _discussion: https://lists.fedoraproject.org/archives/list/freeipa-devel@lists.fedorahosted.org/thread/G2BXRJNU5ATVXRNUPGE2Y4V3YJVXR7EC/

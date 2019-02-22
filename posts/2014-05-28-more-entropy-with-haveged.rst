@@ -1,5 +1,5 @@
 ---
-tags: vms, sysadmin
+tags: sysadmin
 ---
 
 More entropy with ``haveged``

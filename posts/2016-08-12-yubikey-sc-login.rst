@@ -1,5 +1,5 @@
 ---
-tags: 2fa, certificates
+tags: 2fa, certificates, sysadmin
 ---
 
 Smart card login with YubiKey NEO
@@ -325,12 +325,12 @@ card authentication.  A quick review of them is warranted:
 
 .. _PIV: http://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-73-4.pdf
 
-It is appropriate to mention `*pam_pkcs11*`_, which is also part of
+It is appropriate to mention `pam_pkcs11`_, which is also part of
 the OpenSC project, as an alternative to SSSD.  More configuration
 is involved, but if you don't have (or don't want) an external
 identity management system it looks like a good approach.
 
-.. _*pam_pkcs11*: https://github.com/OpenSC/pam_pkcs11
+.. _pam_pkcs11: https://github.com/OpenSC/pam_pkcs11
 
 You might remember that I was using slot ``9e`` which doesn't
 require a PIN, yet I was still prompted for a PIN when logging in.
@@ -338,14 +338,14 @@ There are a couple of issues to tease apart here.  The first issue
 is that although PIV cards do not require the PIN for private key
 operations on slot ``9e``, the ``opensc-pkcs11.so`` PKCS #11 module
 does not correctly report this.  As an alternative to OpenSC, Yubico
-provide their own PKCS #11 module called `*YKCS11*`_ as part of
+provide their own PKCS #11 module called `YKCS11`_ as part of
 ``yubico-piv-tool`` but ``modutil`` did not like it.  Nevertheless,
 a peek at its source code leads me to believe that it too declares
 that the PIN is required regardless of the slot in use.  I could not
 find much discussion of this discrepancy so I will raise some
 tickets and hopefully it can be addressed.
 
-.. _*YKCS11*: https://developers.yubico.com/yubico-piv-tool/YKCS11_release_notes.html
+.. _YKCS11: https://developers.yubico.com/yubico-piv-tool/YKCS11_release_notes.html
 
 The second issue is that SSSD requires the PIN and uses it to log
 into the token, even if the token says that a PIN is not required.

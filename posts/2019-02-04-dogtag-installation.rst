@@ -104,27 +104,27 @@ Terminology
 
 It is worthwhile to clarify the meaning of some terms:
 
-* ***instance*** or ***installation***.
+*instance* or *installation*
   An installation of Dogtag on a particular machine.  An instance
   may contain one or more *subsystems*.  There may be more than one
   Dogtag instance on a single machine, although this is uncommon
   (and each instance must use a disjoint set of network ports).
   The default instance name is ``pki-tomcat``.
 
-- ***subsystem***.
+*subsystem*
   Each main function in Dogtag is provided by a subsystem.  The
   subsystems are: ``CA``, ``KRA``, ``OCSP``, ``TKS`` and ``TPS``.
   Every Dogtag instance must have a ``CA`` subsystem (hence, the
   first subsystem installed must be the ``CA`` subsystem).
 
-- ***clone***.
+*clone*
   For redundancy, a subsystem may be *cloned* to a different
   instance (usually on a different machine; this is not a technical
   requirement but it does not make sense to do otherwise).
   Different subsystems may have different numbers of clones in a
   topology.
 
-- ***topology*** or ***deployment***.
+*topology* or *deployment*
   All of the clones of all subsystems derived from some original CA
   subsystem form a *deployment* or *topology*.  Typically, each
   *instance* in the topology would have a replicated copy of the
@@ -223,7 +223,7 @@ In the codebase, scriptlets are located under
 ``base/server/python/pki/server/deployment/scriptlets/<name>.py``.
 The list of scriptlets and the order in which they're run is given
 by the ``spawn_scriplets`` variable in
-``base/server/etc/default.cfg``.  Note that *``scriplet``* there is
+``base/server/etc/default.cfg``.  Note that ``scriplet`` there is
 not a typo.  Or maybe it is, but it's not *my* typo.  In some parts
 of the codebase, we say *scriplet*, and in others it's *scriptlet*.
 This is mildly annoying, but you just have to be careful to use the

@@ -5,8 +5,8 @@ tags: freeipa, certificates, troubleshooting, howto
 Replacing a lost or broken CA in FreeIPA
 ========================================
 
-*This is a* ***long post****.  If you just want some steps to follow
-feel free to `skip ahead`_.*
+*This is a* **long post**.  *If you just want some steps to follow
+feel free to* `skip ahead`_.
 
 .. _skip ahead: #recovery-procedure-summarised
 

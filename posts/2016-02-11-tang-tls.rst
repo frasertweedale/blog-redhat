@@ -1,5 +1,5 @@
 ---
-tags: security, cryptography
+tags: security, cryptography, sysadmin
 ---
 
 Introduction to Tang and Clevis
@@ -51,10 +51,10 @@ bindings.  Clevis comes with a handful a pins including ``pwd``
 The ``tang`` pin is provided by Tang to avoid circular dependencies.
 
 The ``sss`` pin provides a way to "nest" pins, and also provides *k
-of n* threshold unlocking.  "SSS" stands for `*Shamir's Secret
-Sharing*`_, the algorithm that makes this possible.
+of n* threshold unlocking.  "SSS" stands for `Shamir's Secret
+Sharing`_, the algorithm that makes this possible.
 
-.. _*Shamir's Secret Sharing*: https://en.wikipedia.org/wiki/Shamir's_Secret_Sharing
+.. _Shamir's Secret Sharing: https://en.wikipedia.org/wiki/Shamir's_Secret_Sharing
 
 LUKS volume decryption, which was implemented in Deo, has not yet
 been implemented in Clevis, but it is a high priority.

@@ -5,7 +5,7 @@ tags: freeipa, dogtag, certificates, profiles
 Implications of Common Name deprecation for Dogtag and FreeIPA
 ==============================================================
 
-Or, *``ERR_CERT_COMMON_NAME_INVALID``, and what we are doing about
+Or, ``ERR_CERT_COMMON_NAME_INVALID``, *and what we are doing about
 it.*
 
 Google Chrome version 58, released in April 2017, removed support
@@ -105,7 +105,7 @@ domain of validity to the domain(s) listed and subdomains thereof.
 For example, if the DNS name ``example.com`` appears in a CA
 certificate's Name Constraints extension, leaf certificates with a
 DNS name of ``example.com`` or ``foo.example.com`` could be valid,
-but a DNS name of ``foo.example``**``.net``** could not be valid.
+but a DNS name of ``foo.example.net`` could not be valid.
 Conforming X.509 implementations must enforce these constraints.
 
 But these constraints only apply to SAN DNSName values, **not to the

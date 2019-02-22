@@ -1,5 +1,5 @@
 ---
-tags: freeipa, freebsd
+tags: freeipa, freebsd, sysadmin
 ---
 
 Configuring FreeBSD as a FreeIPA client
@@ -148,7 +148,7 @@ consuming task - lots of trial runs and testing - but probably not
 particularly difficult.
 
 In regards to the package repository, `work is underway`_ to add
-`support for package *flavours*`_ to the FreeBSD packaging
+`support for package "flavours"`_ to the FreeBSD packaging
 infrastructure.  When this feature is ready, a small effort should
 be undertaken to add a FreeIPA flavour to the ports tree, and ensure
 that the resultant packages are made available in the official
@@ -158,4 +158,4 @@ everything needed to configure FreeBSD as a FreeIPA client will be
 available to all FreeBSD users by default.
 
 .. _work is underway: http://blogs.freebsdish.org/portmgr/2014/09/01/the-ports-tree-is-now-stage-only/
-.. _support for package *flavours*: http://lists.freebsd.org/pipermail/freebsd-pkg/2014-September/000703.html
+.. _support for package "flavours": http://lists.freebsd.org/pipermail/freebsd-pkg/2014-September/000703.html

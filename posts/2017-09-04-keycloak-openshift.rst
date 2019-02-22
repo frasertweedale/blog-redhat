@@ -152,12 +152,12 @@ Run ``minishift start``::
 
   ... wait a while ...
 
-It downloads a `*boot2docker*`_ VM image containing the openshift
+It downloads a `boot2docker`_ VM image containing the openshift
 cluster, boots the VM, and the console output then resembles the
 output of ``oc cluster up``.  I deduce that ``oc cluster up`` is
 being executed on the VM.
 
-.. _*boot2docker*: http://boot2docker.io/
+.. _boot2docker: http://boot2docker.io/
 
 At this point, we're ready to go.  Before I continue, it is
 important to note that once you have access to an OpenShift cluster,
@@ -177,14 +177,14 @@ plain Docker but the directory permissions are not correct for
 running in OpenShift.
 
 The ``Dockerfile`` for this image is found in the
-`*jboss-dockerfiles/keycloak* repository`_ on GitHub.  Although they
+`jboss-dockerfiles/keycloak repository`_ on GitHub.  Although they
 do not publish an official image for it, this repository also
 contains a ``Dockerfile`` for Keycloak on OpenShift!  I was able to
-build that image myself and upload it to `my *Docker Hub* account`_.
+build that image myself and upload it to `my Docker Hub account`_.
 The steps were as follows.
 
-.. _*jboss-dockerfiles/keycloak* repository: https://github.com/jboss-dockerfiles/keycloak
-.. _my *Docker Hub* account: https://hub.docker.com/r/frasertweedale/keycloak-openshift/
+.. _jboss-dockerfiles/keycloak repository: https://github.com/jboss-dockerfiles/keycloak
+.. _my Docker Hub account: https://hub.docker.com/r/frasertweedale/keycloak-openshift/
 
 First clone the ``jboss-dockerfiles`` repo::
 
