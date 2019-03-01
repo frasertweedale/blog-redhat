@@ -1,0 +1,207 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+    <head>
+        <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+        <title>Fraser's IdM Blog - Specifying a CA Subject Key Identifier during Dogtag installation</title>
+        <link rel="stylesheet" type="text/css" href="../css/default.css" />
+    </head>
+    <body>
+        <div id="header">
+            <div id="logo">
+                <a href="../">Fraser's IdM Blog</a>
+            </div>
+            <div id="navigation">
+                <a href="../">Home</a>
+                <a href="../archive.html">Archive</a>
+            </div>
+        </div>
+
+        <div id="content">
+            <div class="info">
+    
+    Tags: <a href="../tags/dogtag.html">dogtag</a>, <a href="../tags/howto.html">howto</a>
+    
+</div>
+
+<div id="postContent">
+    <h1 id="specifying-a-ca-subject-key-identifier-during-dogtag-installation">Specifying a CA Subject Key Identifier during Dogtag installation</h1>
+<p>When installing Dogtag with an externally-signed CA certificate, it is sometimes necessary to include a specific <em>Subject Key Identifier</em> value in the CSR. In this post I will demonstrate how to do this.</p>
+<h2 id="what-is-a-subject-key-identifier">What is a Subject Key Identifier?</h2>
+<p>The X.509 <em>Subject Key Identifier (SKI)</em> extension declares a unique identifier for the public key in the certificate. It is required on all CA certificates. CAs propagate their own SKI to the <em>Issuer Key Identifier (AKI)</em> extension on issued certificates. Together, these facilitate efficient certification path construction; certificate databases can index certificates by SKI.</p>
+<p>The SKI must be unique for a given key. Most often it is derived from the public key data using a cryptographic digest, usually SHA-1. But any method of generating a unique value is acceptable.</p>
+<p>For example, let’s look at the CA certificate and one of the service certificates in a FreeIPA deployment. The CA is self-signed and therefore contains the same value in both the SKI and AKI extensions:</p>
+<pre><code>% openssl x509 -text &lt; /etc/ipa/ca.crt
+Certificate:
+    Data:
+        Version: 3 (0x2)
+        Serial Number: 1 (0x1)
+        Signature Algorithm: sha256WithRSAEncryption
+        Issuer: O = IPA.LOCAL 201902271325, CN = Certificate Authority
+        Validity
+            Not Before: Feb 27 03:30:22 2019 GMT
+            Not After : Feb 27 03:30:22 2034 GMT
+        Subject: O = IPA.LOCAL 201902271325, CN = Certificate Authority
+        Subject Public Key Info:
+            &lt; elided &gt;
+        X509v3 extensions:
+            X509v3 Authority Key Identifier:
+                keyid:C9:29:69:D0:14:A4:AB:11:D4:11:B1:35:31:81:08:B6:A9:30:D3:0A
+
+            X509v3 Basic Constraints: critical
+                CA:TRUE
+            X509v3 Key Usage: critical
+                Digital Signature, Non Repudiation, Certificate Sign, CRL Sign
+            X509v3 Subject Key Identifier:
+                C9:29:69:D0:14:A4:AB:11:D4:11:B1:35:31:81:08:B6:A9:30:D3:0A
+            Authority Information Access:
+                OCSP - URI:http://ipa-ca.ipa.local/ca/ocsp
+  ...</code></pre>
+<p>Whereas the end entity certificate has the CA’s SKI in its AKI, and its SKI is different:</p>
+<pre><code>% sudo cat /var/lib/ipa/certs/httpd.crt | openssl x509 -text
+Certificate:
+    Data:
+      Version: 3 (0x2)                                                                                                                                                                                  [43/9508]
+      Serial Number: 9 (0x9)
+      Signature Algorithm: sha256WithRSAEncryption
+      Issuer: O = IPA.LOCAL 201902271325, CN = Certificate Authority
+      Validity
+          Not Before: Feb 27 03:32:57 2019 GMT
+          Not After : Feb 27 03:32:57 2021 GMT
+      Subject: O = IPA.LOCAL 201902271325, CN = f29-0.ipa.local
+      Subject Public Key Info:
+          &lt; elided &gt;
+      X509v3 extensions:
+          X509v3 Authority Key Identifier:
+              keyid:C9:29:69:D0:14:A4:AB:11:D4:11:B1:35:31:81:08:B6:A9:30:D3:0A
+
+          Authority Information Access:
+              OCSP - URI:http://ipa-ca.ipa.local/ca/ocsp
+
+          X509v3 Key Usage: critical
+              Digital Signature, Non Repudiation, Key Encipherment, Data Encipherment
+          X509v3 Extended Key Usage:
+              TLS Web Server Authentication, TLS Web Client Authentication
+          X509v3 CRL Distribution Points:
+
+              Full Name:
+                URI:http://ipa-ca.ipa.local/ipa/crl/MasterCRL.bin
+              CRL Issuer:
+                DirName:O = ipaca, CN = Certificate Authority
+
+          X509v3 Subject Key Identifier:
+              FE:D2:8A:72:C8:D5:78:79:C9:04:04:A8:39:37:7F:FD:36:E6:E9:D2
+          X509v3 Subject Alternative Name:
+              DNS:f29-0.ipa.local, othername:&lt;unsupported&gt;, othername:&lt;unsupported&gt;</code></pre>
+<p>Most CA programs, including Dogtag, automatically compute a SKI for every certificate being issued. Dogtag computes a SHA-1 hash over the <code>subjectPublicKey</code> value, which is the most common method. The value must be unique, but does not have to be derived from the public key.</p>
+<p>It is not required for a self-signed CA certificate to contain an AKI extension. Neither is it necessary to include a SKI in an end entity certificate. But it does not hurt to include them. Indeed it is common (as we see above).</p>
+<h2 id="use-case-for-specifying-a-ski">Use case for specifying a SKI</h2>
+<p>If CAs can automatically compute a SKI, why would you need to specify one?</p>
+<p>The use case arises when you’re changing external CAs or switching from self-signed to externally-signed, or vice versa. The new CA might compute SKIs differently from the current CA. But it is important to keep using the same SKI. So it is desirable to include the SKI in the CSR to indicate to the CA the value that should be used.</p>
+<p>Not every CA program will follow the suggestion. Or the behaviour may be configurable, system-wide or per-profile. If you’re using Dogtag / RHCS to sign CA certificates, it is straightforward to define a profile that uses an SKI supplied in the CSR (but that is beyond the scope of this article).</p>
+<h2 id="including-an-ski-in-a-dogtag-csr">Including an SKI in a Dogtag CSR</h2>
+<p>At time of writing, this procedure is supported in Dogtag 10.6.9 and later, which is available in Fedora 28 and Fedora 29. It will be supported in a future version of RHEL. The behaviour depends on a recent enhancement to the <code>certutil</code> program, which is part of NSS. That enhancement is not in RHEL 7 yet, hence this Dogtag feature is not yet available on RHEL 7.</p>
+<p>When installing Dogtag using the two-step external signing procedure, by default no SKI is included the CSR. You can change this via the <code>pki_req_ski</code> option. The option is described in the <code>pki_default.cfg(5)</code> man page. There are two ways to use the option, and we will look at each in turn.</p>
+<h3 id="default-method">Default method</h3>
+<pre><code>[CA]
+pki_req_ski=DEFAULT</code></pre>
+<p>This special value will cause the CSR to contain a SKI value computed using the same method Dogtag itself uses (SHA-1 digest). Adding this value resulted in the following CSR data:</p>
+<pre><code>Certificate Request:
+    Data:
+        Version: 1 (0x0)
+        Subject: O = IPA.LOCAL 201903011502, CN = Certificate Authority
+        Subject Public Key Info:
+            &lt; elided &gt;
+        Attributes:
+        Requested Extensions:
+            X509v3 Subject Key Identifier: 
+                76:49:AA:B2:08:60:18:C1:6D:AF:2C:28:A0:54:34:77:7E:8F:80:71
+            X509v3 Basic Constraints: critical
+                CA:TRUE
+            X509v3 Key Usage: critical
+                Digital Signature, Non Repudiation, Certificate Sign, CRL Sign</code></pre>
+<p>The SKI value is the SHA-1 digest of the public key. Of course, it will be different every time, because a different key will be generated.</p>
+<h3 id="explicit-ski">Explicit SKI</h3>
+<pre><code>[CA]
+pki_req_ski=&lt;hex data&gt;</code></pre>
+<p>An exact SKI value can be specified as a hex-encode byte string. The datum <strong>must not</strong> have a leading <code>0x</code>. I used the following configuration:</p>
+<pre><code>[CA]
+pki_req_ski=00D06F00D4D06746</code></pre>
+<p>With this configuration, the expected SKI value appears in the CSR:</p>
+<pre><code>Certificate Request:
+    Data:
+        Version: 1 (0x0)
+        Subject: O = IPA.LOCAL 201903011518, CN = Certificate Authority
+        Subject Public Key Info:
+            &lt; elided &gt;
+        Attributes:
+        Requested Extensions:
+            X509v3 Subject Key Identifier:
+                00:D0:6F:00:D4:D0:67:46
+            X509v3 Basic Constraints: critical
+                CA:TRUE
+            X509v3 Key Usage: critical
+                Digital Signature, Non Repudiation, Certificate Sign, CRL Sign</code></pre>
+<h2 id="renewal">Renewal</h2>
+<p>We don’t have direct support for including the SKI in the CSR generated for renewing an externally signed CA. But you can use <code>certutil</code> to create a CSR that includes the desired SKI.</p>
+<p>It could be worthwhile to enhance Certmonger to automatically include the SKI of the current certificate when it creates a CSR for renewing a tracked certificate.</p>
+<h2 id="freeipa-support">FreeIPA support</h2>
+<p>We don’t expose this feature in FreeIPA directly. It can be hacked in pretty easily by modifying the Python code that builds the <code>pkispawn</code> configuration during installation. Alternatively, set the option in the <code>pkispawn</code> default configuration file: <code>/usr/share/pki/server/etc/default.cfg</code> (this is what I did to test the feature).</p>
+<p>Changes to be made as part of the <a href="https://github.com/freeipa/freeipa/pull/2307">upcoming HSM support</a> will, as a pleasant side effect, make it easy to specify or override <code>pkispawn</code> configuration values including <code>pki_req_ski</code>.</p>
+</div>
+<div id="postFooter">
+    <div id="recent">
+Recent posts:
+<ul>
+    
+        <li>
+            <a href="../posts/2019-03-01-dogtag-csr-ski.html">Specifying a CA Subject Key Identifier during Dogtag installation</a>
+        </li>
+    
+        <li>
+            <a href="../posts/2019-02-28-dogtag-cert-fix.html">Offline expired certificate renewal for Dogtag</a>
+        </li>
+    
+        <li>
+            <a href="../posts/2019-02-18-freeipa-san-ip.html">IP address SAN support in FreeIPA</a>
+        </li>
+    
+        <li>
+            <a href="../posts/2019-02-07-staticmethod-considered-beneficial.html"><code>staticmethod</code> considered beneficial</a>
+        </li>
+    
+        <li>
+            <a href="../posts/2019-02-04-dogtag-installation.html">How does Dogtag PKI spawn?</a>
+        </li>
+    
+</ul>
+
+<div id="recentLinks">
+    <a type="application/atom+xml" href="../atom.xml">Atom feed</a>
+     <!-- em space -->
+    <a href="../archive.html">All posts…</a>
+</div>
+
+</div>
+
+    <div id="license">
+    <a rel="license" href="https://creativecommons.org/licenses/by/4.0/">
+        <img alt="Creative Commons License" style="border-width:0" src="https://licensebuttons.net/l/by/4.0/88x31.png">
+    </a>
+    <br />
+    Except where otherwise noted, this work is licensed under a
+    <a rel="license" href="https://creativecommons.org/licenses/by/4.0/">
+        Creative Commons Attribution 4.0 International License
+    </a>.
+</div>
+
+</div>
+
+        </div>
+        <div class="clear"></div>
+        <div id="footer">
+            Generated by
+            <a href="https://jaspervdj.be/hakyll">Hakyll</a>
+        </div>
+    </body>
+</html>

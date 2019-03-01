@@ -59,7 +59,7 @@
 <li>Re-enable self-test for affected subsystems and start Dogtag.</li>
 </ol>
 <h2 id="using-cert-fix">Using <code>cert-fix</code></h2>
-<p>There are a couple of ways to try out the tool—without waiting for certificates to expire, that is. One way is to roll your system clock forward, beyond the expiry date of one or more certificates. Another possibility is to modify a certificate profile used for system certificates (e.g. <code>caServerCert</code> or <code>subsystemCert</code>) so that it has a very short validity period.</p>
+<p>There are a couple of ways to try out the tool—without waiting for certificates to expire, that is. One way is to roll your system clock forward, beyond the expiry date of one or more certificates. Another possibility is to modify a certificate profile used for a system certificate so that it will be issued with a very short validity period.</p>
 <p>I opted for the latter option. I manually edited the default profile configuration, so that Dogtag’s OCSP and HTTPS certificates would be issued with a validity period of 15 minutes. By the time I installed FreeIPA, grabbed a coffee and read a few emails, the certificates had expired. Certmonger didn’t even attempt to renew them. Dogtag was still running and working properly, but <code>ipactl restart</code> put Dogtag, and the whole FreeIPA deployment, out of action.</p>
 <p>I used <code>pki-server cert-find</code> to have a peek at Dogtag’s system certificates:</p>
 <pre><code>[root@f29-0 ca]# pki-server cert-find
@@ -197,6 +197,7 @@ XXXXXXXX
     -L -n 'Server-Cert cert-pki-ca' | egrep &quot;Serial|Not After&quot;
       Serial Number: 12 (0xc)
           Not After : Wed May 27 12:45:25 2020
+
 [root@f29-0 ra-nssdb]# certutil -d /etc/pki/pki-tomcat/alias \
     -L -n 'ocspSigningCert cert-pki-ca' | egrep &quot;Serial|Not After&quot;
       Serial Number: 13 (0xd)
@@ -239,7 +240,7 @@ Starting pki-tomcatd Service
 Starting ipa-otpd Service
 ipa: INFO: The ipactl command was successful</code></pre>
 <h2 id="issues-and-caveats">Issues and caveats</h2>
-<p>Further to the issues already covered, there are several scenarios that <code>cert-fix</code> cannot handle.</p>
+<p>Besides the issues already covered, there are several scenarios that <code>cert-fix</code> cannot handle.</p>
 <h3 id="expired-ca-certificate">Expired CA certificate</h3>
 <p>Due to the the long validity period of a typical CA certificate, the assumption that the CA certificate is valid is the safest assumption made by <code>cert-fix</code>. But it is not a safe assumption.</p>
 <p>The most common way this assumption is violated is with externally-signed CA certificates. For example, the FreeIPA CA in your organisation is signed by Active Directory CA, with a validity period of two years. Things get overlooked and suddenly, your FreeIPA CA is expired. It may take some time for the upstream CA administrators to issue a new certificate. In the meantime, you want to get your FreeIPA/Dogtag CA back up.</p>
@@ -254,7 +255,7 @@ ipa: INFO: The ipactl command was successful</code></pre>
 <p>A workaround for this may be to temporarily reconfigure Dogtag to use a password to authenticate to LDAP. Then after the new subsystem certificate was issued, it must be added to the <code>pkidbuser</code> entry in LDAP, and certificate authentication reinstated.</p>
 <p>This is not a FreeIPA-specific consideration. Using TLS client authentication to bind to LDAP is a supported configuration in Dogtag / RHCS. So we should probably support it in <code>cert-fix</code> too, somehow, since the point of the tool is to avoid complex manual procedures in recovering from expired system certificates.</p>
 <h3 id="ds-service-certificate-expiry">389 DS service certificate expiry</h3>
-<p>You know the tune… if this certificate is expired, Dogtag can’t talk to LDAP and can’t start, therefore a new LDAP certificate can’t be issued.</p>
+<p>You know the tune by now… if this certificate is expired, Dogtag can’t talk to LDAP and can’t start, therefore a new LDAP certificate can’t be issued.</p>
 <p>Issuing a temporary certificate with the same serial number may be the best way forward here, like what we do for the Dogtag HTTPS certificate.</p>
 <h3 id="re-keying">Re-keying</h3>
 <p>…is not supported. But it is a possible future enhancement</p>
@@ -279,6 +280,10 @@ Recent posts:
 <ul>
     
         <li>
+            <a href="../posts/2019-03-01-dogtag-csr-ski.html">Specifying a CA Subject Key Identifier during Dogtag installation</a>
+        </li>
+    
+        <li>
             <a href="../posts/2019-02-28-dogtag-cert-fix.html">Offline expired certificate renewal for Dogtag</a>
         </li>
     
@@ -292,10 +297,6 @@ Recent posts:
     
         <li>
             <a href="../posts/2019-02-04-dogtag-installation.html">How does Dogtag PKI spawn?</a>
-        </li>
-    
-        <li>
-            <a href="../posts/2019-01-29-name-constraints.html">X.509 Name Constraints and FreeIPA</a>
         </li>
     
 </ul>
