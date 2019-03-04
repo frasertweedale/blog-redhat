@@ -8,8 +8,149 @@
         <name>Fraser Tweedale</name>
         <email>frase@frase.id.au</email>
     </author>
-    <updated>2019-03-01T00:00:00Z</updated>
+    <updated>2019-03-04T00:00:00Z</updated>
     <entry>
+    <title>Customising Dogtag system certificate lifetimes</title>
+    <link href="https://frasertweedale.github.io/blog-redhat/posts/2019-03-04-dogtag-system-cert-lifetime.html" />
+    <id>https://frasertweedale.github.io/blog-redhat/posts/2019-03-04-dogtag-system-cert-lifetime.html</id>
+    <published>2019-03-04T00:00:00Z</published>
+    <updated>2019-03-04T00:00:00Z</updated>
+    <summary type="html"><![CDATA[<h1 id="customising-dogtag-system-certificate-lifetimes">Customising Dogtag system certificate lifetimes</h1>
+<p>Default certificate lifetimes in Dogtag are 20 years for the CA certificate (when self-signed) and about 2 years for other system certificates. These defaults also apply to FreeIPA. It can be desirable to have shorter certificate lifetimes. And although I wouldn’t recommend to use <em>longer</em> lifetimes, people sometimes want that.</p>
+<p>There is no <em>supported</em> mechanism for customising system certificate validity duration during Dogtag or FreeIPA installation. But it can be done. In this post I’ll explain how.</p>
+<h2 id="profile-configuration-files">Profile configuration files</h2>
+<p>During installation, profile configurations are copied from the RPM install locations under <code>/usr/share</code> to the new Dogtag instance’s configuration directory. If the LDAP profile subsystem is used (FreeIPA uses it) they are further copied from the instance configuration directory into the LDAP database.</p>
+<p>There is no facility or opportunity to modify the profiles during installation. So if you want to customise the certificate lifetimes, you have to modify the files under <code>/usr/share</code>.</p>
+<p>There are two directories that contain profile configurations:</p>
+<dl>
+<dt><code>/usr/share/pki/ca/profiles/ca/*.cfg</code></dt>
+<dd><p>These profile configurations are available during general operation.</p>
+</dd>
+<dt><code>/usr/share/pki/ca/conf/*.profile</code></dt>
+<dd><p>These <em>overlay</em> configurations used during installation when issuing system certificates. Each configuration references an underlying profile and can override or extend the configuration.</p>
+</dd>
+<dt><code>/usr/share/ipa/profiles/*.cfg</code></dt>
+<dd><p>Profiles that are shipped by FreeIPA and imported into Dogtag are defined here. The configurations for the LDAP, Apache HTTPS and KDC certificates are found here.</p>
+</dd>
+</dl>
+<p>I’ll explain which configuration file is used for which certificate later on in this post.</p>
+<h2 id="specifying-the-validity-period">Specifying the validity period</h2>
+<p>The configuration field for setting the validity period are:</p>
+<pre><code>&lt;component&gt;.default.params.range=720
+&lt;component&gt;.constraint.params.range=720</code></pre>
+<p>where <code>&lt;component&gt;</code> is some key, usually a numeric index, that may be different for different profiles. The actual profile component classes are <code>ValidityDefault</code> and <code>ValidityConstraint</code>, or <code>{CA,User}Validity{Default,Constraint}</code> for some profiles.</p>
+<p>The <code>default</code> component sets the default validity period for this profile, whereas the constraint sets the <em>maximum</em> duration in case the user overrides it. Note that if an override configuration overrides the <code>default</code> value such that it exceeds the <code>constraint</code> specified in the underlying configuration, issuance will fail due to constraint violation. It is usually best to specify both the <code>default</code> and <code>constraint</code> together, with the same value.</p>
+<p>The default range unit is <code>day</code>, so the configuration above means <em>720 days</em>. Use the <code>rangeUnit</code> parameter to specify a different unit. The supported units are <code>year</code>, <code>month</code>, <code>day</code>, <code>hour</code> and <code>minute</code>. For example:</p>
+<pre><code>&lt;component&gt;.default.params.range=3
+&lt;component&gt;.default.params.rangeUnit=month
+&lt;component&gt;.constraint.params.range=3
+&lt;component&gt;.constraint.params.rangeUnit=month</code></pre>
+<h2 id="which-configuration-for-which-certificate">Which configuration for which certificate?</h2>
+<dl>
+<dt>CA certificate (when self-signed)</dt>
+<dd><p><code>/usr/share/pki/ca/conf/caCert.profile</code></p>
+</dd>
+<dt>OCSP signing certificate</dt>
+<dd><p><code>/usr/share/pki/ca/conf/caOCSPCert.profile</code></p>
+</dd>
+<dt>Subsystem certificate</dt>
+<dd><p><code>/usr/share/pki/ca/conf/rsaSubsystemCert.profile</code> when using RSA keys (the default)</p>
+</dd>
+<dt>Dogtag HTTPS certificate</dt>
+<dd><p><code>/usr/share/pki/ca/conf/rsaServerCert.profile</code> when using RSA keys (the default)</p>
+</dd>
+<dt>Audit signing</dt>
+<dd><p><code>/usr/share/pki/ca/conf/caAuditSigningCert.profile</code></p>
+</dd>
+<dt>IPA RA agent (FreeIPA-specific)</dt>
+<dd><p><code>/usr/share/pki/ca/profiles/ca/caServerCert.cfg</code></p>
+</dd>
+<dt>Apache and LDAP certificates (FreeIPA-specific)</dt>
+<dd><p><code>/usr/share/ipa/profiles/caIPAserviceCert.cfg</code></p>
+</dd>
+<dt>KDC certificate (FreeIPA-specific)</dt>
+<dd><p><code>/usr/share/ipa/profiles/KDCs_PKINIT_Certs.cfg</code></p>
+</dd>
+</dl>
+<h2 id="testing">Testing</h2>
+<p>I made changes to the files mentioned above, so that certificates would be issued with the following validity periods:</p>
+<table>
+<tbody>
+<tr class="odd">
+<td>CA</td>
+<td>5 years</td>
+</tr>
+<tr class="even">
+<td>OCSP</td>
+<td>1 year</td>
+</tr>
+<tr class="odd">
+<td>Subsystem</td>
+<td>6 months</td>
+</tr>
+<tr class="even">
+<td>HTTPS</td>
+<td>3 months</td>
+</tr>
+<tr class="odd">
+<td>Audit</td>
+<td>1 year</td>
+</tr>
+<tr class="even">
+<td>IPA RA</td>
+<td>15 months</td>
+</tr>
+<tr class="odd">
+<td>Apache</td>
+<td>4 months</td>
+</tr>
+<tr class="even">
+<td>LDAP</td>
+<td>4 months</td>
+</tr>
+<tr class="odd">
+<td>KDC</td>
+<td>18 months</td>
+</tr>
+</tbody>
+</table>
+<p>I installed FreeIPA (with a self-signed CA). After installation completed, I had a look at the certificates that were being tracked by Certmonger. For reference, the installation took place on March 4, 2019 (<strong>2019-03-04</strong>).</p>
+<pre><code># getcert list |egrep &#39;^Request|certificate:|expires:&#39;
+Request ID &#39;20190304044028&#39;:
+  certificate: type=FILE,location=&#39;/var/lib/ipa/ra-agent.pem&#39;
+  expires: 2020-06-04 15:40:30 AEST
+Request ID &#39;20190304044116&#39;:
+  certificate: type=NSSDB,location=&#39;/etc/pki/pki-tomcat/alias&#39;,nickname=&#39;auditSigningCert cert-pki-ca&#39;,token=&#39;NSS Certificate DB&#39;
+  expires: 2020-03-04 15:39:53 AEDT
+Request ID &#39;20190304044117&#39;:
+  certificate: type=NSSDB,location=&#39;/etc/pki/pki-tomcat/alias&#39;,nickname=&#39;ocspSigningCert cert-pki-ca&#39;,token=&#39;NSS Certificate DB&#39;
+  expires: 2020-03-04 15:39:53 AEDT
+Request ID &#39;20190304044118&#39;:
+  certificate: type=NSSDB,location=&#39;/etc/pki/pki-tomcat/alias&#39;,nickname=&#39;subsystemCert cert-pki-ca&#39;,token=&#39;NSS Certificate DB&#39;
+  expires: 2019-09-04 15:39:53 AEST
+Request ID &#39;20190304044119&#39;:
+  certificate: type=NSSDB,location=&#39;/etc/pki/pki-tomcat/alias&#39;,nickname=&#39;caSigningCert cert-pki-ca&#39;,token=&#39;NSS Certificate DB&#39;
+  expires: 2024-03-04 15:39:51 AEDT
+Request ID &#39;20190304044120&#39;:
+  certificate: type=NSSDB,location=&#39;/etc/pki/pki-tomcat/alias&#39;,nickname=&#39;Server-Cert cert-pki-ca&#39;,token=&#39;NSS Certificate DB&#39;
+  expires: 2019-06-04 15:39:53 AEST
+Request ID &#39;20190304044151&#39;:
+  certificate: type=NSSDB,location=&#39;/etc/dirsrv/slapd-IPA-LOCAL&#39;,nickname=&#39;Server-Cert&#39;,token=&#39;NSS Certificate DB&#39;
+  expires: 2019-07-04 15:41:52 AEST
+Request ID &#39;20190304044225&#39;:
+  certificate: type=FILE,location=&#39;/var/lib/ipa/certs/httpd.crt&#39;
+  expires: 2019-07-04 15:42:26 AEST
+Request ID &#39;20190304044234&#39;:
+  certificate: type=FILE,location=&#39;/var/kerberos/krb5kdc/kdc.crt&#39;
+  expires: 2020-09-04 15:42:34 AEST</code></pre>
+<p>Observe that the certificate have the intended periods.</p>
+<h2 id="discussion">Discussion</h2>
+<p>The procedure outlined in this post is not officially supported, and not recommended. But the desire to choose different validity periods is sometimes justified, especially for the CA certificate. So should FreeIPA allow customisation of the system certificate validity periods? To what extent?</p>
+<p>We need to reduce the default CA validity from 20 years, given the 2048-bit key size. (There is a separate issue to support generating a larger CA signing key, too). Whether the CA validity period should be configurable is another question. My personal opinion is that it makes sense to allow the customer to choose the CA lifetime.</p>
+<p>For system certificates, I think that customers should just accept the defaults. PKI systems are trending to shorter lifetimes for end-entity certificates, which is a good thing. For FreeIPA, unfortunately we are still dealing with a lot of certificate renewal issues that arise from the complex architecture. Until we are confident in the robustness of the renewal system, and have observed a reduction in customer issues, it would be a mistake to substantially reduce the validity period for system certificates. Likewise, it is not yet a good idea to let customers choose the certificate validity periods.</p>
+<p>On the other hand, the team is considering changing the default validity period of system certificates <em>a little bit</em>, so that different certificates are on different renewal candences. This would simplify recovery in some scenarios: it is easier to recover when only <em>some</em> of the certificates expired, instead of <em>all</em> of them at once.</p>]]></summary>
+</entry>
+<entry>
     <title>Specifying a CA Subject Key Identifier during Dogtag installation</title>
     <link href="https://frasertweedale.github.io/blog-redhat/posts/2019-03-01-dogtag-csr-ski.html" />
     <id>https://frasertweedale.github.io/blog-redhat/posts/2019-03-01-dogtag-csr-ski.html</id>
@@ -1179,266 +1320,6 @@ The ipa-server-install command was successful</code></pre>
 <p>There is a middle road: instead of shipping the profile, we ship a “profile assistant” tool that asks some questions and builds the profile configuration. Questions would include the desired validity period, whether it’s for a CA (and if so the path length constraint), name constraints (if any), and so on. Then it imports the configuration.</p>
 <p>There may be merit to this option, but none of the machinery exists. The effort and lead time are high. The other options: <em>do-nothing</em> (really <em>improve and maintain documentation</em>), or shipping a default sub-CA profile—are low effort and lead time.</p>
 <p>In conclusion, I am open to either leaving sub-CA profiles as a documentation concern, or including a conservative default profile. But because there is no <em>one size fits all</em>, I prefer to leave sub-CA profile creation as a documented process that administrators can perform themselves—and tweak as they see fit.</p>]]></summary>
-</entry>
-<entry>
-    <title>Issuing subordinate CA certificates from FreeIPA</title>
-    <link href="https://frasertweedale.github.io/blog-redhat/posts/2018-08-21-ipa-subordinate-ca.html" />
-    <id>https://frasertweedale.github.io/blog-redhat/posts/2018-08-21-ipa-subordinate-ca.html</id>
-    <published>2018-08-21T00:00:00Z</published>
-    <updated>2018-08-21T00:00:00Z</updated>
-    <summary type="html"><![CDATA[<h1 id="issuing-subordinate-ca-certificates-from-freeipa">Issuing subordinate CA certificates from FreeIPA</h1>
-<p>FreeIPA, since version 4.4, has supported creating subordinate CAs within the deployment’s Dogtag CA instance. This feature is called <a href="2016-07-25-freeipa-subcas.html">lightweight sub-CAs</a>. But what about when you need to issue a subordinate CA certificate to an external entity? One use case would be chaining a FreeIPA deployment up to some existing FreeIPA deployment. This is similar to what many customers do with Active Directory. In this post I’ll show how you can issue subordinate CA certificates from FreeIPA.</p>
-<h2 id="scenario-description">Scenario description</h2>
-<p>The existing FreeIPA deployment has the realm <code>IPA.LOCAL</code> and domain <code>ipa.local</code>. Its CA’s <em>Subject Distinguished Name (Subject DN)</em> is <code>CN=Certificate Authority,O=IPA.LOCAL 201808022359</code>. The master’s hostname is <code>f28-0.ipa.local</code>. I will refer to this deployment as the <em>existing</em> or <em>primary deployment</em>.</p>
-<p>I will install a new FreeIPA deployment on the host <code>f28-1.ipa.local</code>, with realm <code>SUB.IPA.LOCAL</code> and domain <code>sub.ipa.local</code>. This will be called the <em>secondary deployment</em>. Its CA will be signed by the CA of the primary deployment.</p>
-<h2 id="choice-of-subject-principal-and-subject-dn">Choice of subject principal and Subject DN</h2>
-<p>All certificate issuance via FreeIPA (with some limited exceptions) requires a nominated <em>subject principal</em>. Subject names in the CSR (Subject DN and <em>Subject Alternative Names</em>) are validated against the subject principal. We must create a subject principal in the primary deployment to represent the CA of the secondary deployment.</p>
-<p>When validating CSRs, the <em>Common Name (CN)</em> of the Subject DN is checked against the subject principal, in the following ways:</p>
-<ul>
-<li>for <em>user</em> principals, the CN must match the UID</li>
-<li>for <em>host</em> principals, the CN must match the hostname (case-insensitive)</li>
-<li>for <em>service</em> principals, the CN must match the hostname (case-insensitive); only principal aliases with the same service type as the canonical principal are checked</li>
-</ul>
-<p>This validation regime imposes a restriction on what the CN of the subordinate CA can be. In particular:</p>
-<ul>
-<li>the Subject DN must contain a CN attribute</li>
-<li>the CN value can be a hostname (host or service principal), or a UID (user principal)</li>
-</ul>
-<p>For this scenario, I chose to create a host principal for the domain of the secondary deployment:</p>
-<pre><code>[f28-0]% ipa host-add --force sub.ipa.local
---------------------------
-Added host &quot;sub.ipa.local&quot;
---------------------------
-  Host name: sub.ipa.local
-  Principal name: host/sub.ipa.local@IPA.LOCAL
-  Principal alias: host/sub.ipa.local@IPA.LOCAL
-  Password: False
-  Keytab: False
-  Managed by: sub.ipa.local</code></pre>
-<h2 id="creating-a-certificate-profile-for-sub-cas">Creating a certificate profile for sub-CAs</h2>
-<p>We will tweak the <code>caIPAserviceCert</code> profile configuration to create a new profile for subordinate CAs. Export the profile configuration:</p>
-<pre><code>[f28-0]% ipa certprofile-show caIPAserviceCert --out SubCA.cfg
-------------------------------------------------
-Profile configuration stored in file &#39;SubCA.cfg&#39;
-------------------------------------------------
-  Profile ID: caIPAserviceCert
-  Profile description: Standard profile for network services
-  Store issued certificates: TRUE</code></pre>
-<p>Perform the following edits to <code>SubCA.cfg</code>:</p>
-<ol>
-<li>Replace <code>profileId=caIPAserviceCert</code> with <code>profileId=SubCA</code>.</li>
-<li><p>Replace the <code>subjectNameDefaultImpl</code> component with the <code>userSubjectNameDefaultImpl</code> component. This will use the Subject DN from the CSR <em>as is</em>, without restriction:</p>
-<pre><code>policyset.serverCertSet.1.constraint.class_id=noConstraintImpl
-policyset.serverCertSet.1.constraint.name=No Constraint
-policyset.serverCertSet.1.default.class_id=userSubjectNameDefaultImpl
-policyset.serverCertSet.1.default.name=Subject Name Default</code></pre></li>
-<li>Edit the <code>keyUsageExtDefaultImpl</code> and <code>keyUsageExtConstraintImpl</code> configurations. They should have the following settings:
-<ul>
-<li><code>keyUsageCrlSign=true</code></li>
-<li><code>keyUsageDataEncipherment=false</code></li>
-<li><code>keyUsageDecipherOnly=false</code></li>
-<li><code>keyUsageDigitalSignature=true</code></li>
-<li><code>keyUsageEncipherOnly=false</code></li>
-<li><code>keyUsageKeyAgreement=false</code></li>
-<li><code>keyUsageKeyCertSign=true</code></li>
-<li><code>keyUsageKeyEncipherment=false</code></li>
-<li><code>keyUsageNonRepudiation=true</code></li>
-</ul></li>
-<li><p>Add the <em>Basic Constraints</em> extension configuration:</p>
-<pre><code>policyset.serverCertSet.15.constraint.class_id=basicConstraintsExtConstraintImpl
-policyset.serverCertSet.15.constraint.name=Basic Constraint Extension Constraint
-policyset.serverCertSet.15.constraint.params.basicConstraintsCritical=true
-policyset.serverCertSet.15.constraint.params.basicConstraintsIsCA=true
-policyset.serverCertSet.15.constraint.params.basicConstraintsMinPathLen=0
-policyset.serverCertSet.15.constraint.params.basicConstraintsMaxPathLen=0
-policyset.serverCertSet.15.default.class_id=basicConstraintsExtDefaultImpl
-policyset.serverCertSet.15.default.name=Basic Constraints Extension Default
-policyset.serverCertSet.15.default.params.basicConstraintsCritical=true
-policyset.serverCertSet.15.default.params.basicConstraintsIsCA=true
-policyset.serverCertSet.15.default.params.basicConstraintsPathLen=0</code></pre>
-<p>Add the new components’ index to the component list, to ensure they get processed:</p>
-<pre><code>policyset.serverCertSet.list=1,2,3,4,5,6,7,8,9,10,11,12,15</code></pre></li>
-<li><p>Remove the <code>commonNameToSANDefaultImpl</code> and <em>Extended Key Usage</em> related components. This can be accomplished by removing the relevant indices (in my case, <code>7</code> and <code>12</code>) from the component list:</p>
-<pre><code>policyset.serverCertSet.list=1,2,3,4,5,6,8,9,10,11,15</code></pre></li>
-<li>(<em>Optional</em>) edit the validity period in the <code>validityDefaultImpl</code> and <code>validityConstraintImpl</code> components. The default is 731 days. I did not change it.</li>
-</ol>
-<p>For the avoidance of doubt, the diff between the <code>caIPAserviceCert</code> profile configuration and <code>SubCA</code> is:</p>
-<pre><code>--- caIPAserviceCert.cfg        2018-08-21 12:44:01.748884778 +1000
-+++ SubCA.cfg   2018-08-21 14:05:53.484698688 +1000
-@@ -13,5 +13,3 @@
--policyset.serverCertSet.1.constraint.class_id=subjectNameConstraintImpl
--policyset.serverCertSet.1.constraint.name=Subject Name Constraint
--policyset.serverCertSet.1.constraint.params.accept=true
--policyset.serverCertSet.1.constraint.params.pattern=CN=[^,]+,.+
--policyset.serverCertSet.1.default.class_id=subjectNameDefaultImpl
-+policyset.serverCertSet.1.constraint.class_id=noConstraintImpl
-+policyset.serverCertSet.1.constraint.name=No Constraint
-+policyset.serverCertSet.1.default.class_id=userSubjectNameDefaultImpl
-@@ -19 +16,0 @@
--policyset.serverCertSet.1.default.params.name=CN=$request.req_subject_name.cn$, o=IPA.LOCAL 201808022359
-@@ -66,2 +63,2 @@
--policyset.serverCertSet.6.constraint.params.keyUsageCrlSign=false
--policyset.serverCertSet.6.constraint.params.keyUsageDataEncipherment=true
-+policyset.serverCertSet.6.constraint.params.keyUsageCrlSign=true
-+policyset.serverCertSet.6.constraint.params.keyUsageDataEncipherment=false
-@@ -72,2 +69,2 @@
--policyset.serverCertSet.6.constraint.params.keyUsageKeyCertSign=false
--policyset.serverCertSet.6.constraint.params.keyUsageKeyEncipherment=true
-+policyset.serverCertSet.6.constraint.params.keyUsageKeyCertSign=true
-+policyset.serverCertSet.6.constraint.params.keyUsageKeyEncipherment=false
-@@ -78,2 +75,2 @@
--policyset.serverCertSet.6.default.params.keyUsageCrlSign=false
--policyset.serverCertSet.6.default.params.keyUsageDataEncipherment=true
-+policyset.serverCertSet.6.default.params.keyUsageCrlSign=true
-+policyset.serverCertSet.6.default.params.keyUsageDataEncipherment=false
-@@ -84,2 +81,2 @@
--policyset.serverCertSet.6.default.params.keyUsageKeyCertSign=false
--policyset.serverCertSet.6.default.params.keyUsageKeyEncipherment=true
-+policyset.serverCertSet.6.default.params.keyUsageKeyCertSign=true
-+policyset.serverCertSet.6.default.params.keyUsageKeyEncipherment=false
-@@ -111,2 +108,13 @@
--policyset.serverCertSet.list=1,2,3,4,5,6,7,8,9,10,11,12
--profileId=caIPAserviceCert
-+policyset.serverCertSet.15.constraint.class_id=basicConstraintsExtConstraintImpl
-+policyset.serverCertSet.15.constraint.name=Basic Constraint Extension Constraint
-+policyset.serverCertSet.15.constraint.params.basicConstraintsCritical=true
-+policyset.serverCertSet.15.constraint.params.basicConstraintsIsCA=true
-+policyset.serverCertSet.15.constraint.params.basicConstraintsMinPathLen=0
-+policyset.serverCertSet.15.constraint.params.basicConstraintsMaxPathLen=0
-+policyset.serverCertSet.15.default.class_id=basicConstraintsExtDefaultImpl
-+policyset.serverCertSet.15.default.name=Basic Constraints Extension Default
-+policyset.serverCertSet.15.default.params.basicConstraintsCritical=true
-+policyset.serverCertSet.15.default.params.basicConstraintsIsCA=true
-+policyset.serverCertSet.15.default.params.basicConstraintsPathLen=0
-+policyset.serverCertSet.list=1,2,3,4,5,6,8,9,10,11,15
-+profileId=SubCA</code></pre>
-<p>Now import the profile:</p>
-<pre><code>[f28-0]% ipa certprofile-import SubCA \
-            --desc &quot;Subordinate CA&quot; \
-            --file SubCA.cfg \
-            --store=1
-------------------------
-Imported profile &quot;SubCA&quot;
-------------------------
-  Profile ID: SubCA
-  Profile description: Subordinate CA
-  Store issued certificates: TRUE</code></pre>
-<h2 id="creating-the-ca-acl">Creating the CA ACL</h2>
-<p>Before issuing a certificate, <em>CA ACLs</em> are checked to determine if the combination of CA, profile and subject principal is acceptable. We must create a CA ACL that permits use of the <code>SubCA</code> profile to issue certificate to our subject principal:</p>
-<pre><code>[f28-0]% ipa caacl-add SubCA
---------------------
-Added CA ACL &quot;SubCA&quot;
---------------------
-  ACL name: SubCA
-  Enabled: TRUE
-
-[f28-0]% ipa caacl-add-profile SubCA --certprofile SubCA
-  ACL name: SubCA
-  Enabled: TRUE
-  Profiles: SubCA
--------------------------
-Number of members added 1
--------------------------
-
-[f28-0]% ipa caacl-add-ca SubCA --ca ipa
-  ACL name: SubCA
-  Enabled: TRUE
-  CAs: ipa
-  Profiles: SubCA
--------------------------
-Number of members added 1
--------------------------
-
-[f28-0]% ipa caacl-add-host SubCA --hosts sub.ipa.local
-  ACL name: SubCA
-  Enabled: TRUE
-  CAs: ipa
-  Profiles: SubCA
-  Hosts: sub.ipa.local
--------------------------
-Number of members added 1
--------------------------</code></pre>
-<h2 id="installing-the-secondary-freeipa-deployment">Installing the secondary FreeIPA deployment</h2>
-<p>We are finally ready to run <code>ipa-server-install</code> to set up the secondary deployment. We need to use the <code>--ca-subject</code> option to override the default Subject DN that will be included in the CSR, providing a valid DN according to the rules discussed above.</p>
-<pre><code>[root@f28-1]# ipa-server-install \
-    --realm SUB.IPA.LOCAL \
-    --domain sub.ipa.local \
-    --external-ca \
-    --ca-subject &#39;CN=SUB.IPA.LOCAL,O=Red Hat&#39;
-
-...
-
-The IPA Master Server will be configured with:
-Hostname:       f28-1.ipa.local
-IP address(es): 192.168.124.142
-Domain name:    sub.ipa.local
-Realm name:     SUB.IPA.LOCAL
-
-The CA will be configured with:
-Subject DN:   CN=SUB.IPA.LOCAL,O=Red Hat
-Subject base: O=SUB.IPA.LOCAL
-Chaining:     externally signed (two-step installation)
-
-Continue to configure the system with these values? [no]: yes
-
-...
-
-Configuring certificate server (pki-tomcatd). Estimated time: 3 minutes
-  [1/8]: configuring certificate server instance
-
-The next step is to get /root/ipa.csr signed by your CA and re-run
-/usr/sbin/ipa-server-install as:
-/usr/sbin/ipa-server-install
-  --external-cert-file=/path/to/signed_certificate
-  --external-cert-file=/path/to/external_ca_certificate
-The ipa-server-install command was successful</code></pre>
-<p>Let’s inspect <code>/root/ipa.csr</code>:</p>
-<pre><code>[root@f28-1]# openssl req -text &lt; /root/ipa.csr |grep Subject:
-        Subject: O = Red Hat, CN = SUB.IPA.LOCAL</code></pre>
-<p>The desired Subject DN appears in the CSR (note that <code>openssl</code> shows DN components in the opposite order from FreeIPA). After copying the CSR to <code>f28-0.ipa.local</code> we can request the certificate:</p>
-<pre><code>[f28-0]% ipa cert-request ~/ipa.csr \
-            --principal host/sub.ipa.local \
-            --profile SubCA \
-            --certificate-out ipa.pem
-  Issuing CA: ipa
-  Certificate: MIIEAzCCAuugAwIBAgIBFTANBgkqhkiG9w0BAQsF...
-  Subject: CN=SUB.IPA.LOCAL,O=Red Hat
-  Issuer: CN=Certificate Authority,O=IPA.LOCAL 201808022359
-  Not Before: Tue Aug 21 04:16:24 2018 UTC
-  Not After: Fri Aug 21 04:16:24 2020 UTC
-  Serial number: 21
-  Serial number (hex): 0x15</code></pre>
-<p>The certificate was saved in the file <code>ipa.pem</code>. We can see from the command output that the Subject DN in the certificate is exactly what was in the CSR. Further inspecting the certificate, observe that the Basic Constraints extension is present and the Key Usage extension contains the appropriate assertions:</p>
-<pre><code>[f28-0]% openssl x509 -text &lt; ipa.pem
-...
-      X509v3 extensions:
-          ...
-          X509v3 Key Usage: critical
-              Digital Signature, Non Repudiation, Certificate Sign, CRL Sign
-          ...
-          X509v3 Basic Constraints: critical
-              CA:TRUE, pathlen:0
-          ...</code></pre>
-<p>Now, after copying the just-issued subordinate CA certificate and the primary CA certificate (<code>/etc/ipa/ca.crt</code>) over to <code>f28-1.ipa.local</code>, we can continue the installation:</p>
-<pre><code>[root@f28-1]# ipa-server-install \
-                --external-cert-file ca.crt \
-                --external-cert-file ipa.pem
-
-The log file for this installation can be found in /var/log/ipaserver-install.log
-Directory Manager password: XXXXXXXX
-
-...
-
-Adding [192.168.124.142 f28-1.ipa.local] to your /etc/hosts file
-Configuring ipa-custodia
-  [1/5]: Making sure custodia container exists
-...
-The ipa-server-install command was successful</code></pre>
-<p>And we’re done.</p>
-<h2 id="discussion">Discussion</h2>
-<p>I’ve shown how to create a profile for issuing subordinate CA certificates in FreeIPA. Because of the way FreeIPA validates certificate requests—always against a subject principal—there are restrictions on the what the subject DN of the subordinate CA can be. The Subject DN must contain a CN attribute matching either the hostname of a host or service principal, or the UID of a user principal.</p>
-<p>If you want to avoid these Subject DN restrictions, right now there is no choice but to use the Dogtag CA directly, instead of via the FreeIPA commands. If such a requirement emerges it might make sense to implement some “special handling” for issuing sub-CA certificates (similar to what we currently do for the KDC certificate). But the certificate request logic is already complicated; I am hesitant to complicate it even more.</p>
-<p>Currently there is no sub-CA profile included in FreeIPA by default. It might make sense to include it, or at least to produce an official solution document describing the procedure outlined in this post.</p>]]></summary>
 </entry>
 
 </feed>
