@@ -58,15 +58,18 @@ characteristics:
   certificates expire on or before 2021-05-24 (the exception being
   the CA certificate).
 
-On both machines I disabled ``chronyd`` and put the clock forward 27
-months, so that all the certificates (except the IPA CA itself) are
-expired::
+On **both servers** I disabled ``chronyd`` and put the clock
+forward 27 months, so that all the certificates (except the IPA CA
+itself) are expired::
 
   [f29-1] ftweedal% sudo systemctl stop chronyd
   [f29-1] ftweedal% date
   Fri May 24 12:01:16 AEST 2019
   [f29-1] ftweedal% sudo date 082412012021
   Tue Aug 24 12:01:00 AEST 2021
+
+We want to perform this step on all machines in the topology.  After
+all, we are simulating the passage of time.
 
 After ``ipactl restart`` the Dogtag CA did not start, and we cannot
 communicate with FreeIPA due to the expired HTTP certificate::
