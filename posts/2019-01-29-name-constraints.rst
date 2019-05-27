@@ -198,7 +198,7 @@ On closer examination however, this change affected code in the
 *mozpkix* library (part of NSS), which is not invoked by the
 certificate validation routines used by Dogtag and ``certutil``
 program.  But if the *mozpkix* Name Constraint validation code was
-not being used, where was the relevant code.
+not being used, where was the relevant code?
 
 Finding the source of the problem
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -231,11 +231,11 @@ behaviour can also be controlled explicitly via
 ``CERT_SetUsePKIXForValidation(PRBool enable)``.
 
 When invoking ``certutil`` ourselves, this environment variable was
-not set so "old" validation subroutine was invoked.  Both routines
-performs cryptographic validation of a certification path to a
-trusted CA, and several other important checks.  But it seems that
+not set so the "old" validation subroutine was invoked.  Both routines
+perform cryptographic validation of a certification path to a
+trusted CA, and several other important checks.  But
 the *libpkix* routine is more thorough, performing Name Constraints
-checks, as well as OCSP and perhaps other checks that are not also
+checks, in addition to OCSP and perhaps other checks that are not also
 performed by the "old" subroutine.
 
 If an environment variable or explicit library call is required to
@@ -256,7 +256,7 @@ constraints validation.  I already mentioned that this is reasonable
 behaviour for server certificates.  But *libpkix* has this behaviour
 for *all end-entity certiticates*.  For an OCSP signing certificate,
 whose CN attribute carries no special meaning (formally or
-conventially), this behaviour is wrong.  And it is the bug at the
+conventionally), this behaviour is wrong.  And it is the bug at the
 root of this problem.  I filed a `bug in the Mozilla tracker
 <https://bugzilla.mozilla.org/show_bug.cgi?id=1523484>`_ along with
 a patch—my attempt at fixing the issue.  Hopefully a fix can be
@@ -306,8 +306,8 @@ Limitiations, alternatives and related topics
 Name Constraints only constrains names.  There are other ways you
 might want to constrain a CA.  For example: *can only issue
 certificates with validity period <= δ*, or *can only issue
-certificates with Extended Key Usages ∈ S*.  But there exists no
-mechanism for constraining CAs in such ways.
+certificates with Extended Key Usages ∈ S*.  But there are no
+mechanisms for constraining CAs in these ways.
 
 Not all defined ``GeneralName`` types have Name Constraints syntax
 and semantics defined for them.  Documents that define ``otherName``
