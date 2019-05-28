@@ -71,7 +71,7 @@ Date:   Wed Apr 8 16:17:39 2015 -0700
 
   bug 1150114 - allow PrintableString to match UTF8String
                 in name constraints checking r=briansmith</code></pre>
-<p>On closer examination however, this change affected code in the <em>mozpkix</em> library (part of NSS), which is not invoked by the certificate validation routines used by Dogtag and <code>certutil</code> program. But if the <em>mozpkix</em> Name Constraint validation code was not being used, where was the relevant code.</p>
+<p>On closer examination however, this change affected code in the <em>mozpkix</em> library (part of NSS), which is not invoked by the certificate validation routines used by Dogtag and <code>certutil</code> program. But if the <em>mozpkix</em> Name Constraint validation code was not being used, where was the relevant code?</p>
 <h3 id="finding-the-source-of-the-problem">Finding the source of the problem</h3>
 <p>Some more reading of NSS code showed that the error originated in <em>libpkix</em> (also part of NSS).</p>
 <p>To work out why <code>certutil</code> was succeeding where Dogtag was failing, I launched <code>certutil</code> in a debugger to see what was going on. Eventually I reached the following routine:</p>
@@ -88,10 +88,10 @@ cert_VerifyCertChain(CERTCertDBHandle *handle, CERTCertificate *cert,
   return cert_VerifyCertChainOld(handle, cert, checkSig, sigerror,
 }</code></pre>
 <p>OK, now I was getting somewhere. It turns out that during library initialisation, NSS reads the <code>NSS_ENABLE_PKIX_VERIFY</code> environment variable and sets a global variable, the value of which determines the return value of <code>CERT_GetUsePKIXForValidation()</code>. The behaviour can also be controlled explicitly via <code>CERT_SetUsePKIXForValidation(PRBool enable)</code>.</p>
-<p>When invoking <code>certutil</code> ourselves, this environment variable was not set so “old” validation subroutine was invoked. Both routines performs cryptographic validation of a certification path to a trusted CA, and several other important checks. But it seems that the <em>libpkix</em> routine is more thorough, performing Name Constraints checks, as well as OCSP and perhaps other checks that are not also performed by the “old” subroutine.</p>
+<p>When invoking <code>certutil</code> ourselves, this environment variable was not set so the “old” validation subroutine was invoked. Both routines perform cryptographic validation of a certification path to a trusted CA, and several other important checks. But the <em>libpkix</em> routine is more thorough, performing Name Constraints checks, in addition to OCSP and perhaps other checks that are not also performed by the “old” subroutine.</p>
 <p>If an environment variable or explicit library call is required to enable <em>libpkix</em> validation, why was the error occuring in Dogtag? The answer is simple: as part of <code>ipa-server-install</code>, we update <code>/etc/sysconfig/pki-tomcat</code> to set <code>NSS_ENABLE_PKIX_VERIFY=1</code> in Dogtag’s process environment. This was implemented a few years ago to support OCSP validation of server certificates in connections made by Dogtag (e.g. to the LDAP server).</p>
 <h3 id="the-bug">The bug</h3>
-<p>Stepping through the code revealed the true nature of the bug. <em>libpkix</em> Name Constraints validation treats the Common Name (CN) attribute of the Subject DN as a DNS name for the purposes of name constraints validation. I already mentioned that this is reasonable behaviour for server certificates. But <em>libpkix</em> has this behaviour for <em>all end-entity certiticates</em>. For an OCSP signing certificate, whose CN attribute carries no special meaning (formally or conventially), this behaviour is wrong. And it is the bug at the root of this problem. I filed a <a href="https://bugzilla.mozilla.org/show_bug.cgi?id=1523484">bug in the Mozilla tracker</a> along with a patch—my attempt at fixing the issue. Hopefully a fix can be merged soon.</p>
+<p>Stepping through the code revealed the true nature of the bug. <em>libpkix</em> Name Constraints validation treats the Common Name (CN) attribute of the Subject DN as a DNS name for the purposes of name constraints validation. I already mentioned that this is reasonable behaviour for server certificates. But <em>libpkix</em> has this behaviour for <em>all end-entity certiticates</em>. For an OCSP signing certificate, whose CN attribute carries no special meaning (formally or conventionally), this behaviour is wrong. And it is the bug at the root of this problem. I filed a <a href="https://bugzilla.mozilla.org/show_bug.cgi?id=1523484">bug in the Mozilla tracker</a> along with a patch—my attempt at fixing the issue. Hopefully a fix can be merged soon.</p>
 <h3 id="why-no-failure-on-newer-releases">Why no failure on newer releases?</h3>
 <p>The issue does not occur on Fedora &gt;= 28 (or maybe earlier, but I haven’t tested), nor the RHEL 8 beta. So was there already a fix for the issue in NSS, or did something change in Dogtag, FreeIPA or elsewhere?</p>
 <p>In fact, the change was in Dogtag. In recent versions we switched to a less comprehensive certificate validation routine—one that does not use <em>libpkix</em>. This is just the default behaviour; the old behaviour can still be enabled. We made this change because in some scenarios the OCSP checking performed by <em>libpkix</em> causes Dogtag startup to hang. Because the OCSP server it is trying to reach to validate certificates during start self-test <em>is the same Dogtag instance that is starting up!</em> Because of the change to the self-test validation behaviour, FreeIPA deployments on Fedora &gt;= 28 and RHEL 8 beta do not experience this issue.</p>
@@ -99,7 +99,7 @@ cert_VerifyCertChain(CERTCertDBHandle *handle, CERTCertificate *cert,
 <p>If you were experiencing this issue in an existing release (e.g. because you <em>renewed</em> the CA certificate on your <em>existing</em> FreeIPA deployment, and the Name Constraints <em>appeared on the new certificate</em>), an obvious workaround would be to remove the environment variable from <code>/etc/sysconfig/pki-tomcat</code>. That would work, and the change will persist even after an <code>ipa-server-upgrade</code>. But that assumes you already had a working installation. Which the customer doesn’t have, becaues installation itself is failing. So apart from modifying the FreeIPA code to avoid setting this environment variable in the first place, I don’t yet know of a reliable workaround.</p>
 <p>This concludes the discussion of constrained CA certificate support in FreeIPA.</p>
 <h2 id="limitiations-alternatives-and-related-topics">Limitiations, alternatives and related topics</h2>
-<p>Name Constraints only constrains names. There are other ways you might want to constrain a CA. For example: <em>can only issue certificates with validity period &lt;= δ</em>, or <em>can only issue certificates with Extended Key Usages ∈ S</em>. But there exists no mechanism for constraining CAs in such ways.</p>
+<p>Name Constraints only constrains names. There are other ways you might want to constrain a CA. For example: <em>can only issue certificates with validity period &lt;= δ</em>, or <em>can only issue certificates with Extended Key Usages ∈ S</em>. But there are no mechanisms for constraining CAs in these ways.</p>
 <p>Not all defined <code>GeneralName</code> types have Name Constraints syntax and semantics defined for them. Documents that define <code>otherName</code> types <em>may</em> define corresponding Name Constraints matching rules, but are not required to. For example <a href="https://tools.ietf.org/html/rfc4985#section-4">RFC 4985</a>, which defines the <code>SRVName</code> type, also defines Name Constraints rules for it. But <a href="https://tools.ietf.org/html/rfc4556">RFC 4556</a>, which specifies the Kerberos PKINIT protocol, defines the <code>KRB5PrincipalName</code> <code>otherName</code> type but no Name Constraints semantics.</p>
 <p>For applications where the set of domains (or other names) is volatile, a constrained CA certificate is likely to be more of a problem than a solution. An example might be a cloud or Platform-as-a-Service provider wanting to issue certificates on behalf of customers, who bring their own domains. For this use case it would be better to use an existing CA that supports automated domain validation and issuance, such as <a href="https://letsencrypt.org/">Let’s Encrypt</a>.</p>
 <p>Name Constraints say which names a CA is or is not allowed to issue certificates for. But this restriction is controlled by the superior CA(s), not the end-entity. Interestingly there is a way for a domain owner to indicate which CAs are authorised to issue certificates for names in the domain. The DNS <a href="https://tools.ietf.org/html/rfc6844">CAA record (RFC 6844)</a> can anoint one more CAs, implicitly prohibiting other CAs from issuing certificates for that domain. The CA itself can check for these records, as a control against mis-issuance. For publicly-trusted CAs, the CA-Browser Forum <em>Baseline Requirements</em> <strong>requires</strong> CAs to check and obey CAA records. DNSSEC is recommended but not required.</p>
@@ -115,6 +115,10 @@ Recent posts:
 <ul>
     
         <li>
+            <a href="../posts/2019-05-28-a-dn-is-not-a-string.html">A Distinguished Name is not a string</a>
+        </li>
+    
+        <li>
             <a href="../posts/2019-05-24-ipa-cert-fix.html">Fixing expired system certificates in FreeIPA</a>
         </li>
     
@@ -128,10 +132,6 @@ Recent posts:
     
         <li>
             <a href="../posts/2019-03-01-dogtag-csr-ski.html">Specifying a CA Subject Key Identifier during Dogtag installation</a>
-        </li>
-    
-        <li>
-            <a href="../posts/2019-02-28-dogtag-cert-fix.html">Offline expired certificate renewal for Dogtag</a>
         </li>
     
 </ul>
