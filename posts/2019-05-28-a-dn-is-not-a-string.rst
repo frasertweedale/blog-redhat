@@ -65,7 +65,7 @@ formalises it thus:
   each is the immediate superior of that which follows it in the
   sequence.
 
-This also means that the empty DN is a valid datum.
+This also means that the empty DN is a valid DN.
 
 
 Comparing DNs
@@ -181,8 +181,6 @@ parsing and printing DNs in this format.  The RDNs are in reverse
 order, separated by ``,``.  Special characters are escaped using
 backslash (``\``), and can be represented using the escaped
 character itself (e.g. ``\,``) or two hex nibbles (``\2C``).
-Alternatively, values containing special characters can be enclosed
-in quotes.  There is a way to represent binary attribute values.
 The AVAs within a multi-valued RDN are separated by ``+``, in any
 order.
 
@@ -206,7 +204,7 @@ RFC 1485
 predecessor (RFC 2253) of RFC 4514.  There are some differences from
 RFC 4514.  For example, special character escapes are not supported;
 quotes must be used.  This format is still relevant today because
-NSS uses it for pretty-printing or parsing DNs.
+NSS uses it for pretty-printing and parsing DNs.
 
 .. _RFC 1485: https://tools.ietf.org/html/rfc1485
 
@@ -216,7 +214,7 @@ OpenSSL
 
 OpenSSL prints DNs in its own special way.  Unlike most other
 implementations, it works with DNs in *forward* order (root at
-left).  The pretty print looks like::
+left).  The pretty-print looks like::
 
   C = AU + ST = Queensland, O = "Acme, Inc.", CN = CA
 
@@ -256,9 +254,10 @@ function was also buggy.
 
 The `fix
 <https://pagure.io/389-ds-base/pull-request/49611#request_diff>`_
-was to parse the certmap DN string into an a NSS ``CertNAME``, and
+was to parse the certmap DN string into an a NSS ``CertNAME`` using
+the ``CERT_AsciiToName`` routine, then
 compare the Issuer DN from the certificate against it using the NSS
-DN comparison routine (``CERT_AsciiToName``).  The buggy
+DN comparison routine (``CERT_CompareName``).  The buggy
 normalisation routine was deleted.
 
 
