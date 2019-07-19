@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+    <head>
+        <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+        <title>Fraser's IdM Blog - Designing revocation self-service for FreeIPA</title>
+        <link rel="stylesheet" type="text/css" href="../css/default.css" />
+    </head>
+    <body>
+        <div id="header">
+            <div id="logo">
+                <a href="../">Fraser's IdM Blog</a>
+            </div>
+            <div id="navigation">
+                <a href="../">Home</a>
+                <a href="../archive.html">Archive</a>
+            </div>
+        </div>
+
+        <div id="content">
+            <div class="info">
+    
+    Tags: 
+    
+</div>
+
+<div id="postContent">
+    <h1 id="designing-revocation-self-service-for-freeipa">Designing revocation self-service for FreeIPA</h1>
+<p>The FreeIPA team recently received a <a href="https://bugzilla.redhat.com/show_bug.cgi?id=1730363">feature request</a> for self-service certificate revocation. At the moment, revocation must be performed by a privileged user with the <code>Revoke Certificate</code> permission. The one exception to this is that a host principal can revoke certificates for the same hostname. There are no expections when it comes to user certificates.</p>
+<p>In this post I’ll discuss revocation self-service and how it might work in FreeIPA.</p>
+<h2 id="requirements-and-approaches-for-self-service">Requirements and approaches for self-service</h2>
+<p>It is critical to avoid scenarios where a user could revoke a certificate they should not be able to revoke; this would constitute a Denial-of-Service (DoS) vulnerability. Therefore FreeIPA must establish that the principal issuing the revocation request has authority to revoke the nominated certificate. Conceptually, there are several ways we might establish that authority. Each scenario has trade-offs, either fundamental to the scenario or specific to FreeIPA.</p>
+<h3 id="proof-of-possession">Proof of possession</h3>
+<p>Proof of possession (PoP) establishes a cryptographic proof that the operator possess the private key for the certificate to be revoked. Either they are rightful subject of the certificate, in which case it is reasonable to service their revocation request. Or they have compromised the subject’s key, in which case it is reasonable to revoke it anyway.</p>
+<p>There are challenges implementing a POP-based revocation system. A single request is not enough. The client must request a nonce (which the server must remember), and the subsequent message must contain a signature over that nonce. This complicates the command interface. And the user interface must consider how to access the key, i.e. it must learn arguments related to paths, passphrases, and so on.</p>
+<p>Finally, there is an important use case this scenario does not handle: when the user no longer has control of their private key (they deleted it, forgot the passphrase, etc.)</p>
+<h3 id="certificate-inspection">Certificate inspection</h3>
+<p>The revocation command could inspect the certificate and decide if it “belongs to” the requestor. This must be done with extreme care, because a false-positive is equivalent to a DoS vulnerability. For example, merely checking that the UID or CN attribute in the certificate Subject DN corresponds to the requestor is inadequate.</p>
+<p>It is hard to attain 100% certainty, especially considering administrators can create custom certificate profiles. But there are some options that seem safe enough to implement. It should be reasonable to authorise the revocation if:</p>
+<ul>
+<li><p>The Subject Alternative Name (SAN) extension contains a <code>KRB5PrincipalName</code> or <code>UPN</code> value equal to the authenticated principal. FreeIPA supports such certificates out of the box, contingent on the CSR including these data.</p></li>
+<li><p>The SAN contains a <code>rfc822Name</code> (email address) equal to one of the user’s email addresses. Again, FreeIPA supports this with the same CSR caveat.</p></li>
+<li><p>The SAN contains a <code>directoryName</code> (DN) equal to the user’s full DN in the FreeIPA LDAP directory. Supported, with CSR caveat.</p></li>
+<li><p>The certificate Subject DN is equal to the user’s full DN in the FreeIPA LDAP directory. Supported with a custom profile having <code>subjectNameDefaultImpl</code> configuration like (wrapped for display):</p>
+<pre><code>policyset.serverCertSet.1.default.params.name=
+  UID=$request.req_subject_name.cn$,
+  CN=users,CN=accounts,DC=example,DC=com</code></pre></li>
+</ul>
+<p>The CSR caveat presents a burden to users: they must lovingly handcraft their CSR to include the relevant data. To say the tools have poor usability in this area is an understatement. But the SAN options are supported out of the box by the default user certificate profile <code>IECUserRoles</code> (don’t ask about the name).</p>
+<p>On the other hand, the Subject DN approach requires a custom profile but nothing special needs to go in the CSR. A Subject DN of <code>CN=username</code> will suffice.</p>
+<h3 id="audit-based-approach">Audit-based approach</h3>
+<p>When issuing a certificate via <code>ipa cert-request</code>, there are two principals at play: the <em>operator</em> who is performing the request, and the <em>subject</em> principal who the certificate is for. (These could be the same principal). Subject to organisational security policy, it may be reasonable to revoke a certificate if <em>either</em> of these principals requests it.</p>
+<p>Unfortunately, in FreeIPA today we do not record these data in a way that is useful to make a revocation authorisation decision. In the future, when FreeIPA authenticates to Dogtag using GSS-API and a Kerberos proxy credential for the operator (instead of the IPA RA agent credential we use today), we will be able to store the needed data. Then it may be feasible to implement this approach. Until then, forget about it.</p>
+<h2 id="the-way-forward">The way forward</h2>
+<p>So, which way will we go? Nothing is decided yet (including <em>whether to implement this at all</em>). If we go ahead, I would like to implement the <em>certificate inspection</em> approach. Proof of possession is tractable, but a lot of extra complexity and probably a usability nightmare for users. The audit-based approach is infeasible at this time, though it is a solid option if/when the right pieces are in place. Certificate inspection carries a risk of DoS exposure through revocation of inappropriate certificates, but if we carefully choose which data to inspect and match, the risk is minimised while achieving satisfactory usability.</p>
+</div>
+<div id="postFooter">
+    <div id="recent">
+Recent posts:
+<ul>
+    
+        <li>
+            <a href="../posts/2019-07-19-revocation-self-service.html">Designing revocation self-service for FreeIPA</a>
+        </li>
+    
+        <li>
+            <a href="../posts/2019-05-28-a-dn-is-not-a-string.html">A Distinguished Name is not a string</a>
+        </li>
+    
+        <li>
+            <a href="../posts/2019-05-24-ipa-cert-fix.html">Fixing expired system certificates in FreeIPA</a>
+        </li>
+    
+        <li>
+            <a href="../posts/2019-03-18-cert-fix-redux.html"><code>cert-fix</code> redux</a>
+        </li>
+    
+        <li>
+            <a href="../posts/2019-03-04-dogtag-system-cert-lifetime.html">Customising Dogtag system certificate lifetimes</a>
+        </li>
+    
+</ul>
+
+<div id="recentLinks">
+    <a type="application/atom+xml" href="../atom.xml">Atom feed</a>
+     <!-- em space -->
+    <a href="../archive.html">All posts…</a>
+</div>
+
+</div>
+
+    <div id="license">
+    <a rel="license" href="https://creativecommons.org/licenses/by/4.0/">
+        <img alt="Creative Commons License" style="border-width:0" src="https://licensebuttons.net/l/by/4.0/88x31.png">
+    </a>
+    <br />
+    Except where otherwise noted, this work is licensed under a
+    <a rel="license" href="https://creativecommons.org/licenses/by/4.0/">
+        Creative Commons Attribution 4.0 International License
+    </a>.
+</div>
+
+</div>
+
+        </div>
+        <div class="clear"></div>
+        <div id="footer">
+            Generated by
+            <a href="https://jaspervdj.be/hakyll">Hakyll</a>
+        </div>
+    </body>
+</html>
