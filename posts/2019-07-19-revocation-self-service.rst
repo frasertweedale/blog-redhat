@@ -1,3 +1,7 @@
+---
+tags: freeipa, certificates, security
+---
+
 Designing revocation self-service for FreeIPA
 =============================================
 
