@@ -3,3 +3,5 @@
 - how does dogtag-ipa-ca-renew-agent renewal work?
 
 - profile (vs-"renewal request") based certmonger renewal
+
+- Dogtag serial/request-id range management
