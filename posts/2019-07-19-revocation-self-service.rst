@@ -39,13 +39,16 @@ it is reasonable to service their revocation request.  Or they have
 compromised the subject's key, in which case it is reasonable to
 revoke it anyway.
 
-There are challenges implementing a POP-based revocation system.  A
-single request is not enough.  The client must request a nonce
-(which the server must remember), and the subsequent message must
-contain a signature over that nonce.  This complicates the command
-interface.  And the user interface must consider how to access the
-key, i.e. it must learn arguments related to paths, passphrases, and
-so on.
+A PoP-based revocation system must defeat replay attacks.  Using a
+nonce would complicate the client-server interaction—the client
+would first have to request the nonce, and the server would have to
+remember it.  Instead of a nonce, it would be sufficient for the
+client to sign a timestamped statement of intent to revoke.
+
+The main issue with PoP-based revocation is that the user interface
+must consider how to access the key.  The UI must learn options
+related to key or certificate database paths, passphrases, and so
+on.  This is a significant burden for users.
 
 Finally, there is an important use case this scenario does not
 handle: when the user no longer has control of their private key
