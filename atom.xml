@@ -8,8 +8,208 @@
         <name>Fraser Tweedale</name>
         <email>frase@frase.id.au</email>
     </author>
-    <updated>2019-07-19T00:00:00Z</updated>
+    <updated>2019-07-26T00:00:00Z</updated>
     <entry>
+    <title>Dogtag replica range management</title>
+    <link href="https://frasertweedale.github.io/blog-redhat/posts/2019-07-26-dogtag-replica-ranges.html" />
+    <id>https://frasertweedale.github.io/blog-redhat/posts/2019-07-26-dogtag-replica-ranges.html</id>
+    <published>2019-07-26T00:00:00Z</published>
+    <updated>2019-07-26T00:00:00Z</updated>
+    <summary type="html"><![CDATA[<h1 id="dogtag-replica-range-management">Dogtag replica range management</h1>
+<p>Dogtag supports distributed deployment, with multiple <em>replicas</em> (also called <em>clones</em>) processing requests and issuing certificates. All replicas read and write a replicated LDAP database. A Dogtag server can create many kinds of objects: certificates, requests, archived keys or secrets. These objects need identifiers that are unique across the deployment.</p>
+<p>How does a Dogtag clone choose an identifier for a new object? In this post I will explain Dogtag’s <em>range management</em>—how it works, how it can break, and what to do if it does.</p>
+<h2 id="object-types-with-managed-ranges">Object types with managed ranges</h2>
+<p>There are several types of objects for which Dogtag manages identifier ranges. For example:</p>
+<ul>
+<li>Certificate serial numbers; it is essential that these be unique. Collisions are a violation of X.509 and can lead to erroneous <strong>denial of service</strong>, or <strong>false positive</strong> validity, when revocation comes into play.</li>
+<li>Certificate requests (including revocation and renewal requests) are stored in the database and must have a unique ID. Clobbering of requests objects due to range conflicts can lead to renewal request failures resulting in <strong>denial of service</strong>, or worse, issuance of a valid certificate with incorrect details, allowing <strong>impersonation</strong> attacks.</li>
+<li>KRA request identifiers are assigned from a managed range.</li>
+<li>KRA archived key and data objects are assigned from a managed range.</li>
+<li>Clones themselves are assigned identifiers when they are created; these come from managed ranges.</li>
+</ul>
+<p>The identifiers themselves are unbounded nonzero integers. All of the managed ranges are separate domains. That is, the same numbers exist in each range, and the ranges are managed independently.</p>
+<h2 id="active-and-standby-ranges">Active and standby ranges</h2>
+<p>For each kind of range, each replica remembers up to two range assignments. The <em>active</em> range is the range from which identifiers are actively assigned. When the active range is exhausted, the <em>standby</em> range becomes the active range and the clone acquires a new range assignment, which will be the new standby range. A clone doesn’t necessarily have a standby range at all times. It only acquires a new allocation for the standby range when the unused amount of its active range falls below some configured <em>low water mark</em>.</p>
+<h2 id="range-assignments">Range assignments</h2>
+<p>Range assignments are recorded in LDAP. A clone’s active and standby ranges are also recorded in the clone’s <code>CS.cfg</code> configuration file. A range object looks like:</p>
+<pre><code>dn: cn=10000001,ou=certificateRepository,ou=ranges,o=ipaca
+objectClass: top
+objectClass: pkiRange
+beginRange: 10000001
+endRange: 20000000
+cn: 10000001
+host: f30-1.ipa.local
+SecurePort: 443</code></pre>
+<p>This is a serial number range assignment. Host <code>f30-1.ipa.local</code> has been assigned the range <code>10000001..20000000</code>. It is not apparent from this object, but these are actually <strong>hexadecimal</strong> numbers! Whether the numbers are decimal or hexadecimal varies among managed ranges.</p>
+<p>The directives in the <code>CS.cfg</code> on <code>f30-1.ipa.local</code> reflect this assignment:</p>
+<pre><code>dbs.enableSerialManagement=true
+
+dbs.beginSerialNumber=fff0001
+dbs.endSerialNumber=10000000
+
+dbs.nextBeginSerialNumber=10000001
+dbs.nextEndSerialNumber=20000000
+
+dbs.enableRandomSerialNumbers=false
+dbs.randomSerialNumberCounter=-1
+
+dbs.serialCloneTransferNumber=10000
+dbs.serialIncrement=10000000
+dbs.serialLowWaterMark=2000000</code></pre>
+<p>The active range is <code>fff0001..10000000</code>, and the standby range is <code>10000001..20000000</code>, which corresponds to the LDAP entry shown above.</p>
+<h3 id="range-delegation">Range delegation</h3>
+<p>Why is <code>f30-1</code>’s active range so much smaller than its standby range? This is the result of how ranges are assigned during cloning. When creating a clone, the server being configured contacts an existing clone and asks it for some configuration values, including serial/request/replica ID ranges. The existing clone <em>delegates</em> to the new clone a small segment of either its active or standby range. It delegates <em>from the end</em> of its active range, but if there are not enough numbers left in the active range, it delegates from the end the standby range instead.</p>
+<p>The size of the range delegation is configured in <code>CS.cfg</code>. For example, for serial numbers it is the <code>dbs.serialCloneTransferNumber</code> setting. I have never heard of anyone changing the default, and I can’t think of a reason to do so.</p>
+<p>Because the delegation is a portion of an already-assigned range (with corresponding LDAP object), new LDAP range objects are not created for delegated ranges, and the existing range object is not modified in any way. Therefore, LDAP only ever shows the <em>original</em> range assignments.</p>
+<p>This range delegation procedure has been a source of bugs. For example, <a href="https://pagure.io/dogtagpki/issue/3055">issue 3055</a> was a cloning failure when creating two clones (call them <em>C</em> and <em>D</em>) from a server that is itself a clone (call it <em>B</em>). Because the delegation size is fixed (the <code>dbs.serialCloneTransferNumber</code> setting), creating <em>C</em> delegates <em>B</em>’s whole active range to <em>C</em>. Unless <em>B</em> had a chance to switch to its standby range (when didn’t happen during cloning), creating the second clone <em>D</em> would fail because <em>B</em>’s active range was exhausted. This issue was fixed, but a more robust solution is to do away with range delegation entirely; the server can create full range assignments for the new clone instead of delegating part of its own range assignment. <a href="https://pagure.io/dogtagpki/issue/3060">Issue 3060</a> tracks this work.</p>
+<h2 id="random-serial-numbers">Random serial numbers</h2>
+<p>Most repositories with range management yield numbers sequentially from the active ranges. For the certificate repository only, you can optionally enable <em>random</em> serial numbers. Numbers are chosen by a uniform random sample from the clone’s assigned range. Dogtag checks to make sure the number was not already used; if it was used, it tries again (and again, up to a limit).</p>
+<p>Some additional configuration values come into play when using random serial numbers:</p>
+<dl>
+<dt><code>dbs.enableRandomSerialNumbers</code></dt>
+<dd><p>Enable random serial numbers (default: off)</p>
+</dd>
+<dt><code>dbs.collisionRecoverySteps</code></dt>
+<dd><p>How many retries when a collision is detected (default: 10)</p>
+</dd>
+<dt><code>dbs.minimumRandomBits</code></dt>
+<dd><p>Minimum size of the range, in bits (default: 4 bits)</p>
+</dd>
+<dt><code>dbs.serialLowWaterMark</code></dt>
+<dd><p>Switch to standby range when there are fewer than this many serials left in the range (default: 2000000)</p>
+</dd>
+</dl>
+<p>Critically, The <code>dbs.minimumRandomBits</code> does <em>not</em> determine how much entry is in the serial number. If many serial numbers in the range have already been used, the actual number of serials left could be less than <code>dbs.minimumRandomBits</code> of entropy. When issuing random serial numbers, the server keeps a running count of how many serial numbers have been used in the active range. When the range size minus the current count falls below <code>dbs.serialLowWaterMark</code>, the server switches to the standby range. Therefore it is <code>dbs.serialLowWaterMark</code>, not <code>dbs.minimumRandomBits</code>, that actually controls the minimum amount of randomness in the serial number.</p>
+<h2 id="switching-to-the-standby-range">Switching to the standby range</h2>
+<p>The actions performed by the subroutine that switches to the next range are:</p>
+<dl>
+<dt>1. Set the active range start and end variables to the standby range</dt>
+<dd><p>start and end</p>
+</dd>
+</dl>
+<ol>
+<li>Reset the standby range start and end variables to <code>null</code></li>
+<li>Reset counters</li>
+<li>Persist these changes to <code>CS.cfg</code>.</li>
+</ol>
+<p>The switchover procedure <strong>does not acquire a new standby range assignment</strong>. Immediately after switching to the standby range, there isn’t a standby range anymore.</p>
+<h2 id="acquiring-a-new-range-assignment">Acquiring a new range assignment</h2>
+<p>As currently implemented, a new standby range is <strong>only acquired at system startup</strong>. Dogtag checks each repository to see if the amount of unused numbers in the active range has fallen below the <em>low water mark</em>. If it has, and if there is no standby range, it self-allocates a new range assignment in LDAP. The size of the allocation is determined by <code>CS.cfg</code> configurables, and its lower bound is the value of the <code>nextRange</code> attribute in the repository parent LDAP object. It adds a range object to the ranges subtree, and updates the <code>nextRange</code> attribute on the repository parent. See the appendix for a list of which subtree parents and range entries are involved for each repository.</p>
+<p>This procedure is brittle under the possibliity of LDAP replication races or transient failures. Two clones could end up adding the same range, and a replication error will occur. This can lead to identifier collisions resulting in problems later (see earlier discussion).</p>
+<h2 id="internals">Internals</h2>
+<p>Most of everything discussed so far lives in the <code>Repository</code> class, with <code>CertificateRepository</code> providing additional behaviour related to random serial numbers. Code for acquiring a new range assignment lives in <code>DBSubsystem</code>. Some methods of interest include:</p>
+<dl>
+<dt><code>Repository.getNextSerialNumber</code></dt>
+<dd><p>Get the next number; calls <code>checkRange</code> before returning it</p>
+</dd>
+<dt><code>Repository.checkRange</code></dt>
+<dd><p>Check if the range is exhausted; if so call <code>switchToNextRange</code></p>
+</dd>
+<dt><code>Repository.switchToNextRange</code></dt>
+<dd><p>Switches to next range (see discussion in earlier section)</p>
+</dd>
+<dt><code>Repository.checkRanges</code></dt>
+<dd><p>Sanity checks the active and standby ranges; acquires new range allocation if necessary (by calling <code>DBSubsystem.getNextRange</code>) and persists the changes to <code>CS.cfg</code>.</p>
+</dd>
+<dt><code>DBSubsystem.getNextRange</code></dt>
+<dd><p>This method creates the LDAP range object and updates the <code>nextRange</code> attribute, returning the range bounds to the caller.</p>
+</dd>
+</dl>
+<h2 id="fixing-range-conflicts">Fixing range conflicts</h2>
+<p>If you have range conflicts, the following high-level steps can be followed to fix them:</p>
+<ol type="1">
+<li>Stop all Dogtag servers.</li>
+<li>Resolve any replication issues or conflict entries.</li>
+<li>Examine active and standby ranges in <code>CS.cfg</code> on all replicas.</li>
+<li>If there are any conflicts (including between active and standby ranges), choose new ranges such that there are no conflicts. Update <code>CS.cfg</code> of each replica with its new ranges.</li>
+<li>Update the <code>nextRange</code> attribute for each repository object to a number <em>greater than</em> the highest number of any allocated range (<em>max + 1</em> is fine). See appendix for the objects involved.</li>
+<li><em>(Optional)</em> Update and add new range entries. This is not essential because nothing will break if the ranges entries don’t actually correspond to what’s in each replica’s <code>CS.cfg</code>. But is is still desirable that the LDAP entries reflect the configuration of each server.</li>
+<li>Start Dogtag servers. If some servers do not have a standby range, it is a good idea to stagger their startup. Otherwise there is a high risk of an immediate replication race causing range conflicts as servers acquire new range assignments.</li>
+</ol>
+<p>Note that this procedure will <em>not</em> save your skin if, e.g., multiple certificates with the same serial number were issued. Renewal problems may be unavoidable when collisions have occurred. This is the main reason we are switching to <a href="https://pagure.io/freeipa/issue/7991">profile-based renewal</a> for FreeIPA system certificates. Renewal requests refer to existing certificate and requests by serial / request ID. Thus if there have been range conflicts they are susceptible to failure or issuance of certificates with incorrect attributes. Performing a “fresh enrolment” when renewing system certificates avoids these problems because the profile enrolment request does not refer to any existing certificates or requests.</p>
+<h2 id="discussion">Discussion</h2>
+<p>Dogtag is over 20 years old, and I suppose that sequential numbers with range management made sense at the time. Maybe a multi-server deployment with a replicated database was not foreseen, and range management was bolted on later when the requirement emerged. Maybe using random identifiers was seen as difficult to get write; UUIDs were not widespread back then. Or maybe using random numbers was seen as not user-friendly (and that is true, but when you have more than one replica the ranged identifiers aren’t much better).</p>
+<p>On the fact of some ranges using base 16 (hexademical) and others using base 10: I cannot even imagine why this is so. Extra user and operator pain, for what gain? I cannot tell. The reasons are probably, like so many things in old programs, lost in time.</p>
+<p>The random serial number configuration and behaviour is… not state of the art. The program logic is difficult to follow and it is not clear which configuration directives govern the (minimum) amount of entropy in the chosen numbers.</p>
+<p>If I were designing a system like Dogtag today, I would use random UUIDs for everything, except possibly serial numbers. There are <a href="https://en.wikipedia.org/wiki/UUID#Version_4_(random)">122 bits of entropy</a> in a Version 4 UUID. The current CA/Browser Forum <a href="https://cabforum.org/wp-content/uploads/CA-Browser-Forum-BR-1.6.5.pdf">Baseline Requirements</a> (v1.6.5) require serial numbers with 64 bits of high-quality randomness, but if that is ever increased beyond 122 bits a UUID won’t cut it anymore. So I would just use very large random numbers for all serial numbers.</p>
+<p>Can we move Dogtag from what we have now to something more robust? Of course it is possible, but it would be a big effort. So all that is likely to happen is smaller, well understood and bounded efforts with an obvious payoff, like avoiding range delegation (<a href="https://pagure.io/dogtagpki/issue/3060">Issue 3060</a>).</p>
+<p>The new FreeIPA <a href="https://www.freeipa.org/page/V4/Healthcheck">Health Check</a> system provides pluggable checks for system health. There is an open ticket to implement Dogtag range conflict and sanity checking in the Health Check tool, so that problems can be detected before they cause major failures.</p>
+<h2 id="appendix-range-configuration-directives-and-objects">Appendix: range configuration directives and objects</h2>
+<p>In all LDAP DNs below, substitute <code>o=ipaca</code> with the relevant base DN.</p>
+<h3 id="certificate-serial-numbers">Certificate serial numbers</h3>
+<p>Base: <strong>hexademical</strong></p>
+<p><code>CS.cfg</code> attributes:</p>
+<pre><code>dbs.beginSerialNumber
+dbs.endSerialNumber
+dbs.nextBeginSerialNumber
+dbs.nextEndSerialNumber
+dbs.serialIncrement</code></pre>
+<p>LDAP repository object (<code>nextRange</code> attribute):</p>
+<pre><code>dn: ou=certificateRepository,ou=ca,o=ipaca</code></pre>
+<p>LDAP ranges subtree parent:</p>
+<pre><code>dn: ou=certificateRepository,ou=ranges,o=ipaca</code></pre>
+<h3 id="ca-requests">CA requests</h3>
+<p>Base: <strong>demical</strong></p>
+<p><code>CS.cfg</code> attributes:</p>
+<pre><code>dbs.beginRequestNumber
+dbs.endRequestNumber
+dbs.nextBeginRequestNumber
+dbs.nextEndRequestNumber
+dbs.requestIncrement</code></pre>
+<p>LDAP repository object (<code>nextRange</code> attribute):</p>
+<pre><code>dn: ou=ca,ou=requests,o=ipaca</code></pre>
+<p>LDAP ranges subtree parent:</p>
+<pre><code>dn: ou=requests,ou=ranges,o=ipaca</code></pre>
+<h3 id="replica-numbers">Replica numbers</h3>
+<p>Base: <strong>demical</strong></p>
+<p><code>CS.cfg</code> attributes:</p>
+<pre><code>dbs.beginReplicaNumber
+dbs.endReplicaNumber
+dbs.nextBeginReplicaNumber
+dbs.nextEndReplicaNumber
+dbs.replicaIncrement</code></pre>
+<p>LDAP repository object (<code>nextRange</code> attribute):</p>
+<pre><code>dn: ou=replica,o=ipaca</code></pre>
+<p>LDAP ranges subtree parent:</p>
+<pre><code>dn: ou=replica,ou=ranges,o=ipaca</code></pre>
+<h3 id="kra-keys">KRA keys</h3>
+<p>Base: <strong>hexademical</strong></p>
+<p><code>kra/CS.cfg</code> attributes:</p>
+<pre><code>dbs.beginSerialNumber
+dbs.endSerialNumber
+dbs.nextBeginSerialNumber
+dbs.nextEndSerialNumber
+dbs.serialIncrement</code></pre>
+<p>LDAP repository object (<code>nextRange</code> attribute):</p>
+<pre><code>dn: ou=keyRepository,ou=kra,o=kra,o=ipaca</code></pre>
+<p>LDAP ranges subtree parent:</p>
+<pre><code>dn: ou=keyRepository,ou=ranges,o=kra,o=ipaca</code></pre>
+<h3 id="kra-requests">KRA requests</h3>
+<p>Base: <strong>demical</strong></p>
+<p><code>kra/CS.cfg</code> attributes:</p>
+<pre><code>dbs.beginRequestNumber
+dbs.endRequestNumber
+dbs.nextBeginRequestNumber
+dbs.nextEndRequestNumber
+dbs.requestIncrement</code></pre>
+<p>LDAP repository object (<code>nextRange</code> attribute):</p>
+<pre><code>dn: ou=kra,ou=requests,o=kra,o=ipaca</code></pre>
+<p>LDAP ranges subtree parent:</p>
+<pre><code>dn: ou=requests,ou=ranges,o=kra,o=ipaca</code></pre>
+<h3 id="kra-replicas-numbers">KRA replicas numbers</h3>
+<p>Base: <strong>demical</strong></p>
+<p><code>CS.cfg</code> attributes:</p>
+<pre><code>dbs.beginReplicaNumber
+dbs.endReplicaNumber
+dbs.nextBeginReplicaNumber
+dbs.nextEndReplicaNumber
+dbs.replicaIncrement</code></pre>
+<p>LDAP repository object (<code>nextRange</code> attribute):</p>
+<pre><code>dn: ou=replica,o=kra,o=ipaca</code></pre>
+<p>LDAP ranges subtree parent:</p>
+<pre><code>dn: ou=replica,ou=ranges,o=kra,o=ipaca</code></pre>]]></summary>
+</entry>
+<entry>
     <title>Designing revocation self-service for FreeIPA</title>
     <link href="https://frasertweedale.github.io/blog-redhat/posts/2019-07-19-revocation-self-service.html" />
     <id>https://frasertweedale.github.io/blog-redhat/posts/2019-07-19-revocation-self-service.html</id>
@@ -1469,119 +1669,6 @@ Generating key.  This may take a few moments...
 <p>Readability counts.</p>
 </blockquote>
 <p>So use <code>classmethod</code> or <code>staticmethod</code> wherever you can.</p>]]></summary>
-</entry>
-<entry>
-    <title>How does Dogtag PKI spawn?</title>
-    <link href="https://frasertweedale.github.io/blog-redhat/posts/2019-02-04-dogtag-installation.html" />
-    <id>https://frasertweedale.github.io/blog-redhat/posts/2019-02-04-dogtag-installation.html</id>
-    <published>2019-02-04T00:00:00Z</published>
-    <updated>2019-02-04T00:00:00Z</updated>
-    <summary type="html"><![CDATA[<h1 id="how-does-dogtag-pki-spawn">How does Dogtag PKI spawn?</h1>
-<p>Dogtag PKI is a complex program. Anyone who has performed a standalone installation of Dogtag can attest to this (to say nothing of actually using it). The program you invoke to install Dogtag is called <code>pkispawn(8)</code>. When installing standalone, you invoke <code>pkispawn</code> directly. When FreeIPA installs a Dogtag instance, it invokes <code>pkispawn</code> behind the scenes.</p>
-<p>So what does <code>pkispawn</code> actually <em>do</em>? In this post I’ll explain how <code>pkispawn</code> actually spawns a Dogtag instance. This post is not intended to be a guide to the many configuration options <code>pkispawn</code> knows about (although we’ll cover several). Rather, I’ll explain the actions <code>pkispawn</code> performs (or causes to be performed) to go from a fresh system to a working Dogtag CA instance.</p>
-<p>This post is aimed at developers and support associates, and to a lesser extent, people who are trying to diagnose issues themselves or understand how to accomplish something fancy in their Dogtag installation. By explaining the steps involved in spawning a Dogtag instance, I hope to make it easier for readers to diagnose issues or implement fixes or enhancements.</p>
-<h2 id="pkispawn-overview"><code>pkispawn</code> overview</h2>
-<p><code>pkispawn(8)</code> is provided by the <code>pki-server</code> RPM (which is required by the <code>pki-ca</code> RPM that provides the CA subsystem).</p>
-<p>You can invoke <code>pkispawn</code> without arguments, and it will prompt for the minimal data it needs to continue. These data include the subsystem to install (e.g. <code>CA</code> or <code>KRA</code>), and LDAP database connection details. For a fresh installation, most defaults are acceptable.</p>
-<p>There are many ways to configure or customise an installation. A few important scenarios are:</p>
-<ul>
-<li>installing a <code>KRA</code>, <code>OCSP</code>, <code>TKS</code> or <code>TPS</code> subsystem associated with the existing <code>CA</code> subsystem (typically on the same machine as the <code>CA</code> subsystem).</li>
-<li>installing a <em>clone</em> of a subsystem (typically on a different machine)</li>
-<li>installing a CA subsystem with an externally-signed CA certificate</li>
-<li>non-interactive installation</li>
-</ul>
-<p>For the above scenarios, and for many other possible variations, it is necessary to give <code>pkispawn</code> a configuration file. The <code>pki_default.cfg(5)</code> man page describes the format and available options. Some options are relevant to all subsystems, and others are subsystem-specific (i.e. only for <code>CA</code>, or <code>KRA</code>, etc.) Here is a basic configuration:</p>
-<pre><code>[DEFAULT]
-pki_server_database_password=Secret.123
-
-[CA]
-pki_admin_email=caadmin@example.com
-pki_admin_name=caadmin
-pki_admin_nickname=caadmin
-pki_admin_password=Secret.123
-pki_admin_uid=caadmin
-
-pki_client_database_password=Secret.123
-pki_client_database_purge=False
-pki_client_pkcs12_password=Secret.123
-
-pki_ds_base_dn=dc=ca,dc=pki,dc=example,dc=com
-pki_ds_database=ca
-pki_ds_password=Secret.123
-
-pki_security_domain_name=EXAMPLE
-
-pki_ca_signing_nickname=ca_signing
-pki_ocsp_signing_nickname=ca_ocsp_signing
-pki_audit_signing_nickname=ca_audit_signing
-pki_sslserver_nickname=sslserver
-pki_subsystem_nickname=subsystem</code></pre>
-<p>The <code>-f</code> option tells <code>pkispawn</code> the configuration file to use. <code>-s CA</code> tell it install the CA subsystem.</p>
-<pre><code>$ pkispawn -f ca.cfg -s CA</code></pre>
-<p>For many more examples of how to install Dogtag subsystems for particular scenarios, see the <a href="https://www.dogtagpki.org/wiki/PKI_10_Installation">PKI 10 Installation guide</a> on the Dogtag wiki.</p>
-<h2 id="terminology">Terminology</h2>
-<p>It is worthwhile to clarify the meaning of some terms:</p>
-<dl>
-<dt><em>instance</em> or <em>installation</em></dt>
-<dd><p>An installation of Dogtag on a particular machine. An instance may contain one or more <em>subsystems</em>. There may be more than one Dogtag instance on a single machine, although this is uncommon (and each instance must use a disjoint set of network ports). The default instance name is <code>pki-tomcat</code>.</p>
-</dd>
-<dt><em>subsystem</em></dt>
-<dd><p>Each main function in Dogtag is provided by a subsystem. The subsystems are: <code>CA</code>, <code>KRA</code>, <code>OCSP</code>, <code>TKS</code> and <code>TPS</code>. Every Dogtag instance must have a <code>CA</code> subsystem (hence, the first subsystem installed must be the <code>CA</code> subsystem).</p>
-</dd>
-<dt><em>clone</em></dt>
-<dd><p>For redundancy, a subsystem may be <em>cloned</em> to a different instance (usually on a different machine; this is not a technical requirement but it does not make sense to do otherwise). Different subsystems may have different numbers of clones in a topology.</p>
-</dd>
-<dt><em>topology</em> or <em>deployment</em></dt>
-<dd><p>All of the clones of all subsystems derived from some original CA subsystem form a <em>deployment</em> or <em>topology</em>. Typically, each <em>instance</em> in the topology would have a replicated copy of the LDAP database.</p>
-</dd>
-</dl>
-<h2 id="pkispawn-implementation"><code>pkispawn</code> implementation</h2>
-<h3 id="two-main-phases">Two main phases</h3>
-<p><code>pkispawn</code> has two main phases:</p>
-<ol type="1">
-<li>set up the Tomcat server and Dogtag application</li>
-<li>send <em>configuration requests</em> to the Dogtag application, which performs further configuration steps.</li>
-</ol>
-<p>(This is not to be confused with a <em>two step</em> externally-signed CA installation.)</p>
-<p>Of course there are many more steps than this. But there is an important reasons I am making such a high-level distinction: debugging. In the first phase <code>pkispawn</code> does everything. Any errors will show up in the <code>pkispawn</code> log file (<code>/var/log/pki/pki-&lt;subsystem&gt;-&lt;timestamp&gt;.log</code>). It is usually straightforward to work out what failed. <em>Why</em> it failed is sometimes easy to work out, and sometimes not so easy.</p>
-<p>But in the second phase, <code>pkispawn</code> is handing over control to Dogtag to finish configuring itself. <code>pkispawn</code> sends a series of requests to the <code>pki-tomcatd</code> web application. These requests tell Dogtag to configure things like the database, security domain, and so on. If something goes wrong during these steps, you <em>might</em> see something useful in the <code>pkispawn</code> log, but you will probably also need to look at the Dogtag <code>debug</code> log, or even the Tomcat or Dogtag logs of another subsystem or clone. I detailed this (in the context of debugging clone installation failures) in <a href="">a previous post</a>.</p>
-<h3 id="scriptlets">Scriptlets</h3>
-<p><code>pkispawn</code> is implemented in Python. The various steps of installation are implemented as <em>scriptlets</em>: small subroutines that take care of one part of the installation. These are:</p>
-<ol type="1">
-<li><code>initialization</code>: sanity check and normalise installer configuration, and sanity check the system environment.</li>
-<li><code>infrastructure_layout</code>: create PKI instance directories and configuration files.</li>
-<li><code>instance_layout</code>: lay out the Tomcat instance and configuration files (skipped when spawning a second subsystem on an existing instance).</li>
-<li><code>subsystem_layout</code>: lay out subsystem-specific files and directories.</li>
-<li><code>webapp_deployment</code>: deploy the Tomcat web application.</li>
-<li><code>security_databases</code>: set up the main Dogtag NSS database, and a client database where the administrator key and certificate will be created.</li>
-<li><code>selinux_setup</code>: establish correct SELinux contexts on instance and subsystem files.</li>
-<li><code>keygen</code>: generate keys and CSRs for the subsystem (for the CA subsystem, this inclues the CA signing key and CSR for external signing).</li>
-<li><code>configuration</code>: For external CA installation, import the externally-signed CA certificate and chain. (Re)start the <code>pki-tomcatd</code> instance and send configuration requests to the Java application. The whole second phase discussed in the previous section occurs here. It will be discussed in more detail in the next section.</li>
-<li><code>finalization</code>: enable PKI to start on boot (by default) and optionally purge client NSS databases that were set up during installation.</li>
-</ol>
-<p>For a two-step externally-signed CA installation, the <code>configuration</code> and <code>finalization</code> scriptlets are skipped during step 1, and in step 2 the scriptlets up to and including <code>keygen</code> are skipped. (A bit of hand-waving here; they not not really skipped but return early).</p>
-<p>In the codebase, scriptlets are located under <code>base/server/python/pki/server/deployment/scriptlets/&lt;name&gt;.py</code>. The list of scriptlets and the order in which they’re run is given by the <code>spawn_scriplets</code> variable in <code>base/server/etc/default.cfg</code>. Note that <code>scriplet</code> there is not a typo. Or maybe it is, but it’s not <em>my</em> typo. In some parts of the codebase, we say <em>scriplet</em>, and in others it’s <em>scriptlet</em>. This is mildly annoying, but you just have to be careful to use the correct class or variable name.</p>
-<p>Some other Python files contain a lot of code used during deployment. It’s not reasonable to make an exhaustive list, but <code>pki.server.deployment.pkihelper</code> and <code>pki.server.deployment.pkiparser</code> in particular include a lot of configuration processing code. If you are implementing or changing <code>pkispawn</code> configuration options, you’ll be defining them and following changes around in these files (and possibly others), as well as in <code>base/server/etc/default.cfg</code>.</p>
-<h4 id="scriptlets-and-uninstallation">Scriptlets and uninstallation</h4>
-<p>The installation scriptlets also implement corresponding uninstallation behaviours. When uninstalling a Dogtag instance or subsystem via the <code>pkidestroy</code> command, each scriptlets’ uninstallation behaviour is invoked. The order in which they’re invoked is different from installation, and is given by the <code>destroy_scriplets</code> variable in <code>base/server/etc/default.cfg</code>.</p>
-<h3 id="configuration-requests">Configuration requests</h3>
-<p>The <code>configuration</code> scriptlet sends a series of configuration requests to the Dogtag web API. Each request causes Dogtag to perform specific configuration behaviour(s). Depending on the subsystem being installed and whether it is a clone, these steps may including communication with other subsystems or instances, and/or the LDAP database.</p>
-<p>The requests performed, in order, are:</p>
-<ol type="1">
-<li><code>/rest/installer/configure</code>: configure (but don’t yet create) the security domain. Import and verify certificates. If creating a clone, request number range allocations from the master.</li>
-<li><code>/rest/installer/setupDatabase</code>: add database connection configuration to <code>CS.cfg</code>. Enable required DS plugins. Populate the database. If creating a clone, initialise replication (this can be suppressed if replication is managed externally, as is the case for FreeIPA in Domain Level 1). Populate VLV indices.</li>
-<li><code>/rest/installer/configureCerts</code>: configure system certificates, generating keys and issuing certificates where necessary.</li>
-<li><code>/rest/installer/setupAdmin</code> (skipped for clones): create admin user and issue certificate.</li>
-<li><code>/rest/installer/backupKeys</code> (optional): back up system certificates and keys to a PKCS #12 file.</li>
-<li><code>/rest/installer/setupSecurityDomain</code>: create the security domain data in LDAP (non-clone) or add the new clone to the security domain.</li>
-<li><code>/rest/installer/setupDatabaseUser</code>: set up the LDAP database user, including certificate (if configured). This is the user that Dogtag uses to bind to LDAP.</li>
-<li><code>/rest/installer/finalizeConfiguration</code>: remove <em>preop</em> configuration entries (which are only used during installation) and perform other finalisation in <code>CS.cfg</code>.</li>
-</ol>
-<p>For all of these requests, the <code>configuration</code> scriptlet builds the request data according to the <code>pkispawn</code> configuration. Then it sends the request to the current hostname. Communications between <code>pkispawn</code> and Tomcat are unlikely to fail (connection failure would suggest a major network configuration problem).</p>
-<p>If something goes wrong during processing of the request, errors should appear in the subsystem debug log (<code>/etc/pki/pki-tomcat/ca/debug.YYYY-MM-DD.log</code>; <code>/etc/pki/pki-tomcat/ca/debug</code> on older versions), or the system journal. If the local system had to contact other subsystems or instances on other hosts, it may be necessary to look at the debug logs, system journal or Tomcat / Apache httpd logs of the relevant host / subsystem. I wrote about this at length in <a href="">a previous post</a> so I won’t say more about it here.</p>
-<p>In terms of the code, the resource paths and servlet interface are defined in <code>com.netscape.certsrv.system.SystemConfigResource</code>. The implementation is in <code>com.netscape.certsrv.system.SystemConfigService</code>, with a considerable amount of behaviour residing as helper methods in <code>com.netscape.cms.servlet.csadmin.ConfigurationUtils</code>. If you are investigating or fixing configuration request failures, you will spend a fair bit of time grubbing around in these classes.</p>
-<h2 id="conclusion">Conclusion</h2>
-<p>As I have shown in this post, spawning a Dogtag PKI instance involves a lot of steps. There are many, <em>many</em> ways to customise the installation and I have glossed over many details. But my aim in this post was not to be a comprehensive reference guide or how-to. Rather the intent was to give a high-level view of what happens during installation, and how those behaviours are implemented. Hopefully I have achieved that, and as a result you are now able to more easily diagnose issues or implement changes or features in the Dogtag installer.</p>]]></summary>
 </entry>
 
 </feed>
