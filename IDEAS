@@ -1,5 +1,3 @@
-- nested / non-nested validity periods
-
 - how does dogtag-ipa-ca-renew-agent renewal work?
 
 - profile (vs-"renewal request") based certmonger renewal
