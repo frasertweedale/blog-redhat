@@ -8,8 +8,305 @@
         <name>Fraser Tweedale</name>
         <email>frase@frase.id.au</email>
     </author>
-    <updated>2019-09-23T00:00:00Z</updated>
+    <updated>2019-10-24T00:00:00Z</updated>
     <entry>
+    <title>Removing the CA from a FreeIPA deployment</title>
+    <link href="https://frasertweedale.github.io/blog-redhat/posts/2019-10-24-removing-ipa-ca.html" />
+    <id>https://frasertweedale.github.io/blog-redhat/posts/2019-10-24-removing-ipa-ca.html</id>
+    <published>2019-10-24T00:00:00Z</published>
+    <updated>2019-10-24T00:00:00Z</updated>
+    <summary type="html"><![CDATA[<h1 id="removing-the-ca-from-a-freeipa-deployment">Removing the CA from a FreeIPA deployment</h1>
+<p>FreeIPA can be deployed with or without a CA. By default a CA is installed; we call this a <em>CA-ful</em> deployment. But if you provide third party signed certificates for the HTTP, LDAP and (optionally) Kerberos KDC, then you can create a <em>CA-less</em> deployment.</p>
+<p>It is possible and supported to promote a CA-less deployment to CA-ful via the <code>ipa-ca-install</code> command. But the opposite is not true. There is no supported way to remove the CA from a CA-ful deployment. Nevertheless this is sometimes desired, for example to comply with a corporate security policy.</p>
+<p>In this post I will explore how to mutate an existing FreeIPA deployment from CA-ful to CA-less.</p>
+<h2 id="deployment-overview">Deployment overview</h2>
+<p>The deployment I used for this exercise has two servers: <code>f30-0.ipa.local</code> and <code>f30-1.ipa.local</code>. Both have the CA role installed. The CA subject DN is <code>CN=Doomed CA,O=IPA.LOCAL</code>. There is no KRA installed. Kerberos PKINIT is disabled.</p>
+<p>Both servers are running builds of the FreeIPA <code>master</code> branch from October 2019, on Fedora 30. There should be no substantial differences in the procedure for official builds in recent versions of Fedora, RHEL 8 or RHEL 7.</p>
+<p>The external CA that will sign the HTTP and LDAP service certificates is <code>CN=Certificate Authority,O=ACME Corporation</code>.</p>
+<h2 id="success-criteria">Success criteria</h2>
+<p>Simply uninstalling the Dogtag CA on all CA replicas is not enough. We want all servers to migrate away from certificate that were issued by the internal CA. Specific goals include:</p>
+<ul>
+<li>Replace HTTP, LDAP and (if Kerberos PKINIT enabled) KDC certificates with certificates issued by an external CA, on all replicas.</li>
+<li>Actually uninstall the Dogtag CA on all CA replicas.</li>
+<li>Cause IPA servers and clients to behave as if the deployment is (and always was) CA-less. In particular, programs like <code>ipa-server-upgrade</code> and <code>ipa-certupdate</code> must work.</li>
+<li>Replica installation succeeds in the modified deployment (third-party service certificates must be supplied, of course).</li>
+<li>Be able to promote the deployment to CA-ful again via the <code>ipa-ca-install</code> command.</li>
+</ul>
+<h2 id="removing-the-internal-ca">Removing the internal CA</h2>
+<p>There are two main approaches one could take. The first is to remove the CA role from existing CA replicas. The second is to install replicas without the CA role, then remove the CA replicas from the topology. In both cases some of the steps (e.g. installing externally-signed service certificates) will be the same. This post describes the first approach (it seems like less work overall).</p>
+<h3 id="add-external-ca-to-trust-store">Add external CA to trust store</h3>
+<p>First add the external root CA certificate to the FreeIPA trust store:</p>
+<pre><code>[root@f30-0 ~]# ipa-cacert-manage install /root/extca.pem
+Installing CA certificate, please wait
+Verified CN=Certificate Authority,O=ACME Corporation
+CA certificate successfully installed
+The ipa-cacert-manage command was successful</code></pre>
+<p>Then run <code>ipa-certupdate</code> to add the new certificate to system certificate databases, <strong>on every replica</strong> (not just CA replicas):</p>
+<pre><code>[root@f30-0 ~]# ipa-certupdate
+Systemwide CA database updated.
+Systemwide CA database updated.
+The ipa-certupdate command was successful</code></pre>
+<h3 id="replacing-service-certificates">Replacing service certificates</h3>
+<p>Next run <code>ipa-server-certinstall</code> to replace the HTTP and LDAP service certificates issued by the internal CA with externally-signed certificates. Do this <strong>for every server</strong> (only <code>f30-0.ipa.local</code> is shown below). <code>/root/dmpass</code> contains the <code>Directory Manager</code> password. <code>/root/httpd.pin</code> and <code>/root/ldap.pin</code> contain the passwords for the HTTP and LDAP private keys.</p>
+<pre><code>[root@f30-0 ~]# ipa-server-certinstall \
+    --dirman-pass $(cat /root/dmpass) \
+    --http /root/httpd.pem --pin $(cat /root/httpd.pin)
+Please restart ipa services after installing certificate (ipactl restart)
+The ipa-server-certinstall command was successful
+
+[root@f30-0 ~]# ipa-server-certinstall \
+    --dirman-pass $(cat /root/dmpass) \
+    --dirsrv /root/ldap.pem --pin $(cat /root/ldap.pin)
+Please restart ipa services after installing certificate (ipactl restart)
+The ipa-server-certinstall command was successful
+
+[root@f30-0 ~]# ipactl restart
+Restarting Directory Service
+Restarting krb5kdc Service
+Restarting kadmin Service
+Restarting httpd Service
+Restarting ipa-custodia Service
+Restarting pki-tomcatd Service
+Restarting ipa-otpd Service
+ipa: INFO: The ipactl command was successful</code></pre>
+<p>Verify that Apache is presenting the externally-signed service certificate:</p>
+<pre><code>[root@f30-0 ~]# echo \
+   | openssl s_client -connect $(hostname):443 &gt;/dev/null
+depth=1 O = ACME Corporation, CN = Certificate Authority
+verify return:1
+depth=0 O = ACME Corporation, CN = f30-0.ipa.local
+verify return:1
+DONE</code></pre>
+<h3 id="delete-ca-role-configuration">Delete CA role configuration</h3>
+<p>FreeIPA uses role entries to track which servers have which features (CA, KRA, DNS, etc.) enabled. Search for the entries to delete:</p>
+<pre><code>[root@f30-0 ~]# ldapsearch -Y GSSAPI -QLLL \
+    -b cn=masters,cn=ipa,cn=etc,dc=ipa,dc=local \
+    &#39;(cn=CA)&#39;
+dn: cn=CA,cn=f30-0.ipa.local,cn=masters,cn=ipa,cn=etc,dc=ipa,dc=local
+ipaConfigString: startOrder 50
+ipaConfigString: caRenewalMaster
+ipaConfigString: enabledService
+cn: CA
+objectClass: nsContainer
+objectClass: ipaConfigObject
+objectClass: top
+
+dn: cn=CA,cn=f30-1.ipa.local,cn=masters,cn=ipa,cn=etc,dc=ipa,dc=local
+objectClass: nsContainer
+objectClass: ipaConfigObject
+objectClass: top
+cn: CA
+ipaConfigString: startOrder 50
+ipaConfigString: enabledService</code></pre>
+<p>Delete these entries:</p>
+<pre><code>[root@f30-0 ~]# ldapdelete -Y GSSAPI -Q \
+    cn=CA,cn=f30-0.ipa.local,cn=masters,cn=ipa,cn=etc,dc=ipa,dc=local
+
+[root@f30-0 ~]# ldapdelete -Y GSSAPI -Q \
+    cn=CA,cn=f30-1.ipa.local,cn=masters,cn=ipa,cn=etc,dc=ipa,dc=local</code></pre>
+<p>At this point, any command that attempts to communicate with the CA will fail with a message that the CA is not configured:</p>
+<pre><code>[root@f30-0 ~]# ipa ca-find
+ipa: ERROR: CA is not configured
+[root@f30-0 ~]# ipa cert-show 5
+ipa: ERROR: CA is not configured</code></pre>
+<h3 id="uninstalling-dogtag">Uninstalling Dogtag</h3>
+<p>Issue the <code>pkidestroy</code> command <strong>on each CA replica</strong> to uninstall the Dogtag CA:</p>
+<pre><code>[root@f30-0 ~]# pkidestroy -i pki-tomcat -s CA                                                                                 
+Uninstallation log: /var/log/pki/pki-ca-destroy.20191023173820.log                      
+Loading deployment configuration from /var/lib/pki/pki-tomcat/ca/registry/ca/deployment.cfg.
+WARNING: The &#39;pki_ssl_server_token&#39; in [CA] has been deprecated. Use &#39;pki_sslserver_token&#39; instead.
+WARNING: The &#39;pki_pin&#39; in [DEFAULT] has been deprecated. Use &#39;pki_server_database_password&#39; instead.
+Uninstalling CA from /var/lib/pki/pki-tomcat.                                                                                  
+WARNING: pkihelper      Directory &#39;/etc/pki/pki-tomcat/alias&#39; is either missing or is NOT a directory!
+
+Uninstallation complete.        </code></pre>
+<p>The warnings can be ignored.</p>
+<h3 id="remove-service-configuration-from-state-file">Remove service configuration from state file</h3>
+<p>Some processes read from the deployment state file at <code>/var/lib/ipa/sysrestore/sysrestore.state</code> to decide whether the CA is installed. <strong>On every CA replica</strong> delete the following lines from this file:</p>
+<pre><code>[pki-tomcatd]
+installed = True</code></pre>
+<h3 id="removing-or-retaining-trust-in-the-deleted-ca">Removing (or retaining) trust in the deleted CA</h3>
+<p>If there are no more certificates in use that were issued by the (now removed) internal CA, we can remove it from the LDAP trust store:</p>
+<pre><code>% ldapdelete -Y GSSAPI -Q \
+    &quot;cn=IPA.LOCAL IPA CA,cn=certificates,cn=ipa,cn=etc,dc=ipa,dc=local&quot;</code></pre>
+<p>Otherwise if we still need to trust the old IPA CA, we can rename it. This step is necessary because the name <code>{REALM} IPA CA</code> indicates that this is the internal CA (which it no longer is).</p>
+<pre><code>% ldapmodrdn -Y GSSAPI -Q -r \
+    &quot;cn=IPA.LOCAL IPA CA,cn=certificates,cn=ipa,cn=etc,dc=ipa,dc=local&quot; \
+    &quot;cn=CN\=Doomed CA\,O\=IPA.LOCAL&quot;</code></pre>
+<p>We also have to remove the <code>{REALM} IPA CA</code> certificate from the FreeIPA 389 DS certificate databases <strong>on every replica</strong>. Leaving it as-is will impede future reinstallation of the CA:</p>
+<pre><code>[root@f30-0 ~]# certutil -d /etc/dirsrv/slapd-IPA-LOCAL \
+                    -D -n &#39;IPA.LOCAL IPA CA&#39;
+
+[root@f30-0 ~]# certutil -d /etc/ipa/nssdb \
+                    -D -n &#39;IPA.LOCAL IPA CA&#39;</code></pre>
+<h3 id="delete-ipa-ca-and-sub-ca-entries">Delete IPA CA and sub-CA entries</h3>
+<p>Search for all entries with object class <code>ipaca</code> and delete them:</p>
+<pre><code>[root@f30-0 ~]# ldapsearch -Y GSSAPI -QLLL \
+     -b dc=ipa,dc=local &#39;(objectclass=ipaca)&#39; 1.1
+dn: cn=ipa,cn=cas,cn=ca,dc=ipa,dc=local
+
+[root@f30-0 ~]# ldapdelete -Y GSSAPI -Q \
+     cn=ipa,cn=cas,cn=ca,dc=ipa,dc=local</code></pre>
+<p>Unless you have created additional (sub-)CAs via the <code>ipa ca-add</code> command there will be only one entry (<code>cn=ipa</code>).</p>
+<h3 id="remove-certmonger-tracking-requests">Remove Certmonger tracking requests</h3>
+<p>Certmonger tracking requests for the Dogtag system certificates and IPA RA agent certificate should be removed <strong>on each server</strong>. The easiest way to achieve this is with a small Python script:</p>
+<pre><code>[root@f30-0 ~]# python3 &lt;&lt;EOF
+from ipaserver.install.cainstance import CAInstance
+ca = CAInstance()
+ca.stop_tracking_certificates()
+EOF</code></pre>
+<h2 id="testing-the-outcome">Testing the outcome</h2>
+<p>We already confirmed that the <code>ipa</code> subcommands (i.e. commands that query the IPA API) fail gracefully with a message that the CA role is not installed. But there are other commands to check. In particular we want to test <code>ipa-certupdate</code>, <code>ipa-server-upgrade</code>, and client and replica installation.</p>
+<pre><code>[root@f30-0 ~]# ipa-certupdate
+Systemwide CA database updated.
+Systemwide CA database updated.
+The ipa-certupdate command was successful</code></pre>
+<pre><code>[root@f30-0 ~]# ipa-server-upgrade
+Upgrading IPA:. Estimated time: 1 minute 30 seconds
+...
+The IPA services were upgraded                                      
+The ipa-server-upgrade command was successful                       </code></pre>
+<p>So far so good. I used a third host, <code>f30-2.ipa.local</code>, to test client and replica installation. I don’t have the required DNS records so I had to specify the domain and server.</p>
+<pre><code>[root@f30-2 ~]# ipa-client-install --server f30-0.ipa.local --domain ipa.local
+This program will set up FreeIPA client.
+Version 4.9.0.dev201910230357+gitc6769ad12
+
+Autodiscovery of servers for failover cannot work with this configuration.
+If you proceed with the installation, services will be configured to always acce
+ss the discovered server for all operations and will not fail over to other serv
+ers in case of failure.
+Proceed with fixed values and no DNS discovery? [no]: y
+Do you want to configure chrony with NTP server or pool address? [no]: 
+Client hostname: f30-2.ipa.local
+Realm: IPA.LOCAL
+DNS Domain: ipa.local
+IPA Server: f30-0.ipa.local
+BaseDN: dc=ipa,dc=local
+
+Continue to configure the system with these values? [no]: y
+Synchronizing time
+No SRV records of NTP servers found and no NTP server or pool address was provid
+ed.
+Using default chrony configuration.
+Attempting to sync time with chronyc.
+Time synchronization was successful.
+User authorized to enroll computers: admin
+Password for admin@IPA.LOCAL: 
+Successfully retrieved CA cert
+    Subject:     CN=Certificate Authority,O=ACME Corporation
+    Issuer:      CN=Certificate Authority,O=ACME Corporation
+    Valid From:  2019-10-24 04:01:33
+    Valid Until: 2039-10-24 04:01:33
+
+Enrolled in IPA realm IPA.LOCAL
+Created /etc/ipa/default.conf
+Configured sudoers in /etc/authselect/user-nsswitch.conf
+Configured /etc/sssd/sssd.conf
+Configured /etc/krb5.conf for IPA realm IPA.LOCAL
+Systemwide CA database updated.
+Adding SSH public key from /etc/ssh/ssh_host_ed25519_key.pub
+Adding SSH public key from /etc/ssh/ssh_host_ecdsa_key.pub
+Adding SSH public key from /etc/ssh/ssh_host_rsa_key.pub
+Could not update DNS SSHFP records.
+SSSD enabled
+Configured /etc/openldap/ldap.conf
+Configured /etc/ssh/ssh_config
+Configured /etc/ssh/sshd_config
+Configuring ipa.local as NIS domain.
+Client configuration complete.
+The ipa-client-install command was successful</code></pre>
+<p>Client installation succeeded. We can see that external CA certificate was retrieved. I proceeded with replica installation:</p>
+<pre><code>[root@f30-2 ~]# kinit admin                                                     
+Password for admin@IPA.LOCAL: XXXXXXX
+
+[root@f30-2 ~]# ipa-replica-install \
+    --http-cert-file /root/httpd.pem \
+    --http-pin $(cat /root/httpd.pin) \
+    --dirsrv-cert-file /root/ldap.pem \
+    --dirsrv-pin $(cat /root/ldap.pin) \
+    --no-pkinit --unattended
+Run connection check to master
+Connection check OK
+Disabled p11-kit-proxy
+Configuring directory server (dirsrv). Estimated time: 30 seconds
+  [1/41]: creating directory server instance
+  ...
+  [10/10]: starting directory server
+Done.
+Finalize replication settings
+Restarting the KDC
+The ipa-replica-install command was successful</code></pre>
+<h2 id="reinstating-the-internal-ca">Reinstating the internal CA</h2>
+<p>If you want to once again have a CA-ful FreeIPA deployment, use the <code>ipa-ca-install</code> command to install the CA. There is one critical constraint: <strong>the new CA must not have the same Subject DN as the previous CA</strong>. This is to avoid a recurrence of the same issuer/serial combination, which is a big no-no both for security and because errors are likely to arise.</p>
+<p>So let’s install the CA again. To play it safe I’ll use the newly-installed replica <code>f30-2.ipa.local</code>. Just in case there is some “residue” left on the other servers that would prevent reinstallation of the CA role.</p>
+<pre><code>[root@f30-2 ~]# ipa-ca-install \
+      --ca-subject &quot;CN=Restored CA,O=IPA.LOCAL&quot;
+Directory Manager (existing master) password:                                   
+
+The CA will be configured with:                                                 
+Subject DN:   CN=Restored CA,O=IPA.LOCAL                      
+Subject base: O=IPA.LOCAL                                                       
+Chaining:     self-signed                                                       
+
+Continue to configure the CA with these values? [no]: y                         
+Configuring certificate server (pki-tomcatd). Estimated time: 3 minutes
+  [1/29]: configuring certificate server instance               
+  [2/29]: Add ipa-pki-wait-running                                              
+  [3/29]: reindex attributes                                                    
+  [4/29]: exporting Dogtag certificate store pin                
+  [5/29]: stopping certificate server instance to update CS.cfg 
+  [6/29]: backing up CS.cfg                                                     
+  [7/29]: disabling nonces                                                      
+  [8/29]: set up CRL publishing
+  [9/29]: enable PKIX certificate path discovery and validation
+  [10/29]: starting certificate server instance
+  [11/29]: configure certmonger for renewals
+  [12/29]: requesting RA certificate from CA
+  [13/29]: setting audit signing renewal to 2 years
+  [14/29]: restarting certificate server 
+  [15/29]: publishing the CA certificate 
+  [16/29]: adding RA agent as a trusted user
+  [17/29]: authorizing RA to modify profiles
+  [18/29]: authorizing RA to manage lightweight CAs
+  [19/29]: Ensure lightweight CAs container exists
+  [20/29]: configure certificate renewals
+  [21/29]: Configure HTTP to proxy connections
+  [22/29]: restarting certificate server 
+  [23/29]: updating IPA configuration
+  [24/29]: enabling CA instance
+  [25/29]: migrating certificate profiles to LDAP
+  [26/29]: importing IPA certificate profiles
+  [27/29]: adding default CA ACL
+  [28/29]: adding &#39;ipa&#39; CA entry
+  [29/29]: configuring certmonger renewal for lightweight CAs
+Done configuring certificate server (pki-tomcatd).</code></pre>
+<p>The installation completed without error. The deployment is CA-ful again, but it is a different CA from before.</p>
+<h2 id="issues-encountered">Issues encountered</h2>
+<p>I encountered a significant issue when reinstalling the CA. If there are multiple trusted CAs (including the old internal CA) in <code>/etc/ipa/ca.crt</code>, then if the issuer of the 389 DS service certificate is not the first certificate in that file Dogtag installation will fail. This is because the wrong CA certificate is imported into Dogtag’s NSSDB and the issuer of the LDAP certificate is <em>not</em> imported. As a consequence, Dogtag cannot verify the LDAP certificate and cannot communicate with the database. Installation fails.</p>
+<p>This issue is tracked in <a href="https://pagure.io/freeipa/issue/8103">upstream ticket 8103</a>.</p>
+<p>I also encountered problems when reinstalling a CA on the servers from which it had been uninstalled. A <em>duplicate entry</em> error occurs when setting up the LDAP database:</p>
+<pre><code>[root@f30-1 ~]# ipa-ca-install
+Directory Manager (existing master) password:
+
+Run connection check to master
+Connection check OK
+Configuring certificate server (pki-tomcatd). Estimated time: 3 minutes
+  [1/27]: creating certificate server db
+  [error] DuplicateEntry: This entry already exists
+
+Your system may be partly configured.
+Run /usr/sbin/ipa-server-install --uninstall to clean up.
+
+Unexpected error - see /var/log/ipareplica-ca-install.log for details:
+DuplicateEntry: This entry already exists</code></pre>
+<p>This can probably be averted with additional cleanup steps. I did not investigate further because installation of the CA role on a <em>new replica</em> did succeed. That seems good enough to me.</p>
+<h2 id="conclusion">Conclusion</h2>
+<p>In this post I explored how to demote a CA-ful FreeIPA deployment to a CA-less deployment. The procedure has many steps. Even in a CA-less deployment TLS is still required for secure communication between components. So one important step is to install externally-signed service certificates for the web server, directory server and (if used) the KDC certificates. But there are several other steps required to remove the CA from an existing deployment.</p>
+<p>The procedure is not officially supported. If you need to perform this operation make a snapshot of your deployment so you can roll back if anything goes wrong, or verify everything in a test environment first (or both!)</p>
+<p>If you need to move from a CA-ful to a CA-less deployment, an alternative approach would be to create a new, CA-less deployment and migrate your data across. Neither approach is very attractive, to be fair.</p>
+<p>As a final observation, the procedure has several steps that are similar or identical to the steps for <a href="2018-05-31-replacing-lost-ca.html">replacing a lost CA</a>.</p>]]></summary>
+</entry>
+<entry>
     <title>Requesting certificates from FreeIPA on Active Directory clients</title>
     <link href="https://frasertweedale.github.io/blog-redhat/posts/2019-09-23-direct-integration-ipa-certs.html" />
     <id>https://frasertweedale.github.io/blog-redhat/posts/2019-09-23-direct-integration-ipa-certs.html</id>
@@ -1311,261 +1608,6 @@ pki_req_ski=00D06F00D4D06746</code></pre>
 <h2 id="freeipa-support">FreeIPA support</h2>
 <p>We don’t expose this feature in FreeIPA directly. It can be hacked in pretty easily by modifying the Python code that builds the <code>pkispawn</code> configuration during installation. Alternatively, set the option in the <code>pkispawn</code> default configuration file: <code>/usr/share/pki/server/etc/default.cfg</code> (this is what I did to test the feature).</p>
 <p>Changes to be made as part of the <a href="https://github.com/freeipa/freeipa/pull/2307">upcoming HSM support</a> will, as a pleasant side effect, make it easy to specify or override <code>pkispawn</code> configuration values including <code>pki_req_ski</code>.</p>]]></summary>
-</entry>
-<entry>
-    <title>Offline expired certificate renewal for Dogtag</title>
-    <link href="https://frasertweedale.github.io/blog-redhat/posts/2019-02-28-dogtag-cert-fix.html" />
-    <id>https://frasertweedale.github.io/blog-redhat/posts/2019-02-28-dogtag-cert-fix.html</id>
-    <published>2019-02-28T00:00:00Z</published>
-    <updated>2019-02-28T00:00:00Z</updated>
-    <summary type="html"><![CDATA[<h1 id="offline-expired-certificate-renewal-for-dogtag">Offline expired certificate renewal for Dogtag</h1>
-<p>The worst has happened. Somehow, certificate renewal didn’t happen when it should have, and now you have expired certificates. Worst, these are Dogtag system certificates; you can’t even start Dogtag to issue new ones! Unfortunately, this situation arises fairly often. Sometimes due to administrator error or extended downtime; sometimes due to bugs. These cases are notoriously difficult (and expensive) to analyse and resolve. It often involves <em>time travel</em>:</p>
-<ol type="1">
-<li>Set the system clock to a time setting just before certificates started expiring.</li>
-<li>Fix whatever caused renewal not to work in the first place.</li>
-<li>Renew expiring certificates.</li>
-<li>Reset system clock.</li>
-</ol>
-<p>That is the <em>simple</em> case! I have seen much gnarlier scenarios. Ones where <em>multiple times</em> must be visited. Ones where there is <em>no time</em> at which all relevant certs are valid.</p>
-<p>It would be nice to avoid these scenarios, and the FreeIPA team continues to work to improve the robustness of certificate renewal. We also have a monitoring / health check solution on the roadmap, so that failure of automated renewal sets off alarms before <em>everything else</em> falls over. But in the meantime, customers and support are still dealing with scenarios like this. Better recovery tools are needed.</p>
-<p>And better tools are on the way! Dinesh, one of the Dogtag developers, has built a tool to simplify renewal when your Dogtag CA is offline due to expired system certificates. This post outlines what the tool is, what it does, and my first experiences using it in a FreeIPA deployment. Along the way and especially toward the end of the post, I will discuss the caveats and potential areas for improvement, and FreeIPA-specific considerations.</p>
-<h2 id="pki-server-cert-fix"><code>pki-server cert-fix</code></h2>
-<p>The tool is implemented as a subcommand of the <code>pki-server</code> utility–namely <code>cert-fix</code> (and I will use this short name throughout the post). So it is implemented in Python, but in some places it calls out to <code>certutil</code> or the Java parts of Dogtag via the HTTP API. The <a href="https://github.com/dogtagpki/pki/blob/master/docs/admin/Offline_System_Certificate_Renewal.md">user documentation</a> is maintained the source repository.</p>
-<p>The insight at the core of <code>cert-fix</code> is that even if Dogtag is not running or <em>cannot</em> run, we still have access to the keys needed to issue certificates. We <em>do</em> need to use Dogtag to properly store issued certificates (for revocation purposes) and produce an audit trail. But if needed, we can use the CA signing key to <strong>temporarily</strong> fudge the important certificates to get Dogtag running again, then re-issue expired system certificates properly.</p>
-<h3 id="assumptions">Assumptions</h3>
-<p><code>cert-fix</code> makes the following assumptions about your environment. If these do not hold, then <code>cert-fix</code>, as currently implemented, cannot do its thing.</p>
-<ul>
-<li>The CA signing certificate is valid.</li>
-<li>You have a valid admin or agent certificate. In a FreeIPA environment the <code>IPA RA</code> certificaite fulfils this role.</li>
-<li>(indirect) The LDAP server (389 DS) is operational, its certificate is valid, and Dogtag can authenticate to it.</li>
-</ul>
-<p>These assumptions have been made for good reasons, but there are several certificate expiry scenarios that breach them. I will discuss in detail later in the post. For now, we must accept them.</p>
-<h3 id="what-cert-fix-does">What <code>cert-fix</code> does</h3>
-<p>The <code>cert-fix</code> performs the following actions to renew an expired system certificate:</p>
-<ol>
-<li>Inspect the system and identify which system certificates need renewing. Or the certificates can be specified on the command line.</li>
-<li>If Dogtag’s HTTPS certificate is expired, use certutil commands to issue a new “temporary” certificate. The validity period is three months (from the current time). The serial number of the current (expired) HTTPS is reused (a big X.509 no-no, but operationally no big deal in this scenario). There is no audit trail and the certificate will not appear in the LDAP database.</li>
-<li>Disable the startup self-test for affected subsystems, then start Dogtag.</li>
-<li>For each target certificate, renew the certificate via API, using given credential. Validity periods and other characteristics are determined by relevant profiles. Serial numbers are chosen in the usual manner, the certificates appear in LDAP and there is an audit trail.</li>
-<li>Stop Dogtag.</li>
-<li>For each target certificate, import the new certificate into Dogtag’s NSSDB.</li>
-<li>Re-enable self-test for affected subsystems and start Dogtag.</li>
-</ol>
-<h2 id="using-cert-fix">Using <code>cert-fix</code></h2>
-<p>There are a couple of ways to try out the tool—without waiting for certificates to expire, that is. One way is to roll your system clock forward, beyond the expiry date of one or more certificates. Another possibility is to modify a certificate profile used for a system certificate so that it will be issued with a very short validity period.</p>
-<p>I opted for the latter option. I manually edited the default profile configuration, so that Dogtag’s OCSP and HTTPS certificates would be issued with a validity period of 15 minutes. By the time I installed FreeIPA, grabbed a coffee and read a few emails, the certificates had expired. Certmonger didn’t even attempt to renew them. Dogtag was still running and working properly, but <code>ipactl restart</code> put Dogtag, and the whole FreeIPA deployment, out of action.</p>
-<p>I used <code>pki-server cert-find</code> to have a peek at Dogtag’s system certificates:</p>
-<pre><code>[root@f29-0 ca]# pki-server cert-find
-  Cert ID: ca_signing
-  Nickname: caSigningCert cert-pki-ca
-  Serial Number: 0x1
-  Subject DN: CN=Certificate Authority,O=IPA.LOCAL 201902271325
-  Issuer DN: CN=Certificate Authority,O=IPA.LOCAL 201902271325
-  Not Valid Before: Wed Feb 27 14:30:22 2019
-  Not Valid After: Mon Feb 27 14:30:22 2034
-
-  Cert ID: ca_ocsp_signing
-  Nickname: ocspSigningCert cert-pki-ca
-  Serial Number: 0x2
-  Subject DN: CN=OCSP Subsystem,O=IPA.LOCAL 201902271325
-  Issuer DN: CN=Certificate Authority,O=IPA.LOCAL 201902271325
-  Not Valid Before: Wed Feb 27 14:30:24 2019
-  Not Valid After: Wed Feb 27 14:45:24 2019
-
-  Cert ID: sslserver
-  Nickname: Server-Cert cert-pki-ca
-  Serial Number: 0x3
-  Subject DN: CN=f29-0.ipa.local,O=IPA.LOCAL 201902271325
-  Issuer DN: CN=Certificate Authority,O=IPA.LOCAL 201902271325
-  Not Valid Before: Wed Feb 27 14:30:24 2019
-  Not Valid After: Wed Feb 27 14:45:24 2019
-
-  Cert ID: subsystem
-  Nickname: subsystemCert cert-pki-ca
-  Serial Number: 0x4
-  Subject DN: CN=CA Subsystem,O=IPA.LOCAL 201902271325
-  Issuer DN: CN=Certificate Authority,O=IPA.LOCAL 201902271325
-  Not Valid Before: Wed Feb 27 14:30:24 2019
-  Not Valid After: Tue Feb 16 14:30:24 2021
-
-  Cert ID: ca_audit_signing
-  Nickname: auditSigningCert cert-pki-ca
-  Serial Number: 0x5
-  Subject DN: CN=CA Audit,O=IPA.LOCAL 201902271325
-  Issuer DN: CN=Certificate Authority,O=IPA.LOCAL 201902271325
-  Not Valid Before: Wed Feb 27 14:30:24 2019
-  Not Valid After: Tue Feb 16 14:30:24 2021</code></pre>
-<p>Note the <code>Not Valid After</code> times for the <code>ca_ocsp_signing</code> and <code>sslserver</code> certificates. These are certificates we must renew.</p>
-<h3 id="preparing-the-agent-certificate">Preparing the agent certificate</h3>
-<p>The <code>cert-fix</code> command requires an agent certificate. We will use the <em>IPA RA</em> certificate. The <code>pki-server</code> CLI tool needs an NSSDB with the agent key and certificate. So we have to set that up. First initialise the NSSDB:</p>
-<pre><code>[root@f29-0 ~]# mkdir ra-nssdb
-[root@f29-0 ~]# cd ra-nssdb
-[root@f29-0 ra-nssdb]# certutil -d . -N
-Enter a password which will be used to encrypt your keys.
-The password should be at least 8 characters long,
-and should contain at least one non-alphabetic character.
-
-Enter new password: XXXXXXXX
-Re-enter password: XXXXXXXX</code></pre>
-<p>Then create a PKCS #12 file containing the required key and certificates:</p>
-<pre><code>[root@f29-0 ra-nssdb]# openssl pkcs12 -export \
-  -inkey /var/lib/ipa/ra-agent.key \
-  -in /var/lib/ipa/ra-agent.pem \
-  -name &quot;ra-agent&quot; \
-  -certfile /etc/ipa/ca.crt &gt; ra-agent.p12
-Enter Export Password:
-Verifying - Enter Export Password:</code></pre>
-<p>Import it into the NSSDB, and fix up trust flags on the IPA CA certificate:</p>
-<pre><code>[root@f29-0 ra-nssdb]# pk12util -d . -i ra-agent.p12
-Enter Password or Pin for &quot;NSS Certificate DB&quot;:
-Enter password for PKCS12 file:
-pk12util: PKCS12 IMPORT SUCCESSFUL
-
-[root@f29-0 ra-nssdb]# certutil -d . -L
-
-Certificate Nickname                                         Trust Attributes
-                                                             SSL,S/MIME,JAR/XPI
-
-ra-agent                                                     u,u,u
-Certificate Authority - IPA.LOCAL 201902271325               ,,
-
-[root@f29-0 ra-nssdb]# certutil -d . -M \
-    -n &#39;Certificate Authority - IPA.LOCAL 201902271325&#39; \
-    -t CT,C,C
-Enter Password or Pin for &quot;NSS Certificate DB&quot;:
-
-[root@f29-0 ra-nssdb]# certutil -d . -L
-
-Certificate Nickname                                         Trust Attributes
-                                                             SSL,S/MIME,JAR/XPI
-
-ra-agent                                                     u,u,u
-Certificate Authority - IPA.LOCAL 201902271325               CT,C,C</code></pre>
-<h3 id="running-cert-fix">Running <code>cert-fix</code></h3>
-<p>Let’s look at the <code>cert-fix</code> command options:</p>
-<pre><code>[root@f29-0 ra-nssdb]# pki-server cert-fix --help
-Usage: pki-server cert-fix [OPTIONS]
-
-      --cert &lt;Cert ID&gt;            Fix specified system cert (default: all certs).
-  -i, --instance &lt;instance ID&gt;    Instance ID (default: pki-tomcat).
-  -d &lt;NSS database&gt;               NSS database location (default: ~/.dogtag/nssdb)
-  -c &lt;NSS DB password&gt;            NSS database password
-  -C &lt;path&gt;                       Input file containing the password for the NSS database.
-  -n &lt;nickname&gt;                   Client certificate nickname
-  -v, --verbose                   Run in verbose mode.
-      --debug                     Run in debug mode.
-      --help                      Show help message.</code></pre>
-<p>It’s not a good idea to put passphrases on the command line in the clear, so let’s write the NSSDB passphrase to a file:</p>
-<pre><code>[root@f29-0 ra-nssdb]# cat &gt; pwdfile.txt
-XXXXXXXX
-^D</code></pre>
-<p>Finally, I was ready to execute <code>cert-fix</code>:</p>
-<pre><code>[root@f29-0 ra-nssdb]# pki-server cert-fix \
-    -d . -C pwdfile.txt -n ra-agent \
-    --cert sslserver --cert ca_ocsp_signing \
-    --verbose</code></pre>
-<p>Running with <code>--verbose</code> causes <code>INFO</code> and higher-level log messages to be printed to the terminal. Running with <code>--debug</code> includes <code>DEBUG</code> messages. If neither of these is used, <em>nothing</em> is output (unless there’s an error). So I recommend running with <code>--verbose</code>.</p>
-<p>So, what happened? Unfortunately I ran into several issues.</p>
-<h4 id="ds-not-running">389 DS not running</h4>
-<p>The first issue was trivial, but likely to occur if you have to <code>cert-fix</code> a FreeIPA deployment. The <code>ipactl [re]start</code> command will shut down <em>every</em> component if <em>any</em> component failed to start. Dogtag didn’t start, therefore <code>ipactl</code> shut down 389 DS too. As a consequence, Dogtag failed to initialise after <code>cert-fix</code> started it, and the command failed.</p>
-<p>So, before running <code>cert-fix</code>, make sure LDAP is working properly. To start it, use <code>systemctl</code> instead of <code>ipactl</code>:</p>
-<pre><code># systemctl start dirsrv@YOUR-REALM</code></pre>
-<h4 id="connection-refused">Connection refused</h4>
-<p>One issue I encountered was that a slow startup of Dogtag caused failure of the tool. <code>cert-fix</code> does not wait for Dogtag to start up properly. It just ploughs ahead—only to encounter <code>ConnectionRefusedError</code>.</p>
-<p>I worked around this—temporarily—by adding a sleep after <code>cert-fix</code> starts Dogtag. A proper fix will require a change to the code. <code>cert-fix</code> should perform a server status check, retrying until it succeeds or times out.</p>
-<h4 id="tls-handshake-failure">TLS handshake failure</h4>
-<p>The next error I encountered was a TLS handshake failure:</p>
-<pre><code>urllib3.exceptions.MaxRetryError:
-  HTTPSConnectionPool(host=&#39;f29-0.ipa.local&#39;, port=8443): Max retries
-  exceeded with url: /ca/rest/certrequests/profiles/caManualRenewal
-  (Caused by SSLError(SSLError(185073780, &#39;[X 509: KEY_VALUES_MISMATCH]
-  key values mismatch (_ssl.c:3841)&#39;)))</code></pre>
-<p>I haven’t worked out yet what is causing this surprising error. But I wasn’t the first to encounter it. A <a href="https://bugzilla.redhat.com/show_bug.cgi?id=1669257#c10">comment in the Bugzilla ticket</a> indicated that the workaround was to <em>remove</em> the IPA CA certificate from the client NSSDB. This I did:</p>
-<pre><code>[root@f29-0 ra-nssdb]# certutil -d . -D \
-    -n &quot;Certificate Authority - IPA.LOCAL 201902271325&quot;</code></pre>
-<p>After this, my next attempt at running <code>cert-fix</code> succeeded.</p>
-<h3 id="results">Results</h3>
-<p>Looking at the previously expired target certificates, observe that the certificates have been updated. They have new serial numbers, and expire in 15 months:</p>
-<pre><code>[root@f29-0 ra-nssdb]# certutil -d /etc/pki/pki-tomcat/alias \
-    -L -n &#39;Server-Cert cert-pki-ca&#39; | egrep &quot;Serial|Not After&quot;
-      Serial Number: 12 (0xc)
-          Not After : Wed May 27 12:45:25 2020
-
-[root@f29-0 ra-nssdb]# certutil -d /etc/pki/pki-tomcat/alias \
-    -L -n &#39;ocspSigningCert cert-pki-ca&#39; | egrep &quot;Serial|Not After&quot;
-      Serial Number: 13 (0xd)
-          Not After : Wed May 27 12:45:28 2020</code></pre>
-<p>Looking at the output of <code>getcert list</code> for the target certificates, we see that Certmonger has <em>not</em> picked these up (some lines removed):</p>
-<pre><code>[root@f29-0 ra-nssdb]# getcert list -i 20190227033149
-Number of certificates and requests being tracked: 9.
-Request ID &#39;20190227033149&#39;:
-   status: CA_UNREACHABLE
-   ca-error: Internal error
-   stuck: no
-   CA: dogtag-ipa-ca-renew-agent
-   issuer: CN=Certificate Authority,O=IPA.LOCAL 201902271325
-   subject: CN=OCSP Subsystem,O=IPA.LOCAL 201902271325
-   expires: 2019-02-27 14:45:24 AEDT
-   eku: id-kp-OCSPSigning
-
-[root@f29-0 ra-nssdb]# getcert list -i 20190227033152
-Number of certificates and requests being tracked: 9.
-Request ID &#39;20190227033152&#39;:
-   status: CA_UNREACHABLE
-   ca-error: Internal error
-   stuck: no
-   CA: dogtag-ipa-ca-renew-agent
-   issuer: CN=Certificate Authority,O=IPA.LOCAL 201902271325
-   subject: CN=f29-0.ipa.local,O=IPA.LOCAL 201902271325
-   expires: 2019-02-27 14:45:24 AEDT
-   dns: f29-0.ipa.local
-   key usage: digitalSignature,keyEncipherment,dataEncipherment
-   eku: id-kp-serverAuth</code></pre>
-<p>Restarting Certmonger (<code>systemctl restart certmonger</code>) resolved the discrepancy.</p>
-<p>Finally, <code>ipactl restart</code> puts everything back online. <code>cert-fix</code> has saved the day!</p>
-<pre><code>[root@f29-0 ra-nssdb]# ipactl restart
-Restarting Directory Service
-Starting krb5kdc Service
-Starting kadmin Service
-Starting httpd Service
-Starting ipa-custodia Service
-Starting pki-tomcatd Service
-Starting ipa-otpd Service
-ipa: INFO: The ipactl command was successful</code></pre>
-<h2 id="issues-and-caveats">Issues and caveats</h2>
-<p>Besides the issues already covered, there are several scenarios that <code>cert-fix</code> cannot handle.</p>
-<h3 id="expired-ca-certificate">Expired CA certificate</h3>
-<p>Due to the the long validity period of a typical CA certificate, the assumption that the CA certificate is valid is the safest assumption made by <code>cert-fix</code>. But it is not a safe assumption.</p>
-<p>The most common way this assumption is violated is with externally-signed CA certificates. For example, the FreeIPA CA in your organisation is signed by Active Directory CA, with a validity period of two years. Things get overlooked and suddenly, your FreeIPA CA is expired. It may take some time for the upstream CA administrators to issue a new certificate. In the meantime, you want to get your FreeIPA/Dogtag CA back up.</p>
-<p>Right now <code>cert-fix</code> doesn’t handle this scenario. I think it should. As far as I can tell, this should be straightforward to support. Unlike the next few issues…</p>
-<h3 id="agent-certificate-expiry">Agent certificate expiry</h3>
-<p>This concerns the assumption that you have a valid agent certificate. Dogtag requires authentication to perform privilieged operations like certificate issuance. Also, the authenticated user must be included in audit events. <code>cert-fix</code> <em>must</em> issue certificates properly (with limiited temporary fudging tolerated for operational efficacy), therefore there <em>must</em> be an agent credential. And if your agent credential is a certificate, it <em>must</em> be valid. So if your agent certificate is expired, it’s Catch-22. That is why the tool, as currently implemented, must assume you have a valid, non-expired agent certificate.</p>
-<p>In some deployments the agent certificate is renewed on a different cadence from subsystem certificates. In that case, this scenario is less like to occur—but still entirely possible! The assumption is bad.</p>
-<p>In my judgement it is fairly important to find a workaround for this. One idea could be to talk directly to LDAP and set a randomly-generated password on an agent account, and use that to authenticate. After the tool exits, the passphrase is forgotten. This approach means <code>cert-fix</code> needs a credential and privileges to perform those operations in LDAP.</p>
-<p>Speaking of LDAP…</p>
-<h3 id="ds-certificate-authentication">389 DS certificate authentication</h3>
-<p>In FreeIPA deployments, Dogtag is configured to use the subsystem certificate to bind (authenticate) to the LDAP server. If the subsystem certificate is expired, 389 DS will reject the certificate; the connection fails and and Dogtag cannot start.</p>
-<p>A workaround for this may be to temporarily reconfigure Dogtag to use a password to authenticate to LDAP. Then after the new subsystem certificate was issued, it must be added to the <code>pkidbuser</code> entry in LDAP, and certificate authentication reinstated.</p>
-<p>This is not a FreeIPA-specific consideration. Using TLS client authentication to bind to LDAP is a supported configuration in Dogtag / RHCS. So we should probably support it in <code>cert-fix</code> too, somehow, since the point of the tool is to avoid complex manual procedures in recovering from expired system certificates.</p>
-<h3 id="ds-service-certificate-expiry">389 DS service certificate expiry</h3>
-<p>You know the tune by now… if this certificate is expired, Dogtag can’t talk to LDAP and can’t start, therefore a new LDAP certificate can’t be issued.</p>
-<p>Issuing a temporary certificate with the same serial number may be the best way forward here, like what we do for the Dogtag HTTPS certificate.</p>
-<h3 id="re-keying">Re-keying</h3>
-<p>…is not supported. But it is a possible future enhancement</p>
-<h3 id="serial-number-reuse">Serial number reuse</h3>
-<p>Re-using a serial number is prohibited by the X.509 standard. Although the temporary re-issued HTTPS certificate is supposed to be temporary, what if it did leak out? For example, another client that contacted Dogtag while that certificate is in use could log it to a Certificate Transparency log (not a public one, unless your Dogtag CA is chained to a publicly trusted CA). If this occurred, there would be a record that the CA had misbehaved.</p>
-<p>What are the ramifications? If this happened in the public PKI, the offending CA would <em>at best</em> get a harsh and very public admonishment, and be put on notice. But trust store vendors might just straight up wash their hands of you and yank trust.</p>
-<p>In a private PKI is it such a big deal? Given our use case—the same subject names are used—probably not. But I leave it as an open topic to ponder how this might backfire.</p>
-<h2 id="conclusion">Conclusion</h2>
-<p>In this post I introduced the <code>pki-server cert-fix</code> subcommand. The purpose of this tool is to simplify and speed up recovery when Dogtag system certificates have expired.</p>
-<p>It does what it says on the tin, with a few rough edges and, right now, a lot of caveats. The fundamentals are very good, but I think we need to address number of these caveats for <code>cert-fix</code> to be generally useful, especially in a FreeIPA context. Based on my early experiences and investigation, my suggested priorities are:</p>
-<ol>
-<li>Workaround for when the agent certificate is expired. This can affect every kind of deployment and the reliance on a valid agent certificate is a significant limitation.</li>
-<li>Workaround for expired subsystem certificate when TLS client authentication is used to bind to LDAP. This affects all FreeIPA deployments (standalone Dogtag deployments less commonly).</li>
-<li>Support renewing the CA certificate in <code>cert-fix</code>. A degree of sanity checking or confirmation may be reasonable (e.g. it must be explicitly listed on the CLI as a <code>--cert</code> option).</li>
-<li>Investigate ways to handle expired LDAP certificate, if issued by Dogtag. In some deployments, including some FreeIPA deployments, the LDAP certificate is not issued by Dogtag, so the risk is not universal.</li>
-</ol>
-<p>In writing this post I by no means wish to diminish Dinesh’s work. On the contrary, I’m impressed with what the tool already can do! And, mea culpa, I have taken far too long to test this tool and evaluate it in a FreeIPA setting. Now that I have a clearer picture, I see that I will be very busy making the tool more capable and ready for action in FreeIPA scenarios.</p>]]></summary>
 </entry>
 
 </feed>
