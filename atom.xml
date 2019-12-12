@@ -8,8 +8,73 @@
         <name>Fraser Tweedale</name>
         <email>frase@frase.id.au</email>
     </author>
-    <updated>2019-12-06T00:00:00Z</updated>
+    <updated>2019-12-12T00:00:00Z</updated>
     <entry>
+    <title>Disabling Certmonger auto-renewal</title>
+    <link href="https://frasertweedale.github.io/blog-redhat/posts/2019-12-12-certmonger-disable-auto-renew.html" />
+    <id>https://frasertweedale.github.io/blog-redhat/posts/2019-12-12-certmonger-disable-auto-renew.html</id>
+    <published>2019-12-12T00:00:00Z</published>
+    <updated>2019-12-12T00:00:00Z</updated>
+    <summary type="html"><![CDATA[<h1 id="disabling-certmonger-auto-renewal">Disabling Certmonger auto-renewal</h1>
+<p>A customer recently asked how to disable Certmonger auto-renewal of some FreeIPA system certificates. Their organisation’s security policy prohibited auto-renewal. (This is not a good idea in general, but this was a very security-conscious organisation so I’ll assume they have good reasons).</p>
+<p>One way to achieve this is to remove the Certmonger tracking requests via <code>getcert stop-tracking</code>. But when it comes time to renew the certificate, this makes life hard. The Certmonger tracking requests are set up to:</p>
+<ul>
+<li>Use the correct renewal helpers to issue the certificate properly</li>
+<li>Store the certificate in the correct place</li>
+<li>Copy the certificate to particular LDAP entries to ensure the FreeIPA system continues to function</li>
+</ul>
+<p>Removing the tracking request means that you have to do all the above tasks yourself. And the steps differ depending on the certificate being renewed. There are many ways to mess up.</p>
+<p>A better approach is to keep the Certmonger tracking requests defined, but disable auto-renewal. It is not obvious that you can even do this, let alone <em>how</em> to do it. And that is why I wrote this post. The command is:</p>
+<pre><code># getcert start-tracking -i $REQUEST_ID --no-renew</code></pre>
+<p>Don’t let the name <code>start-tracking</code> trick you. If you supply <code>-i $REQUEST_ID</code> this command will modify the existing request. With auto-renewal disabled, to renew the certificate you must manually trigger it via:</p>
+<pre><code># getcert resubmit -i $REQUEST_ID</code></pre>
+<p>If you want to reenable auto-renewal, use the <code>--renew</code> flag:</p>
+<pre><code># getcert start-tracking -i $REQUEST_ID --renew</code></pre>
+<p>The following transcript deals with the IPA RA agent certificate tracking request. We first disable auto-renewal, then manually renew the certificate, and finally reenable auto-renewal.</p>
+<pre><code># getcert list -i 20191206060652                                                                                                                        [6/38]
+Number of certificates and requests being tracked: 9.           
+Request ID &#39;20191206060652&#39;:                                                          
+        status: MONITORING                                                            
+        stuck: no                                                                     
+        key pair storage: type=FILE,location=&#39;/var/lib/ipa/ra-agent.key&#39;
+        certificate: type=FILE,location=&#39;/var/lib/ipa/ra-agent.pem&#39;
+        CA: dogtag-ipa-ca-renew-agent
+        issuer: CN=Certificate Authority,O=IPA ACME 201912061604
+        subject: CN=IPA RA,O=IPA ACME 201912061604                                                                                                                           
+        expires: 2021-11-25 17:06:54 AEDT
+        key usage: digitalSignature,keyEncipherment,dataEncipherment
+        eku: id-kp-clientAuth
+        pre-save command: /usr/libexec/ipa/certmonger/renew_ra_cert_pre
+        post-save command: /usr/libexec/ipa/certmonger/renew_ra_cert
+        track: yes
+        auto-renew: yes
+
+# getcert start-tracking -i 20191206060652 --no-renew
+Request &quot;20191206060652&quot; modified.
+
+# getcert list -i 20191206060652 |grep auto-renew                       
+        auto-renew: no
+
+# openssl x509 -serial &lt; /var/lib/ipa/ra-agent.pem
+serial=07
+
+# getcert resubmit -i 20191206060652
+Resubmitting &quot;20191206060652&quot; to &quot;dogtag-ipa-ca-renew-agent&quot;.
+
+# getcert list -i 20191206060652 |grep status
+        status: MONITORING
+
+# openssl x509 -serial -noout &lt; /var/lib/ipa/ra-agent.pem
+serial=0B
+
+# getcert start-tracking -i 20191206060652 --renew
+Request &quot;20191206060652&quot; modified.
+
+# getcert list -i 20191206060652 |grep auto-renew
+        auto-renew: yes</code></pre>
+<p>A final note. I used the long form <code>--[no-]renew</code> options. I prefer long options because they are usually easier for readers (including <em>future me</em>) to understand. But <code>getcert-start-tracking(1)</code> and other Certmonger man pages don’t even mention the long options. The corresponding short options are <code>-r</code> (enable auto-renew) and <code>-R</code> (disable auto-renew).</p>]]></summary>
+</entry>
+<entry>
     <title>Plans for ACME support in FreeIPA</title>
     <link href="https://frasertweedale.github.io/blog-redhat/posts/2019-12-06-freeipa-acme-plans.html" />
     <id>https://frasertweedale.github.io/blog-redhat/posts/2019-12-06-freeipa-acme-plans.html</id>
@@ -1395,147 +1460,6 @@ INFO: Starting the instance with renewed certs</code></pre>
 <p>More extensive testing of the tool is needed for renewing system certificates for other Dogtag subsystems—in particular the KRA subsystem.</p>
 <p>The enhancements discussed in this post make the <code>cert-fix</code> tool a viable MVP for expired certificate recovery without time-travel. The enhancements are still in review, yet to be merged. That will hopefully happen soon (within a day or so of this post). We are also making a significant effort to backport <code>cert-fix</code> to some earlier branches and make it available on older releases.</p>
 <p>As mentioned earlier in the post, we intend to implement a FreeIPA-specific wrapper for <code>cert-fix</code> that can take care of the additional steps required to renew and deploy expired certificates that are part of the FreeIPA system, but are not Dogtag system certificates handled directly by <code>cert-fix</code>. These include LDAP and Apache HTTPD certificates, the IPA RA agent certificate and the Kerberos PKINIT certificate.</p>]]></summary>
-</entry>
-<entry>
-    <title>Customising Dogtag system certificate lifetimes</title>
-    <link href="https://frasertweedale.github.io/blog-redhat/posts/2019-03-04-dogtag-system-cert-lifetime.html" />
-    <id>https://frasertweedale.github.io/blog-redhat/posts/2019-03-04-dogtag-system-cert-lifetime.html</id>
-    <published>2019-03-04T00:00:00Z</published>
-    <updated>2019-03-04T00:00:00Z</updated>
-    <summary type="html"><![CDATA[<h1 id="customising-dogtag-system-certificate-lifetimes">Customising Dogtag system certificate lifetimes</h1>
-<p>Default certificate lifetimes in Dogtag are 20 years for the CA certificate (when self-signed) and about 2 years for other system certificates. These defaults also apply to FreeIPA. It can be desirable to have shorter certificate lifetimes. And although I wouldn’t recommend to use <em>longer</em> lifetimes, people sometimes want that.</p>
-<p>There is no <em>supported</em> mechanism for customising system certificate validity duration during Dogtag or FreeIPA installation. But it can be done. In this post I’ll explain how.</p>
-<h2 id="profile-configuration-files">Profile configuration files</h2>
-<p>During installation, profile configurations are copied from the RPM install locations under <code>/usr/share</code> to the new Dogtag instance’s configuration directory. If the LDAP profile subsystem is used (FreeIPA uses it) they are further copied from the instance configuration directory into the LDAP database.</p>
-<p>There is no facility or opportunity to modify the profiles during installation. So if you want to customise the certificate lifetimes, you have to modify the files under <code>/usr/share</code>.</p>
-<p>There are two directories that contain profile configurations:</p>
-<dl>
-<dt><code>/usr/share/pki/ca/profiles/ca/*.cfg</code></dt>
-<dd><p>These profile configurations are available during general operation.</p>
-</dd>
-<dt><code>/usr/share/pki/ca/conf/*.profile</code></dt>
-<dd><p>These <em>overlay</em> configurations used during installation when issuing system certificates. Each configuration references an underlying profile and can override or extend the configuration.</p>
-</dd>
-<dt><code>/usr/share/ipa/profiles/*.cfg</code></dt>
-<dd><p>Profiles that are shipped by FreeIPA and imported into Dogtag are defined here. The configurations for the LDAP, Apache HTTPS and KDC certificates are found here.</p>
-</dd>
-</dl>
-<p>I’ll explain which configuration file is used for which certificate later on in this post.</p>
-<h2 id="specifying-the-validity-period">Specifying the validity period</h2>
-<p>The configuration field for setting the validity period are:</p>
-<pre><code>&lt;component&gt;.default.params.range=720
-&lt;component&gt;.constraint.params.range=720</code></pre>
-<p>where <code>&lt;component&gt;</code> is some key, usually a numeric index, that may be different for different profiles. The actual profile component classes are <code>ValidityDefault</code> and <code>ValidityConstraint</code>, or <code>{CA,User}Validity{Default,Constraint}</code> for some profiles.</p>
-<p>The <code>default</code> component sets the default validity period for this profile, whereas the constraint sets the <em>maximum</em> duration in case the user overrides it. Note that if an override configuration overrides the <code>default</code> value such that it exceeds the <code>constraint</code> specified in the underlying configuration, issuance will fail due to constraint violation. It is usually best to specify both the <code>default</code> and <code>constraint</code> together, with the same value.</p>
-<p>The default range unit is <code>day</code>, so the configuration above means <em>720 days</em>. Use the <code>rangeUnit</code> parameter to specify a different unit. The supported units are <code>year</code>, <code>month</code>, <code>day</code>, <code>hour</code> and <code>minute</code>. For example:</p>
-<pre><code>&lt;component&gt;.default.params.range=3
-&lt;component&gt;.default.params.rangeUnit=month
-&lt;component&gt;.constraint.params.range=3
-&lt;component&gt;.constraint.params.rangeUnit=month</code></pre>
-<h2 id="which-configuration-for-which-certificate">Which configuration for which certificate?</h2>
-<dl>
-<dt>CA certificate (when self-signed)</dt>
-<dd><p><code>/usr/share/pki/ca/conf/caCert.profile</code></p>
-</dd>
-<dt>OCSP signing certificate</dt>
-<dd><p><code>/usr/share/pki/ca/conf/caOCSPCert.profile</code></p>
-</dd>
-<dt>Subsystem certificate</dt>
-<dd><p><code>/usr/share/pki/ca/conf/rsaSubsystemCert.profile</code> when using RSA keys (the default)</p>
-</dd>
-<dt>Dogtag HTTPS certificate</dt>
-<dd><p><code>/usr/share/pki/ca/conf/rsaServerCert.profile</code> when using RSA keys (the default)</p>
-</dd>
-<dt>Audit signing</dt>
-<dd><p><code>/usr/share/pki/ca/conf/caAuditSigningCert.profile</code></p>
-</dd>
-<dt>IPA RA agent (FreeIPA-specific)</dt>
-<dd><p><code>/usr/share/pki/ca/profiles/ca/caServerCert.cfg</code></p>
-</dd>
-<dt>Apache and LDAP certificates (FreeIPA-specific)</dt>
-<dd><p><code>/usr/share/ipa/profiles/caIPAserviceCert.cfg</code></p>
-</dd>
-<dt>KDC certificate (FreeIPA-specific)</dt>
-<dd><p><code>/usr/share/ipa/profiles/KDCs_PKINIT_Certs.cfg</code></p>
-</dd>
-</dl>
-<h2 id="testing">Testing</h2>
-<p>I made changes to the files mentioned above, so that certificates would be issued with the following validity periods:</p>
-<table>
-<tbody>
-<tr class="odd">
-<td>CA</td>
-<td>5 years</td>
-</tr>
-<tr class="even">
-<td>OCSP</td>
-<td>1 year</td>
-</tr>
-<tr class="odd">
-<td>Subsystem</td>
-<td>6 months</td>
-</tr>
-<tr class="even">
-<td>HTTPS</td>
-<td>3 months</td>
-</tr>
-<tr class="odd">
-<td>Audit</td>
-<td>1 year</td>
-</tr>
-<tr class="even">
-<td>IPA RA</td>
-<td>15 months</td>
-</tr>
-<tr class="odd">
-<td>Apache</td>
-<td>4 months</td>
-</tr>
-<tr class="even">
-<td>LDAP</td>
-<td>4 months</td>
-</tr>
-<tr class="odd">
-<td>KDC</td>
-<td>18 months</td>
-</tr>
-</tbody>
-</table>
-<p>I installed FreeIPA (with a self-signed CA). After installation completed, I had a look at the certificates that were being tracked by Certmonger. For reference, the installation took place on March 4, 2019 (<strong>2019-03-04</strong>).</p>
-<pre><code># getcert list |egrep &#39;^Request|certificate:|expires:&#39;
-Request ID &#39;20190304044028&#39;:
-  certificate: type=FILE,location=&#39;/var/lib/ipa/ra-agent.pem&#39;
-  expires: 2020-06-04 15:40:30 AEST
-Request ID &#39;20190304044116&#39;:
-  certificate: type=NSSDB,location=&#39;/etc/pki/pki-tomcat/alias&#39;,nickname=&#39;auditSigningCert cert-pki-ca&#39;,token=&#39;NSS Certificate DB&#39;
-  expires: 2020-03-04 15:39:53 AEDT
-Request ID &#39;20190304044117&#39;:
-  certificate: type=NSSDB,location=&#39;/etc/pki/pki-tomcat/alias&#39;,nickname=&#39;ocspSigningCert cert-pki-ca&#39;,token=&#39;NSS Certificate DB&#39;
-  expires: 2020-03-04 15:39:53 AEDT
-Request ID &#39;20190304044118&#39;:
-  certificate: type=NSSDB,location=&#39;/etc/pki/pki-tomcat/alias&#39;,nickname=&#39;subsystemCert cert-pki-ca&#39;,token=&#39;NSS Certificate DB&#39;
-  expires: 2019-09-04 15:39:53 AEST
-Request ID &#39;20190304044119&#39;:
-  certificate: type=NSSDB,location=&#39;/etc/pki/pki-tomcat/alias&#39;,nickname=&#39;caSigningCert cert-pki-ca&#39;,token=&#39;NSS Certificate DB&#39;
-  expires: 2024-03-04 15:39:51 AEDT
-Request ID &#39;20190304044120&#39;:
-  certificate: type=NSSDB,location=&#39;/etc/pki/pki-tomcat/alias&#39;,nickname=&#39;Server-Cert cert-pki-ca&#39;,token=&#39;NSS Certificate DB&#39;
-  expires: 2019-06-04 15:39:53 AEST
-Request ID &#39;20190304044151&#39;:
-  certificate: type=NSSDB,location=&#39;/etc/dirsrv/slapd-IPA-LOCAL&#39;,nickname=&#39;Server-Cert&#39;,token=&#39;NSS Certificate DB&#39;
-  expires: 2019-07-04 15:41:52 AEST
-Request ID &#39;20190304044225&#39;:
-  certificate: type=FILE,location=&#39;/var/lib/ipa/certs/httpd.crt&#39;
-  expires: 2019-07-04 15:42:26 AEST
-Request ID &#39;20190304044234&#39;:
-  certificate: type=FILE,location=&#39;/var/kerberos/krb5kdc/kdc.crt&#39;
-  expires: 2020-09-04 15:42:34 AEST</code></pre>
-<p>Observe that the certificate have the intended periods.</p>
-<h2 id="discussion">Discussion</h2>
-<p>The procedure outlined in this post is not officially supported, and not recommended. But the desire to choose different validity periods is sometimes justified, especially for the CA certificate. So should FreeIPA allow customisation of the system certificate validity periods? To what extent?</p>
-<p>We need to reduce the default CA validity from 20 years, given the 2048-bit key size. (There is a separate issue to support generating a larger CA signing key, too). Whether the CA validity period should be configurable is another question. My personal opinion is that it makes sense to allow the customer to choose the CA lifetime.</p>
-<p>For system certificates, I think that customers should just accept the defaults. PKI systems are trending to shorter lifetimes for end-entity certificates, which is a good thing. For FreeIPA, unfortunately we are still dealing with a lot of certificate renewal issues that arise from the complex architecture. Until we are confident in the robustness of the renewal system, and have observed a reduction in customer issues, it would be a mistake to substantially reduce the validity period for system certificates. Likewise, it is not yet a good idea to let customers choose the certificate validity periods.</p>
-<p>On the other hand, the team is considering changing the default validity period of system certificates <em>a little bit</em>, so that different certificates are on different renewal candences. This would simplify recovery in some scenarios: it is easier to recover when only <em>some</em> of the certificates expired, instead of <em>all</em> of them at once.</p>]]></summary>
 </entry>
 
 </feed>
