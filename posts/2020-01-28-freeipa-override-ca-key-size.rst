@@ -15,19 +15,30 @@ do this.
 
 As of FreeIPA 4.8 (RHEL 8.1; Fedora 30) there is an officially
 supported way to choose a different key size when installing
-FreeIPA.  It works for both self-signed and externally-signed CAs.
-It is done via the ``--pki-config-override`` option, which allows
-the server administrator to specify a file that sets or overrides
-Dogtag ``pkispawn(8)`` configuration directives.
-``pki_default.cfg(5)`` gives a comprehensive overview of the
-directives available, although not all of these are allowed to be
-overriden in a FreeIPA installation (``ipa-server-install`` itself
-checks the file for directives that are not allowed to be
-overridden).
+FreeIPA.  In this short post I will demonstrate how to do it.
+
+First, an admonition.  Choosing a larger key size can negatively
+affect performance, for both signing and verification (i.e. *all
+clients are affected*).  4096-bit RSA operations are twice as slow
+as 3072-bit RSA, but the bits of security grows at a smaller rate.
+3072-bit RSA has 128 bits of security, but 4096-bit RSA only
+increases your security to 140 bits.  For 256 bits of security you
+need a 15360-bit key.  In practice 3072-bit RSA is expected to be
+secure for at least another decade.
+
+With that out of the way, let's look at how to do it.  The procedure
+works for both self-signed and externally-signed CAs.  It is done
+via the ``--pki-config-override`` option, which allows the server
+administrator to specify a file that sets or overrides Dogtag
+``pkispawn(8)`` configuration directives.  ``pki_default.cfg(5)``
+gives a comprehensive overview of the directives available, although
+not all of these are allowed to be overriden in a FreeIPA
+installation (``ipa-server-install`` itself checks the file for
+directives that are not allowed to be overridden).
 
 Fortunately, override is allowed for the ``pki_ca_signing_key_size``
-directive.  Setting this to 4096 (or other sensible value) will have
-the desired effect, as the following transcript demonstrates::
+directive.  Setting this to 4096 (or some other sensible value) will
+have the desired effect, as the following transcript demonstrates::
 
   [root@rhel82-0 ~]# cat > pki_override.cfg <<EOF
   [CA]
