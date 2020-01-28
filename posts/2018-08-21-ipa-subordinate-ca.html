@@ -65,13 +65,13 @@ Profile configuration stored in file 'SubCA.cfg'
   Store issued certificates: TRUE</code></pre>
 <p>Perform the following edits to <code>SubCA.cfg</code>:</p>
 <ol>
-<li>Replace <code>profileId=caIPAserviceCert</code> with <code>profileId=SubCA</code>.</li>
+<li><p>Replace <code>profileId=caIPAserviceCert</code> with <code>profileId=SubCA</code>.</p></li>
 <li><p>Replace the <code>subjectNameDefaultImpl</code> component with the <code>userSubjectNameDefaultImpl</code> component. This will use the Subject DN from the CSR <em>as is</em>, without restriction:</p>
 <pre><code>policyset.serverCertSet.1.constraint.class_id=noConstraintImpl
 policyset.serverCertSet.1.constraint.name=No Constraint
 policyset.serverCertSet.1.default.class_id=userSubjectNameDefaultImpl
 policyset.serverCertSet.1.default.name=Subject Name Default</code></pre></li>
-<li>Edit the <code>keyUsageExtDefaultImpl</code> and <code>keyUsageExtConstraintImpl</code> configurations. They should have the following settings:
+<li><p>Edit the <code>keyUsageExtDefaultImpl</code> and <code>keyUsageExtConstraintImpl</code> configurations. They should have the following settings:</p>
 <ul>
 <li><code>keyUsageCrlSign=true</code></li>
 <li><code>keyUsageDataEncipherment=false</code></li>
@@ -99,7 +99,7 @@ policyset.serverCertSet.15.default.params.basicConstraintsPathLen=0</code></pre>
 <pre><code>policyset.serverCertSet.list=1,2,3,4,5,6,7,8,9,10,11,12,15</code></pre></li>
 <li><p>Remove the <code>commonNameToSANDefaultImpl</code> and <em>Extended Key Usage</em> related components. This can be accomplished by removing the relevant indices (in my case, <code>7</code> and <code>12</code>) from the component list:</p>
 <pre><code>policyset.serverCertSet.list=1,2,3,4,5,6,8,9,10,11,15</code></pre></li>
-<li>(<em>Optional</em>) edit the validity period in the <code>validityDefaultImpl</code> and <code>validityConstraintImpl</code> components. The default is 731 days. I did not change it.</li>
+<li><p>(<em>Optional</em>) edit the validity period in the <code>validityDefaultImpl</code> and <code>validityConstraintImpl</code> components. The default is 731 days. I did not change it.</p></li>
 </ol>
 <p>For the avoidance of doubt, the diff between the <code>caIPAserviceCert</code> profile configuration and <code>SubCA</code> is:</p>
 <pre><code>--- caIPAserviceCert.cfg        2018-08-21 12:44:01.748884778 +1000
@@ -285,6 +285,10 @@ Recent posts:
 <ul>
     
         <li>
+            <a href="../posts/2020-01-28-freeipa-override-ca-key-size.html">Deploying FreeIPA with a 4096-bit CA signing key</a>
+        </li>
+    
+        <li>
             <a href="../posts/2019-12-12-certmonger-disable-auto-renew.html">Disabling Certmonger auto-renewal</a>
         </li>
     
@@ -298,10 +302,6 @@ Recent posts:
     
         <li>
             <a href="../posts/2019-09-23-direct-integration-ipa-certs.html">Requesting certificates from FreeIPA on Active Directory clients</a>
-        </li>
-    
-        <li>
-            <a href="../posts/2019-08-02-validity-exceeding-ca.html">Certificates need not be limited to the CA’s validity period</a>
         </li>
     
 </ul>

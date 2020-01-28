@@ -504,8 +504,8 @@ Restarting the KDC</code></pre>
 <pre><code># rm -fv /var/lib/ipa/ra-agent.*
 removed '/var/lib/ipa/ra-agent.key'
 removed '/var/lib/ipa/ra-agent.pem'</code></pre></li>
-<li>Run <code>ipa-certupdate</code>.</li>
-<li>Run <code>ipa-ca-install</code>.</li>
+<li><p>Run <code>ipa-certupdate</code>.</p></li>
+<li><p>Run <code>ipa-ca-install</code>.</p></li>
 </ol>
 <h2 id="conclusion">Conclusion</h2>
 <p>The procedure developed in this post should cover most cases of CA installation failure or loss of the only CA master in a deployment. Inevitably the differences between versions of FreeIPA mean that the procedure may vary, depending on which version(s) you are using.</p>
@@ -517,6 +517,10 @@ removed '/var/lib/ipa/ra-agent.pem'</code></pre></li>
     <div id="recent">
 Recent posts:
 <ul>
+    
+        <li>
+            <a href="../posts/2020-01-28-freeipa-override-ca-key-size.html">Deploying FreeIPA with a 4096-bit CA signing key</a>
+        </li>
     
         <li>
             <a href="../posts/2019-12-12-certmonger-disable-auto-renew.html">Disabling Certmonger auto-renewal</a>
@@ -532,10 +536,6 @@ Recent posts:
     
         <li>
             <a href="../posts/2019-09-23-direct-integration-ipa-certs.html">Requesting certificates from FreeIPA on Active Directory clients</a>
-        </li>
-    
-        <li>
-            <a href="../posts/2019-08-02-validity-exceeding-ca.html">Certificates need not be limited to the CA’s validity period</a>
         </li>
     
 </ul>

@@ -1,0 +1,122 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+    <head>
+        <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+        <title>Fraser's IdM Blog - Deploying FreeIPA with a 4096-bit CA signing key</title>
+        <link rel="stylesheet" type="text/css" href="../css/default.css" />
+    </head>
+    <body>
+        <div id="header">
+            <div id="logo">
+                <a href="../">Fraser's IdM Blog</a>
+            </div>
+            <div id="navigation">
+                <a href="../">Home</a>
+                <a href="../archive.html">Archive</a>
+            </div>
+        </div>
+
+        <div id="content">
+            <div class="info">
+    
+    Tags: <a href="../tags/certificates.html">certificates</a>, <a href="../tags/freeipa.html">freeipa</a>, <a href="../tags/howto.html">howto</a>
+    
+</div>
+
+<div id="postContent">
+    <h1 id="deploying-freeipa-with-a-4096-bit-ca-signing-key">Deploying FreeIPA with a 4096-bit CA signing key</h1>
+<p>Recent versions of FreeIPA create a 3072-bit CA signing key by default. Older versions used 2048-bit signing keys. Until recently, there was no supported way to deploy FreeIPA with a larger signing key. It was an open secret that you could hack a single file to change the key size when deploying, and everything would work just fine. But still, it was not supported or recommended to do this.</p>
+<p>As of FreeIPA 4.8 (RHEL 8.1; Fedora 30) there is an officially supported way to choose a different key size when installing FreeIPA. It works for both self-signed and externally-signed CAs. It is done via the <code>--pki-config-override</code> option, which allows the server administrator to specify a file that sets or overrides Dogtag <code>pkispawn(8)</code> configuration directives. <code>pki_default.cfg(5)</code> gives a comprehensive overview of the directives available, although not all of these are allowed to be overriden in a FreeIPA installation (<code>ipa-server-install</code> itself checks the file for directives that are not allowed to be overridden).</p>
+<p>Fortunately, override is allowed for the <code>pki_ca_signing_key_size</code> directive. Setting this to 4096 (or other sensible value) will have the desired effect, as the following transcript demonstrates:</p>
+<pre><code>[root@rhel82-0 ~]# cat &gt; pki_override.cfg &lt;&lt;EOF
+[CA]
+pki_ca_signing_key_size=4096
+EOF
+
+[root@rhel82-0 ~]# ipa-server-install \
+    --unattended \
+    --realm IPA.LOCAL \
+    --ds-password &quot;$DM_PASS&quot; --admin-password &quot;$ADMIN_PASS&quot; \
+    --external-ca \
+    --pki-config-override $PWD/pki_override.cfg
+
+... stuff happens ...
+
+  [1/10]: configuring certificate server instance
+The next step is to get /root/ipa.csr signed by your
+CA and re-run /usr/sbin/ipa-server-install as:
+/usr/sbin/ipa-server-install \
+  --external-cert-file=/path/to/signed_certificate \
+  --external-cert-file=/path/to/external_ca_certificate
+The ipa-server-install command was successful
+
+[root@rhel82-0 ~]# openssl req -text &lt; /root/ipa.csr | head
+Certificate Request:
+    Data:
+        Version: 1 (0x0)
+        Subject: O = IPA.LOCAL, CN = Certificate Authority
+        Subject Public Key Info:
+            Public Key Algorithm: rsaEncryption
+                RSA Public-Key: (4096 bit)
+                Modulus:
+                    00:c6:05:36:7b:28:c6:03:19:19:91:d3:e9:31:28:
+                    5f:50:ab:60:a4:e8:fa:09:ba:5d:a1:25:53:cf:74:</code></pre>
+<p>The key size is 4096-bit, as expected. Had the <code>--external-ca</code> option <em>not</em> been provided a 4096-bit self-signed CA would have been created and the installation would have run to completion.</p>
+</div>
+<div id="postFooter">
+    <div id="recent">
+Recent posts:
+<ul>
+    
+        <li>
+            <a href="../posts/2020-01-28-freeipa-override-ca-key-size.html">Deploying FreeIPA with a 4096-bit CA signing key</a>
+        </li>
+    
+        <li>
+            <a href="../posts/2019-12-12-certmonger-disable-auto-renew.html">Disabling Certmonger auto-renewal</a>
+        </li>
+    
+        <li>
+            <a href="../posts/2019-12-06-freeipa-acme-plans.html">Plans for ACME support in FreeIPA</a>
+        </li>
+    
+        <li>
+            <a href="../posts/2019-10-24-removing-ipa-ca.html">Removing the CA from a FreeIPA deployment</a>
+        </li>
+    
+        <li>
+            <a href="../posts/2019-09-23-direct-integration-ipa-certs.html">Requesting certificates from FreeIPA on Active Directory clients</a>
+        </li>
+    
+</ul>
+
+<div id="recentLinks">
+    <a type="application/atom+xml" href="../atom.xml">Atom feed</a>
+     <!-- em space -->
+    <a href="../archive.html">All posts…</a>
+</div>
+
+</div>
+
+    <div id="license">
+    <a rel="license" href="https://creativecommons.org/licenses/by/4.0/">
+        <img alt="Creative Commons License" style="border-width:0" src="https://licensebuttons.net/l/by/4.0/88x31.png">
+    </a>
+    <br />
+    Except where otherwise noted, this work is licensed under a
+    <a rel="license" href="https://creativecommons.org/licenses/by/4.0/">
+        Creative Commons Attribution 4.0 International License
+    </a>.
+</div>
+
+</div>
+
+        </div>
+        <div class="clear"></div>
+        <div id="footer">
+            Generated by
+            <a href="https://jaspervdj.be/hakyll">Hakyll</a>
+        </div>
+    </body>
+</html>

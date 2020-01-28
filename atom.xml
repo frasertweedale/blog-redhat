@@ -8,8 +8,53 @@
         <name>Fraser Tweedale</name>
         <email>frase@frase.id.au</email>
     </author>
-    <updated>2019-12-12T00:00:00Z</updated>
+    <updated>2020-01-28T00:00:00Z</updated>
     <entry>
+    <title>Deploying FreeIPA with a 4096-bit CA signing key</title>
+    <link href="https://frasertweedale.github.io/blog-redhat/posts/2020-01-28-freeipa-override-ca-key-size.html" />
+    <id>https://frasertweedale.github.io/blog-redhat/posts/2020-01-28-freeipa-override-ca-key-size.html</id>
+    <published>2020-01-28T00:00:00Z</published>
+    <updated>2020-01-28T00:00:00Z</updated>
+    <summary type="html"><![CDATA[<h1 id="deploying-freeipa-with-a-4096-bit-ca-signing-key">Deploying FreeIPA with a 4096-bit CA signing key</h1>
+<p>Recent versions of FreeIPA create a 3072-bit CA signing key by default. Older versions used 2048-bit signing keys. Until recently, there was no supported way to deploy FreeIPA with a larger signing key. It was an open secret that you could hack a single file to change the key size when deploying, and everything would work just fine. But still, it was not supported or recommended to do this.</p>
+<p>As of FreeIPA 4.8 (RHEL 8.1; Fedora 30) there is an officially supported way to choose a different key size when installing FreeIPA. It works for both self-signed and externally-signed CAs. It is done via the <code>--pki-config-override</code> option, which allows the server administrator to specify a file that sets or overrides Dogtag <code>pkispawn(8)</code> configuration directives. <code>pki_default.cfg(5)</code> gives a comprehensive overview of the directives available, although not all of these are allowed to be overriden in a FreeIPA installation (<code>ipa-server-install</code> itself checks the file for directives that are not allowed to be overridden).</p>
+<p>Fortunately, override is allowed for the <code>pki_ca_signing_key_size</code> directive. Setting this to 4096 (or other sensible value) will have the desired effect, as the following transcript demonstrates:</p>
+<pre><code>[root@rhel82-0 ~]# cat &gt; pki_override.cfg &lt;&lt;EOF
+[CA]
+pki_ca_signing_key_size=4096
+EOF
+
+[root@rhel82-0 ~]# ipa-server-install \
+    --unattended \
+    --realm IPA.LOCAL \
+    --ds-password &quot;$DM_PASS&quot; --admin-password &quot;$ADMIN_PASS&quot; \
+    --external-ca \
+    --pki-config-override $PWD/pki_override.cfg
+
+... stuff happens ...
+
+  [1/10]: configuring certificate server instance
+The next step is to get /root/ipa.csr signed by your
+CA and re-run /usr/sbin/ipa-server-install as:
+/usr/sbin/ipa-server-install \
+  --external-cert-file=/path/to/signed_certificate \
+  --external-cert-file=/path/to/external_ca_certificate
+The ipa-server-install command was successful
+
+[root@rhel82-0 ~]# openssl req -text &lt; /root/ipa.csr | head
+Certificate Request:
+    Data:
+        Version: 1 (0x0)
+        Subject: O = IPA.LOCAL, CN = Certificate Authority
+        Subject Public Key Info:
+            Public Key Algorithm: rsaEncryption
+                RSA Public-Key: (4096 bit)
+                Modulus:
+                    00:c6:05:36:7b:28:c6:03:19:19:91:d3:e9:31:28:
+                    5f:50:ab:60:a4:e8:fa:09:ba:5d:a1:25:53:cf:74:</code></pre>
+<p>The key size is 4096-bit, as expected. Had the <code>--external-ca</code> option <em>not</em> been provided a 4096-bit self-signed CA would have been created and the installation would have run to completion.</p>]]></summary>
+</entry>
+<entry>
     <title>Disabling Certmonger auto-renewal</title>
     <link href="https://frasertweedale.github.io/blog-redhat/posts/2019-12-12-certmonger-disable-auto-renew.html" />
     <id>https://frasertweedale.github.io/blog-redhat/posts/2019-12-12-certmonger-disable-auto-renew.html</id>
@@ -1341,125 +1386,6 @@ The ipa-cert-fix command was successful</code></pre>
 <h2 id="feature-status">Feature status</h2>
 <p>Against the usual procedure for FreeIPA (and Red Hat projects in general), <code>ipa-cert-fix</code> was developed “downstream-first”. It has been merged to the <code>ipa-4-6</code> branch, but there might not even be another upstream release from that branch. But there might be a future RHEL release based on that branch (the savvy reader might infer a high degree of certainty, given we actually bothered to do that…)</p>
 <p>In the meantime, work to forward-port the feature to <code>master</code> and newer branches is ongoing. I hope that it will be merged in the next week or so.</p>]]></summary>
-</entry>
-<entry>
-    <title><code>cert-fix</code> redux</title>
-    <link href="https://frasertweedale.github.io/blog-redhat/posts/2019-03-18-cert-fix-redux.html" />
-    <id>https://frasertweedale.github.io/blog-redhat/posts/2019-03-18-cert-fix-redux.html</id>
-    <published>2019-03-18T00:00:00Z</published>
-    <updated>2019-03-18T00:00:00Z</updated>
-    <summary type="html"><![CDATA[<h1 id="cert-fix-redux"><code>cert-fix</code> redux</h1>
-<p><a href="2019-02-28-dogtag-cert-fix.html">A few weeks ago I analysed</a> the Dogtag <code>pki-server cert-fix</code> tool, which is intended to assist with recovery in scenarios where expired certificates inhibit Dogtag’s normal operation. Unfortunately, there were some flawed assumptions and feature gaps that limited the usefulness of the tool, especially in FreeIPA contexts.</p>
-<p>In this post, I provide an update on changes that are being made to the tool to address those shortcomings.</p>
-<h2 id="recap">Recap</h2>
-<p>Recapping the shortcomings in brief:</p>
-<ol type="1">
-<li>When TLS client certificate authentication is used to authenticate to Dogtag (the default for FreeIPA), and expired <code>subsystem</code> certificate causes authentication failure and Dogtag cannot start.</li>
-<li>When Dogtag is configured to use TLS or STARTTLS when connecting to the database, an expired LDAP service certificate causes connection failure.</li>
-<li><code>cert-fix</code> uses an admin or agent certificate to perform authenticated operations against Dogtag. An expired certificate causes authentication failure, and certificate renewal fails.</li>
-<li>Expired CA certificate is not handled. Due to longer validity periods, and externally-signed CA certificates expiring at different times from Dogtag system certificates, this scenario is less common, but it still occurs.</li>
-<li>The need to renew non-system certificates. Apart from system certificates, in order for correct operation of Dogtag it may be necessary to renew some other certificates, such as an expired LDAP service certificate, or an expired agent certificate (e.g. <code>IPA RA</code>). <code>cert-fix</code> did not provide a way to do this.</li>
-</ol>
-<h2 id="resolving-the-ldap-related-issues-issues-1-and-2">Resolving the LDAP-related issues (issues #1 and #2)</h2>
-<p><code>cert-fix</code> now switches the deployment to use password authentication to LDAP, over an insecure connection on port 389. The original database configuration is restored when <code>cert-fix</code> finishes.</p>
-<p>The <code>subsystem</code> certificate is used by Dogtag to authenticate to LDAP. Switching to password authentication works around the expired <code>subsystem</code> certificate. Furthermore if the <code>subsystem</code> certificate gets renewed, the new certificate gets imported into the <code>pkidbuser</code> LDAP entry so that authentication will work (389 DS requires an exact certificate match in the <code>userCertificate</code> attribute of the user).</p>
-<p>If the LDAP service certificate is expired, this procedure works around that but <em>does not renew it</em>. This is problem #3, and is addressed separately.</p>
-<p>Switching Dogtag to password authentication to LDAP means resetting the <code>pkidbuser</code> account password. We use the <code>ldappasswd</code> program to do this. The LDAP <em>password modify</em> extended operation requires confientiality (i.e. TLS or STARTTLS); an expired LDAP service certificate inhibits this. Therefore we use LDAPI and autobind. The LDAPI socket is specified via the <code>--ldapi-socket</code> option.</p>
-<p>FreeIPA always configures LDAP and <code>root</code> autobind to the <code>cn=Directory Manager</code> LDAP account. For standalone Dogtag installations these may need to be configured before runnning <code>cert-fix</code>.</p>
-<h2 id="resolving-expired-agent-certificate-issue-3">Resolving expired agent certificate (issue #3)</h2>
-<p>Instead of using the certificate to authenticate the agent, reset the password of the agent account and use that password to authenticate the agent. The password is randomly generated and forgotten after <code>cert-fix</code> terminates.</p>
-<p>The agent account to use is now specified via the <code>--agent-uid</code> option. NSSDB-related options for specifying the agent certificate and NSSDB passphrase have been removed.</p>
-<h2 id="renewing-other-certificates-issue-5">Renewing other certificates (issue #5)</h2>
-<p><code>cert-fix</code> learned the <code>--extra-cert</code> option, which gives the serial number of an extra certificate to renew. The option can be given multiple times to specify multiple certificates. Each certificate gets renewed and output in <code>/etc/pki/&lt;instance-dir&gt;/certs/&lt;serial&gt;-renewed.crt</code>. If a non-existing serial number is specified, an error is printed but processing continues.</p>
-<p>This facility allows operators (or wrapper tools) to renew other essential certificates alongside the Dogtag system certificates. Further actions are needed to put those new certificates in the right places. But it is fair, in order to keep to keep the <code>cert-fix</code> tool simple, to put this burden back on the operator. In any case, we intend to write a supplementary tool for FreeIPA that wraps <code>cert-fix</code> and takes care of working out which extra certificates to renew, and putting them in the right places.</p>
-<h2 id="new-or-changed-assumptions">New or changed assumptions</h2>
-<p>The changes dicsussed above abolish some assumptions that were previously made by <code>cert-fix</code>, and establish some new assumptions.</p>
-<p>Absolished:</p>
-<ul>
-<li>A valid admin certificate is no longer needed</li>
-<li>A valid LDAP service certificate is no longer needed</li>
-<li>When Dogtag is configured to use certificate authentication to LDAP, a valid subsystem certificate is no longer needed</li>
-</ul>
-<p>New:</p>
-<ul>
-<li><code>cert-fix</code> must be run as <code>root</code>.</li>
-<li>LDAPI must be configured, with <code>root</code> autobinding to <code>cn=Directory Manager</code> or other account with privileges on <code>o=ipaca</code> subtree, including password reset privileges.</li>
-<li>The password of the specified agent account will be reset. If needed, it can be changed back afterwards (manually; successful execution of <code>cert-fix</code> proves that the operator has privileges to do this).</li>
-<li>If Dogtag was configured to use TLS certificate authentication to bind to LDAP, the password on the <code>pkidbuser</code> account will be reset. (If password authentication was already used, the password does not get reset).</li>
-<li>LDAPI (ldappasswd) and need to be root</li>
-</ul>
-<h2 id="demo">Demo</h2>
-<p>Here I’ll put the full command and command output for an execution of the <code>cert-fix</code> tool, and break it up with commentary. I will renew the <code>subsystem</code> certificate, and additionally the certificate with serial number 29 (which happens to be the LDAP certificate):</p>
-<pre><code>[root@f27-1 ~]# pki-server cert-fix \
-    --agent-uid admin \
-    --ldapi-socket /var/run/slapd-IPA-LOCAL.socket \
-    --cert subsystem \
-    --extra-cert 29</code></pre>
-<p>There is no longer any need to set up an NSSDB with an agent certificate, a considerable UX improvement! An further improvement was to default the log verbosity to <code>INFO</code>, so we can see progress and observe (at a high level) what the <code>cert-fix</code> is doing, without specifying <code>-v</code> / <code>--verbose</code>.</p>
-<pre><code>INFO: Loading password config: /etc/pki/pki-tomcat/password.conf
-INFO: Fixing the following system certs: [&#39;subsystem&#39;]
-INFO: Renewing the following additional certs: [&#39;29&#39;]
-SASL/EXTERNAL authentication started
-SASL username: gidNumber=0+uidNumber=0,cn=peercred,cn=external,cn=auth
-SASL SSF: 0</code></pre>
-<p>Preliminaries. The tool loads information about the Dogtag instance, states its intentions and verifies that it can authenticate to LDAP.</p>
-<pre><code>INFO: Stopping the instance to proceed with system cert renewal
-INFO: Configuring LDAP password authentication
-INFO: Setting pkidbuser password via ldappasswd
-SASL/EXTERNAL authentication started
-SASL username: gidNumber=0+uidNumber=0,cn=peercred,cn=external,cn=auth
-SASL SSF: 0
-INFO: Selftests disabled for subsystems: ca
-INFO: Resetting password for uid=admin,ou=people,o=ipaca
-SASL/EXTERNAL authentication started
-SASL username: gidNumber=0+uidNumber=0,cn=peercred,cn=external,cn=auth
-SASL SSF: 0</code></pre>
-<p><code>cert-fix</code> stopped Dogtag, changed the database connection configuration, reset the agent password and suppressed the Dogtag self-tests.</p>
-<pre><code>INFO: Starting the instance
-INFO: Sleeping for 10 seconds to allow server time to start...</code></pre>
-<p><code>cert-fix</code> starts Dogtag then sleeps for a bit. The sleep was added to avoid races against Dogtag startup that sometimes caused the tool to fail. It’s a bit of a hack, but 10 seconds should <em>hopefully</em> be enough.</p>
-<pre><code>INFO: Requesting new cert for subsystem
-INFO: Getting subsystem cert info for ca
-INFO: Trying to setup a secure connection to CA subsystem.
-INFO: Secure connection with CA is established.
-INFO: Placing cert creation request for serial: 34
-INFO: Request ID: 38
-INFO: Request Status: complete
-INFO: Serial Number: 0x26
-INFO: Issuer: CN=Certificate Authority,O=IPA.LOCAL 201903151111
-INFO: Subject: CN=CA Subsystem,O=IPA.LOCAL 201903151111
-INFO: New cert is available at: /etc/pki/pki-tomcat/certs/subsystem.crt
-INFO: Requesting new cert for 29; writing to /etc/pki/pki-tomcat/certs/29-renewed.crt
-INFO: Trying to setup a secure connection to CA subsystem.
-INFO: Secure connection with CA is established.
-INFO: Placing cert creation request for serial: 29
-INFO: Request ID: 39
-INFO: Request Status: complete
-INFO: Serial Number: 0x27
-INFO: Issuer: CN=Certificate Authority,O=IPA.LOCAL 201903151111
-INFO: Subject: CN=f27-1.ipa.local,O=IPA.LOCAL 201903151111
-INFO: New cert is available at: /etc/pki/pki-tomcat/certs/29-renewed.crt</code></pre>
-<p>Certificate requests were issued and completed successfully.</p>
-<pre><code>INFO: Stopping the instance
-INFO: Getting subsystem cert info for ca
-INFO: Getting subsystem cert info for ca
-INFO: Updating CS.cfg with the new certificate
-INFO: Importing new subsystem cert into uid=pkidbuser,ou=people,o=ipaca
-SASL/EXTERNAL authentication started
-SASL username: gidNumber=0+uidNumber=0,cn=peercred,cn=external,cn=auth
-SASL SSF: 0
-modifying entry &quot;uid=pkidbuser,ou=people,o=ipaca&quot;</code></pre>
-<p>Dogtag was stopped, and the new subsystem cert was updated in <code>CS.cfg</code>. It was also imported into the <code>pkidbuser</code> entry to ensure LDAP TLS client authentication continues to work. No further action is taken in relation to the extra cert(s).</p>
-<pre><code>INFO: Selftests enabled for subsystems: ca
-INFO: Restoring previous LDAP configuration
-INFO: Starting the instance with renewed certs</code></pre>
-<p>Self-tests are re-enabled and the previous LDAP configuration restored. Python <em>context managers</em> are used to ensure that these steps are performed even when a fatal error occurs.</p>
-<p>The end.</p>
-<h2 id="conclusion">Conclusion</h2>
-<p>The problem of an expired CA certificate (issue <strong>#4</strong>) has not yet been addressed. It is not the highest priority but it would be nice to have. It is still believed to be a low-effort change so it is likely to be implemented at some stage.</p>
-<p>More extensive testing of the tool is needed for renewing system certificates for other Dogtag subsystems—in particular the KRA subsystem.</p>
-<p>The enhancements discussed in this post make the <code>cert-fix</code> tool a viable MVP for expired certificate recovery without time-travel. The enhancements are still in review, yet to be merged. That will hopefully happen soon (within a day or so of this post). We are also making a significant effort to backport <code>cert-fix</code> to some earlier branches and make it available on older releases.</p>
-<p>As mentioned earlier in the post, we intend to implement a FreeIPA-specific wrapper for <code>cert-fix</code> that can take care of the additional steps required to renew and deploy expired certificates that are part of the FreeIPA system, but are not Dogtag system certificates handled directly by <code>cert-fix</code>. These include LDAP and Apache HTTPD certificates, the IPA RA agent certificate and the Kerberos PKINIT certificate.</p>]]></summary>
 </entry>
 
 </feed>

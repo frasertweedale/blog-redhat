@@ -173,8 +173,8 @@ description: Host authority</code></pre>
 Installing CA certificate, please wait
 CA certificate successfully installed
 The ipa-cacert-manage command was successful</code></pre></li>
-<li>Rename (<code>modrdn</code>) the existing <code>cn={REALM-NAME} IPA CA</code> entry. The new <code>cn</code> RDN is based on the old CA Subject DN.</li>
-<li>Rename the new CA certificate entry. The current <code>cn</code> is the new Subject DN. Rename it to <code>cn={REALM-NAME} IPA CA</code>. I encountered a 389DS attribute uniqueness error when I attempted to do this as a <code>modrdn</code> operation. I’m not sure why it happened. To work around the problem I deleted the entry and added it back with the new <code>cn</code>.</li>
+<li><p>Rename (<code>modrdn</code>) the existing <code>cn={REALM-NAME} IPA CA</code> entry. The new <code>cn</code> RDN is based on the old CA Subject DN.</p></li>
+<li><p>Rename the new CA certificate entry. The current <code>cn</code> is the new Subject DN. Rename it to <code>cn={REALM-NAME} IPA CA</code>. I encountered a 389DS attribute uniqueness error when I attempted to do this as a <code>modrdn</code> operation. I’m not sure why it happened. To work around the problem I deleted the entry and added it back with the new <code>cn</code>.</p></li>
 </ol>
 <p>At the end of this procedure the certificate store is as it should be. The CA certificate with new Subject DN is installed as <code>{REALM-NAME} IPA CA</code> and the old CA certificate has been preserved under a different RDN.</p>
 <h3 id="updating-certificate-databases">Updating certificate databases</h3>
@@ -367,6 +367,10 @@ Recent posts:
 <ul>
     
         <li>
+            <a href="../posts/2020-01-28-freeipa-override-ca-key-size.html">Deploying FreeIPA with a 4096-bit CA signing key</a>
+        </li>
+    
+        <li>
             <a href="../posts/2019-12-12-certmonger-disable-auto-renew.html">Disabling Certmonger auto-renewal</a>
         </li>
     
@@ -380,10 +384,6 @@ Recent posts:
     
         <li>
             <a href="../posts/2019-09-23-direct-integration-ipa-certs.html">Requesting certificates from FreeIPA on Active Directory clients</a>
-        </li>
-    
-        <li>
-            <a href="../posts/2019-08-02-validity-exceeding-ca.html">Certificates need not be limited to the CA’s validity period</a>
         </li>
     
 </ul>

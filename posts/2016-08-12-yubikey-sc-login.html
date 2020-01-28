@@ -148,7 +148,7 @@ pam_cert_auth = True</code></pre>
 ...
 certificate_verification = no_ocsp</code></pre>
 <p>That’s pretty much all there is to it. After this, I was able to log in as <code>alice</code> using the YubiKey NEO. When logging in with the card inserted, instead of being prompted for a password, GDM prompts for the PIN. Enter the pin, and it lets you in!</p>
-<p><img src="../images/smartcard-login.png" alt="Screenshot of login PIN prompt" style="width:100.0%" /></p>
+<p><img src="../images/smartcard-login.png" style="width:100.0%" alt="Screenshot of login PIN prompt" /></p>
 <h2 id="conclusion">Conclusion</h2>
 <p>I mentioned (or didn’t mention) a few standards related to smart card authentication. A quick review of them is warranted:</p>
 <ul>
@@ -169,6 +169,10 @@ Recent posts:
 <ul>
     
         <li>
+            <a href="../posts/2020-01-28-freeipa-override-ca-key-size.html">Deploying FreeIPA with a 4096-bit CA signing key</a>
+        </li>
+    
+        <li>
             <a href="../posts/2019-12-12-certmonger-disable-auto-renew.html">Disabling Certmonger auto-renewal</a>
         </li>
     
@@ -182,10 +186,6 @@ Recent posts:
     
         <li>
             <a href="../posts/2019-09-23-direct-integration-ipa-certs.html">Requesting certificates from FreeIPA on Active Directory clients</a>
-        </li>
-    
-        <li>
-            <a href="../posts/2019-08-02-validity-exceeding-ca.html">Certificates need not be limited to the CA’s validity period</a>
         </li>
     
 </ul>
