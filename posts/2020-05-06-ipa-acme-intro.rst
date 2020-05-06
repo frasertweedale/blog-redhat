@@ -1,3 +1,7 @@
+---
+tags: acme, certificates, freeipa
+---
+
 Introducing the FreeIPA ACME service
 ====================================
 
@@ -8,21 +12,22 @@ lifetimes and avoiding manual processes from certificate lifecycle
 management.
 
 ACME's original use case is HTTPS on the public Internet.  The
-public CA *Let's Encrypt* is already one of the biggest CAs.
+public CA `*Let's Encrypt*`_ is already one of the biggest CAs.
 Clients use ACME to talk to *Let's Encrypt*, automating DNS name
 validation, certificate issuance and in most cases, certificate
 installation and renewal.
 
-But ACME is not limited to Let's Encrypt.  Other CAs can and do
-implement it, and enterprise (private) CAs could implement it too.
-And after a few years of talking about it, we are finally
-implementing an ACME service in FreeIPA.
+But ACME is not limited to Let's Encrypt.  Other CAs implement it
+and enterprise (private) CAs can implement it too.  And after a few
+years of talking about it, we are finally implementing an ACME
+service in FreeIPA.
 
-In this post I will provide a brief description of the ACME
-protocol, and the ACME service architecture in FreeIPA.  If if that
-doesn't interest you, just skip ahead to the demos: I will demo
-several scenarios of ACME clients interacting with the FreeIPA ACME
-service.
+In this post I will give a high-level overview of the ACME protocol,
+and the ACME service architecture in FreeIPA.  If that doesn't
+interest you, scroll down to the demo where I show the Certbot ACME
+client acquiring a certificate from the FreeIPA CA.
+
+.. _*Let's Encrypt*: https://letsencrypt.org/
 
 
 ACME protocol, in brief
@@ -44,14 +49,14 @@ ACME protocol, in brief
    challenge types:
 
    ``dns-01``
-     client creates DNS records to prove control of the identifier
+     Client creates DNS records to prove control of the identifier.
    ``http-01`` 
-     client provisions HTTP resource to prove control of the
-     identifier
+     Client provisions HTTP resource to prove control of the
+     identifier.
    ``tls-alpn-01``
-     client configures TLS server use *Application Layer Protocol
+     Client configures TLS server use *Application Layer Protocol
      Negotiation (ALPN)* and a special X.509 certificate to prove
-     control of the identifier
+     control of the identifier.
 
    The FreeIPA ACME service currently implements the ``dns-01`` and
    ``http-01`` challenges.
@@ -67,8 +72,8 @@ ACME protocol, in brief
    client *finalises* the order causing the CA to issue the
    certificate.
 
-7. The client retrieves the issued certificate and configures the
-   application to use it.
+7. The client retrieves the issued certificate and (commonly)
+   configures an application to use it.
 
 There are many ACME client implementations.  Some, such as
 `Certbot`_, are general purpose and can be used standalone or
@@ -76,11 +81,11 @@ integrated with many kinds of applications.  Others are application
 specific, like `mod_md`_ for Apache httpd.
 
 .. _Certbot: https://certbot.eff.org/
-.. _mod_md: http://httpd.apache.org/docs/current/mod/mod_md.html
+.. _mod_md: https://httpd.apache.org/docs/current/mod/mod_md.html
 
 
-ACME service architecture
--------------------------
+FreeIPA ACME service architecture
+---------------------------------
 
 The FreeIPA ACME service uses `Dogtag PKI ACME responder`_.  This is
 an optional component of Dogtag, separate from the CA or other
@@ -125,32 +130,36 @@ possible that some data, such as *nonces*, might have to be kept
 server-local for performance reasons (this is not the case now, but
 load testing is coming).
 
-ACME client scenarios
----------------------
 
-The following scenarios were carried out on a FreeIPA-enrolled host.
-The ACME protocol requires the use of TLS between client and server.
-The FreeIPA ACME service certificate is (usually) signed by the
-FreeIPA CA, so the client needs to trust it.  On machines that are
-not FreeIPA clients CA trust would have to be established by other
-means so that the ACME client will trust the ACME server.
+Demo: Certbot client running standalone HTTP server
+---------------------------------------------------
 
+The following demo scenario was carried out on a FreeIPA-enrolled
+host.  The ACME protocol requires the use of TLS between client and
+server.  The FreeIPA ACME service certificate is (usually) signed by
+the FreeIPA CA, so the client needs to trust it.  On machines that
+are not FreeIPA clients CA trust would have to be established by
+other means so that the ACME client will trust the ACME server.
 
-Scenario 1: Certbot running standalone HTTP server
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+The general purpose ACME client `Certbot`_ integrates with many
+different server program and can also be used "standalone".  That is
+what I will do in this demo.  It is not representative of real-world
+use but is a straightforward way to demonstrate that an ACME server is
+operating correctly.
 
-In this scenario, I use the general purpose client `Certbot`_ to
-register and ACME account then request a certificate for the
-machine's hostname from the FreeIPA CA.  Certbot will spawn an HTTP
-server to respond to the ``http-01`` challenge issued by the ACME
-server.  To do that Certbot needs to listen on ``tcp/80`` so I am
-running as ``root``.
+The two steps, registration and issuance, can be rolled into a
+single command.  For clarity I will keep these as two separate
+steps.
 
-First, create the account::
+Registration
+^^^^^^^^^^^^
+
+First, the registration step creates an account with the ACME
+service::
 
   [root@f31-0 ~]# certbot \
       --server https://ipa-ca.ipa.local/acme/directory \
-      register -m ftweedal@redhat.com --agree-tos\
+      register -m ftweedal@redhat.com --agree-tos \
   Saving debug log to /var/log/letsencrypt/letsencrypt.log
 
   - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -177,12 +186,26 @@ service instead.
 The "share email with EFF" prompt is only relevant when using Let's
 Encrypt and can be ignored.
 
+Identifier validation and certificate issuance
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+and ACME account then request a certificate for the machine's
+hostname from the FreeIPA CA.
+
+
 The next step is to issue the certificate.  The ``certonly`` command
 means: just write the issued certificate to disk; don't configure
-any programs to use it.  ``--standalone`` instructs Certbot to fire
-up its own HTTP server to fulfil the ``http-01`` challenge.  The
-``--domain`` option can be given multiple times to request a
-certificate with multiple subject alternative names.
+any programs to use it.  The ``--domain`` option can be given
+multiple times to request a certificate with multiple subject
+alternative names.
+
+The ``--standalone`` option tells Certbot to start its own HTTP
+server to fulfil the ``http-01`` challenge.  This server will listen
+on ``tcp/80`` therefore it must run as ``root``.  In typical
+production scenarios Certbot will instead integrate with existing
+HTTP servers and avoid running it with ``root`` privileges.  Or you
+would use an alternative client implementation suited to your use
+case.
 
 ::
 
@@ -221,96 +244,93 @@ the issuer is the FreeIPA CA, not Let's Encrypt.
 
   [root@f31-0 ~]# openssl x509 -text -noout -in /etc/letsencrypt/live/f31-0.ipa.local/cert.pem
   Certificate:
-      Data:
-          Version: 3 (0x2)
-          Serial Number: 25 (0x19)
-          Signature Algorithm: sha256WithRSAEncryption
-          Issuer: O = IPA.LOCAL 202004011654, CN = Certificate Authority
-          Validity
-              Not Before: May  5 11:30:33 2020 GMT
-              Not After : Aug  3 11:30:33 2020 GMT
-          Subject: CN = f31-0.ipa.local
-          Subject Public Key Info:
-              Public Key Algorithm: rsaEncryption
-                  RSA Public-Key: (2048 bit)
-                  Modulus:
-                      <snip>
-                  Exponent: 65537 (0x10001)
-          X509v3 extensions:
-              X509v3 Subject Key Identifier: 
-                  2D:75:79:C2:A0:8C:EF:44:D2:6B:E4:19:E6:BC:42:23:BA:66:1E:D9
-              X509v3 Authority Key Identifier: 
-                  keyid:5E:55:7C:10:82:C1:19:09:E2:42:EC:65:96:89:08:50:35:62:FE:8F
+    Data:
+    Version: 3 (0x2)
+    Serial Number: 25 (0x19)
+    Signature Algorithm: sha256WithRSAEncryption
+    Issuer: O = IPA.LOCAL 202004011654, CN = Certificate Authority
+    Validity
+        Not Before: May  5 11:30:33 2020 GMT
+        Not After : Aug  3 11:30:33 2020 GMT
+    Subject: CN = f31-0.ipa.local
+    Subject Public Key Info:
+        Public Key Algorithm: rsaEncryption
+            RSA Public-Key: (2048 bit)
+            Modulus:
+                <snip>
+            Exponent: 65537 (0x10001)
+    X509v3 extensions:
+        X509v3 Subject Key Identifier: 
+            2D:75:79:C2:A0:8C:EF:44:D2:6B:E4:19:E6:BC:42:23:BA:66:1E:D9
+        X509v3 Authority Key Identifier: 
+            keyid:5E:55:7C:10:82:C1:19:09:E2:42:EC:65:96:89:08:50:35:62:FE:8F
 
-              X509v3 Subject Alternative Name: 
-                  DNS:f31-0.ipa.local
-              X509v3 Key Usage: critical
-                  Digital Signature, Key Encipherment
-              X509v3 Extended Key Usage: 
-                  TLS Web Server Authentication, TLS Web Client Authentication
-              Authority Information Access: 
-                  OCSP - URI:http://ipa-ca.ipa.local/ca/ocsp
+        X509v3 Subject Alternative Name: 
+            DNS:f31-0.ipa.local
+        X509v3 Key Usage: critical
+            Digital Signature, Key Encipherment
+        X509v3 Extended Key Usage: 
+            TLS Web Server Authentication, TLS Web Client Authentication
+        Authority Information Access: 
+            OCSP - URI:http://ipa-ca.ipa.local/ca/ocsp
 
-              X509v3 CRL Distribution Points: 
+        X509v3 CRL Distribution Points: 
 
-                  Full Name:
-                    URI:http://ipa-ca.ipa.local/ipa/crl/MasterCRL.bin
-                  CRL Issuer:
-                    DirName:O = ipaca, CN = Certificate Authority
+            Full Name:
+              URI:http://ipa-ca.ipa.local/ipa/crl/MasterCRL.bin
+            CRL Issuer:
+              DirName:O = ipaca, CN = Certificate Authority
 
-      Signature Algorithm: sha256WithRSAEncryption
-           <snip>
-
-Scenario 1: Apache httpd ``mod_md``
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-`mod_md`_ is an ACME client module for Apache httpd.  It requests
-certificates over ACME and automatically renews certificates before
-they expire.  I believe the "MD" stands for *manage domains*.
-
-mod_md supports the ``http-01`` and ``tls-alpn-01`` challenges (also
-``dns-01`` via external programs).  The FreeIPA ACME service does
-not implement ``tls-alpn-01`` so we will use the HTTP-based
-challenge.  For this httpd needs to be listening on port 80, which
-is the case in the default Fedora configuration::
-
-  [root@f31-0 conf.d]# grep ^Listen /etc/httpd/conf/httpd.conf
-  Listen 80
+    Signature Algorithm: sha256WithRSAEncryption
+         <snip>
 
 
-First step was to install the module::
+Discussion
+----------
 
-  [root@f31-0 ~]# dnf install -y mod_md
-    <stuff happens>
-  Complete!
+In this post I demonstrated just one basic client scenario.  In
+upcoming posts I will explore some more advanced and more realistic
+client scenarios including use of the DNS-based challenges and the
+`mod_md`_ client module for Apache httpd.
 
-Looking at the installed configuration files and their contents, I
-see the relevant load directives already in place::
+The Dogtag ACME responder and FreeIPA ACME service are still
+undergoing rapid development and are **not production ready**.  Some
+parts of the Dogtag implementation have made their way into
+releases, but should be considered a "preview".  That said, if you
+would like to play with the ACME service or perform integration
+testing, we are happy to collaborate and you should reach out on
+``pki-devel@redhat.com``.
 
-  [root@f31-0 conf.d]# rpm -qc mod_md
-  /etc/httpd/conf.modules.d/01-md.conf
+The fact that ACME accounts have no "binding" to any existing
+FreeIPA may surprise some people.  In the initial release we want to
+implement the "baseline" use case also addressed by the public ACME
+CAs (Let's Encrypt).  That is: *an essentially anonymous client
+proves control of an identifier and gets a certificate.*  We
+recognise that organisiations *may* want ACME accounts to be
+associated with (or views of) existing identities, and implement
+authorisation policies based on those accounts and their groups.
+But we don't *know* whether this is required, or exactly what it
+would look like.  So we are going to "wait and see" if customers
+tell us what "enterprise ACME" should be.  In the mean time we are
+focused on the core use case.
 
-  [root@f31-0 conf.d]# cat /etc/httpd/conf.modules.d/01-md.conf
-  LoadModule md_module modules/mod_md.so
+Other considerations for the FreeIPA ACME service include:
 
+- customising the ACME certificate profile (e.g. altering the
+  validity period, Certificate Policies extension, etc)
 
-I created a minimal ``VirtualHost`` configuration::
+- issuing ACME certificates from a sub-CA of the FreeIPA CA
 
-  [root@f31-0 conf.d]# cat /etc/httpd/conf.d/acme.conf
-  MDCertificateAuthority https://ipa-ca.ipa.local/acme/directory
-  MDCertificateAgreement accepted
+- controlling which validation challenges are enabled
 
-  MDomain f31-0.ipa.local
+- block/allow lists or other mechanisms to decide whether a
+  particular identifier (DNS name) can be issued via ACME
 
-  <VirtualHost *:443>
-      ServerName f31-0.ipa.local
+All of these are on the roadmap, but they are likely to be deferred
+beyond the initial release.
 
-      SSLEngine on
-      # no certificates specification
-  </VirtualHost>
+Conclusion
+----------
 
-TODO wip
-
-
-Scenario 1: Certbot DNS challenge with FreeIPA DNS
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+That's all for this post.  I'll be following up soon with a post
+about using Apache mod_md_ with the FreeIPA ACME service.
