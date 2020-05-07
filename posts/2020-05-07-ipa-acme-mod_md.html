@@ -1,0 +1,184 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+    <head>
+        <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+        <title>Fraser's IdM Blog - ACME for Apache httpd with mod_md</title>
+        <link rel="stylesheet" type="text/css" href="../css/default.css" />
+    </head>
+    <body>
+        <div id="header">
+            <div id="logo">
+                <a href="../">Fraser's IdM Blog</a>
+            </div>
+            <div id="navigation">
+                <a href="../">Home</a>
+                <a href="../archive.html">Archive</a>
+            </div>
+        </div>
+
+        <div id="content">
+            <div class="info">
+    
+    Tags: <a title="All pages tagged 'acme'." href="../tags/acme.html">acme</a>, <a title="All pages tagged 'certificates'." href="../tags/certificates.html">certificates</a>, <a title="All pages tagged 'freeipa'." href="../tags/freeipa.html">freeipa</a>, <a title="All pages tagged 'sysadmin'." href="../tags/sysadmin.html">sysadmin</a>
+    
+</div>
+
+<div id="postContent">
+    <h1 id="acme-for-apache-httpd-with-mod_md">ACME for Apache httpd with mod_md</h1>
+<p><a href>mod_md</a> is an ACME client module for Apache httpd. In this post I demonstrate the use mod_md with the FreeIPA ACME service to automatically acquire certificates for <strong>m</strong>anaged <strong>d</strong>omains from the FreeIPA CA.</p>
+<p>mod_md supports the <code>http-01</code> and <code>tls-alpn-01</code> challenges (also <code>dns-01</code> via external programs). The FreeIPA ACME service does not implement <code>tls-alpn-01</code> so we will use the HTTP-based challenge. For this httpd needs to be listening on port 80, which is the case in the default Fedora configuration:</p>
+<pre><code>[root@f31-0 ~]# grep ^Listen /etc/httpd/conf/httpd.conf
+Listen 80</code></pre>
+<p>First step was to install the module:</p>
+<pre><code>[root@f31-0 ~]# dnf install -y mod_md
+  &lt;stuff happens&gt;
+Complete!</code></pre>
+<p>Looking at the installed configuration files and their contents, I see the relevant load directives already in place:</p>
+<pre><code>[root@f31-0 ~]# rpm -qc mod_md
+/etc/httpd/conf.modules.d/01-md.conf
+
+[root@f31-0 ~]# cat /etc/httpd/conf.modules.d/01-md.conf
+LoadModule md_module modules/mod_md.so</code></pre>
+<p>I created a minimal <code>VirtualHost</code> configuration:</p>
+<pre><code>[root@f31-0 ~]# cat &gt;/etc/httpd/conf.d/acme.conf &lt;&lt;EOF
+LogLevel warn md:notice
+
+MDCertificateAuthority https://ipa-ca.ipa.local/acme/directory
+MDCertificateAgreement accepted
+
+MDomain f31-0.ipa.local
+
+&lt;VirtualHost *:443&gt;
+    ServerName f31-0.ipa.local
+
+    SSLEngine on
+    # no certificates specification
+&lt;/VirtualHost&gt;
+EOF</code></pre>
+<p>Starting httpd and watching the error log, I observed that shortly after startup it only took mod_md about 5 seconds to create an account, submit an order, prove control of the <code>f31-0.ipa.local</code> DNS name and retrieve the issued certificate:</p>
+<pre><code>[Wed May 06 15:51:37.371414 2020] [core:notice] [pid 82766:tid
+  140661368246592] AH00094: Command line: '/usr/sbin/httpd -D
+  FOREGROUND'
+[Wed May 06 15:51:43.086719 2020] [md:notice] [pid 82778:tid
+  140661321930496] AH10059: The Managed Domain f31-0.ipa.local has
+  been setup and changes will be activated on next (graceful) server
+  restart.</code></pre>
+<p>The notice that we still need to perform a (graceful) restart is important. Indeed a requests from another host still fails with a self-signed certificate warning:</p>
+<pre><code>[f31-1:~] ftweedal% curl https://f31-0.ipa.local/
+curl: (60) SSL certificate problem: self signed certificate
+More details here: https://curl.haxx.se/docs/sslcerts.html
+
+curl failed to verify the legitimacy of the server and therefore
+could not establish a secure connection to it. To learn more about
+this situation and how to fix it, please visit the web page
+mentioned above.</code></pre>
+<p>After preforming a (graceful) restart of httpd:</p>
+<pre><code>[f31-0:~] ftweedal% sudo systemctl reload httpd</code></pre>
+<p>Requests now work (never mind the 403 response status):</p>
+<pre><code>[f31-1:~] ftweedal% curl --head https://f31-0.ipa.local/
+HTTP/1.1 403 Forbidden
+Date: Wed, 06 May 2020 06:11:43 GMT
+Server: Apache/2.4.43 (Fedora) OpenSSL/1.1.1d mod_auth_gssapi/1.6.1 mod_wsgi/4.6.6 Python/3.7
+Last-Modified: Thu, 25 Jul 2019 05:18:03 GMT
+ETag: &quot;15bc-58e7a8ccdb8c0&quot;
+Accept-Ranges: bytes
+Content-Length: 5564
+Content-Type: text/html; charset=UTF-8</code></pre>
+<p><code>curl -v</code> output included the following certificate detail:</p>
+<pre><code>* Server certificate:
+*  subject: CN=f31-0.ipa.local
+*  start date: May  6 05:51:41 2020 GMT
+*  expire date: Aug  4 05:51:41 2020 GMT
+*  subjectAltName: host &quot;f31-0.ipa.local&quot; matched cert's &quot;f31-0.ipa.local&quot;
+*  issuer: O=IPA.LOCAL 202004011654; CN=Certificate Authority
+*  SSL certificate verify ok.</code></pre>
+<p>Observe that it is a short-lived certificate issued by the FreeIPA CA.</p>
+<p>The fact that a graceful restart was required suggests that if you are using mod_md in production, you should configure a cron job (or equivalent) to execute that on a regular schedule. The <code>MDRenewWindow</code> directive defines the remaining certificate lifetime at which mod_md will first attempt to renew the certificate. The default value is <code>33%</code> which for 90 day certificates is 30 days. Therefore with 90 days certificates and the default <code>MDRenewWindow 33%</code>, restarting weekly seems reasonable.</p>
+<p>One last curiousity: by default mod_md publishes a “certificate status” resource at <code>.httpd/certificate-status</code> for each managed domain:</p>
+<pre><code>[f31-1:~] ftweedal% curl \
+    https://f31-0.ipa.local/.httpd/certificate-status
+{
+  &quot;valid&quot;: {
+    &quot;until&quot;: &quot;Tue, 04 Aug 2020 05:51:41 GMT&quot;,
+    &quot;from&quot;: &quot;Wed, 06 May 2020 05:51:41 GMT&quot;
+  },
+  &quot;serial&quot;: &quot;1E&quot;,
+  &quot;sha256-fingerprint&quot;: &quot;a70d2182f347cf9dddfbd19a14243c5efe24df55fa5728297c667494a28e7d2e&quot;
+}</code></pre>
+<p>This can be suppressed by <code>MDCertificateStatus off</code> which is a server-wide setting.</p>
+<h2 id="discussion">Discussion</h2>
+<p>Confession time. The above scenario did not go anywhere near as smoothly as portrayed above. In fact, mod_md was failing immediately after retrieving the directory resource:</p>
+<pre><code>[Tue May 05 22:28:32.462108 2020] [md:warn] [pid 68047:tid
+140418815502080] (22)Invalid argument: md[f31-0.ipa.local]
+while[Contacting ACME server for f31-0.ipa.local at
+https://ipa-ca.ipa.local/acme/directory] detail[Unable to understand
+ACME server response from &lt;https://ipa-ca.ipa.local/acme/directory&gt;.
+Wrong ACME protocol version or link?]</code></pre>
+<p>I went to the mod_md source code to investigate. The problem was that mod_md required the ACME <code>revokeCert</code> and <code>keyChange</code> (account key rollover) resources to be defined in the resource document, even though mod_md does not use those capabilities (at this time). The Dogtag ACME responder has not yet implemented key rollover. As a consequence, mod_md refused to interact with it.</p>
+<p>What does RFC 8555 have to say about this? §7.1 states:</p>
+<blockquote>
+<p>The server MUST provide “directory” and “newNonce” resources.</p>
+</blockquote>
+<p>But there is no explicit statement about whether other resources are, or are not, required (with the exception of the <code>newAuthz</code> resource other resource which is optional). My conclusion is that mod_md, in checking for resources it doesn’t even use, is too strict. I submitted <a href="https://github.com/icing/mod_md/pull/214">a pull request</a> to <a href="https://github.com/icing/mod_md">https://github.com/icing/mod_md</a> to relax the check. It was accepted and merged the next day.</p>
+<p>Note that mod_md has also been pulled into the httpd codebase, although it does not seem to be as actively maintained there at this point in time. I suppose that the httpd code is periodically updated with the code from the <em>icing</em> respository. Nevertheless I also submitted a <a href="https://github.com/apache/httpd/pull/122">pull request to httpd</a>. At time of publication of this post there has been no activity. I have also submitted bugs against the Fedora and RHEL mod_md packages.</p>
+<p>In the meantime I built a version of the Fedora package containing my patch. This time mod_md was able to successfully validate the identifier and finalise the order, causing the certificate to be issued. But it was not able to retrieve the certificate; mod_md does not handle the absense of the <code>Location</code> header in the response to the finalise request. This header was required in an earlier (pre-RFC) draft of the ACME protocol, but it is not required any more. <em>Boulder</em> (the ACME server implementation used by Let’s Encrypt) does set it so mod_md works fine with Boulder. But the Dogtag ACME service did not set it and mod_md fails at this point, putting the client-side order data into an unrecoverable state.</p>
+<p>The quick fix was to update the Dogtag ACME service to include the Location header. I also <a href="https://github.com/icing/mod_md/issues/216">reported the issue</a> in the upstream repository.</p>
+<p>That’s it for this demo. For my next FreeIPA ACME demo I’m going to attempt DNS-based identifier validation challenges with Certbot and FreeIPA’s integrated DNS.</p>
+</div>
+<div id="postFooter">
+    <div id="recent">
+Recent posts:
+<ul>
+    
+        <li>
+            <a href="../posts/2020-05-07-ipa-acme-mod_md.html">ACME for Apache httpd with mod_md</a>
+        </li>
+    
+        <li>
+            <a href="../posts/2020-05-06-ipa-acme-intro.html">Introducing the FreeIPA ACME service</a>
+        </li>
+    
+        <li>
+            <a href="../posts/2020-01-28-freeipa-override-ca-key-size.html">Deploying FreeIPA with a 4096-bit CA signing key</a>
+        </li>
+    
+        <li>
+            <a href="../posts/2019-12-12-certmonger-disable-auto-renew.html">Disabling Certmonger auto-renewal</a>
+        </li>
+    
+        <li>
+            <a href="../posts/2019-12-06-freeipa-acme-plans.html">Plans for ACME support in FreeIPA</a>
+        </li>
+    
+</ul>
+
+<div id="recentLinks">
+    <a type="application/atom+xml" href="../atom.xml">Atom feed</a>
+     <!-- em space -->
+    <a href="../archive.html">All posts…</a>
+</div>
+
+</div>
+
+    <div id="license">
+    <a rel="license" href="https://creativecommons.org/licenses/by/4.0/">
+        <img alt="Creative Commons License" style="border-width:0" src="https://licensebuttons.net/l/by/4.0/88x31.png">
+    </a>
+    <br />
+    Except where otherwise noted, this work is licensed under a
+    <a rel="license" href="https://creativecommons.org/licenses/by/4.0/">
+        Creative Commons Attribution 4.0 International License
+    </a>.
+</div>
+
+</div>
+
+        </div>
+        <div class="clear"></div>
+        <div id="footer">
+            Generated by
+            <a href="https://jaspervdj.be/hakyll">Hakyll</a>
+        </div>
+    </body>
+</html>
