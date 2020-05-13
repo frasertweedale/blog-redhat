@@ -16,6 +16,7 @@
     <published>2020-05-13T00:00:00Z</published>
     <updated>2020-05-13T00:00:00Z</updated>
     <summary type="html"><![CDATA[<h1 id="acme-dns-challenges-and-freeipa">ACME DNS challenges and FreeIPA</h1>
+<p><em>This post is part of a series of ACME client demonstrations. See also the posts about</em> <a href="2020-05-06-ipa-acme-intro.html">Certbot standalone HTTP</a> <em>and</em> <a href="2020-05-07-ipa-acme-mod_md.html">mod_md for Apache</a></p>
 <p>The ACME protocol defined in <a href="https://tools.ietf.org/html/rfc8555">RFC 8555</a> defines a <a href="https://tools.ietf.org/html/rfc8555#section-8.4">DNS challenge</a> for proving control of a domain name. In this post I’ll explain how the DNS challenge works and demonstrate how to use the <a href="https://certbot.eff.org/">Certbot</a> ACME client with the FreeIPA integrated DNS service.</p>
 <h2 id="the-dns-challenge">The DNS challenge</h2>
 <p>To prove control of a domain name (the <code>dns</code> identifier type) ACME defines the <code>dns-01</code> challenge type. It is up to ACME servers which challenges to create for a given identifier. If a server offers multiple challenges (e.g. <code>http-01</code> and <code>dns-01</code>) the client can choose which one to attempt.</p>
@@ -212,6 +213,7 @@ Please see the logfiles in /home/ftweedal/certbot/log for more details. </code><
     <published>2020-05-07T00:00:00Z</published>
     <updated>2020-05-07T00:00:00Z</updated>
     <summary type="html"><![CDATA[<h1 id="acme-for-apache-httpd-with-mod_md">ACME for Apache httpd with mod_md</h1>
+<p><em>This post is part of a series of ACME client demonstrations. See also the posts about</em> <a href="2020-05-06-ipa-acme-intro.html">Certbot standalone HTTP</a> <em>and</em> <a href="2020-05-13-ipa-acme-dns.html">Certbot with FreeIPA DNS</a>.</p>
 <p><a href="">mod_md</a> is an ACME client module for Apache httpd. In this post I demonstrate the use mod_md with the FreeIPA ACME service to automatically acquire certificates for <strong>m</strong>anaged <strong>d</strong>omains from the FreeIPA CA.</p>
 <p>mod_md supports the <code>http-01</code> and <code>tls-alpn-01</code> challenges (also <code>dns-01</code> via external programs). The FreeIPA ACME service does not implement <code>tls-alpn-01</code> so we will use the HTTP-based challenge. For this httpd needs to be listening on port 80, which is the case in the default Fedora configuration:</p>
 <pre><code>[root@f31-0 ~]# grep ^Listen /etc/httpd/conf/httpd.conf
@@ -319,6 +321,7 @@ Wrong ACME protocol version or link?]</code></pre>
     <published>2020-05-06T00:00:00Z</published>
     <updated>2020-05-06T00:00:00Z</updated>
     <summary type="html"><![CDATA[<h1 id="introducing-the-freeipa-acme-service">Introducing the FreeIPA ACME service</h1>
+<p><em>This post is part of a series of ACME client demonstrations. See also the posts about</em> <a href="2020-05-07-ipa-acme-mod_md.html">mod_md for Apache</a> <em>and</em> <a href="2020-05-13-ipa-acme-dns.html">Certbot with FreeIPA DNS</a>.</p>
 <p><em>Automated Certificate Management Environment (ACME)</em> is a protocol for automated identifier validation and certificate issuance. Its goal is to improve security on the Internet by reducing certificate lifetimes and avoiding manual processes from certificate lifecycle management.</p>
 <p>ACME’s original use case is HTTPS on the public Internet. The public CA <a href="https://letsencrypt.org/">*Let's Encrypt*</a> is already one of the biggest CAs. Clients use ACME to talk to <em>Let’s Encrypt</em>, automating DNS name validation, certificate issuance and in most cases, certificate installation and renewal.</p>
 <p>But ACME is not limited to Let’s Encrypt. Other CAs implement it and enterprise (private) CAs can implement it too. And after a few years of talking about it, we are finally implementing an ACME service in FreeIPA.</p>

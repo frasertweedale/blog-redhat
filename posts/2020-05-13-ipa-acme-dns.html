@@ -26,6 +26,7 @@
 
 <div id="postContent">
     <h1 id="acme-dns-challenges-and-freeipa">ACME DNS challenges and FreeIPA</h1>
+<p><em>This post is part of a series of ACME client demonstrations. See also the posts about</em> <a href="2020-05-06-ipa-acme-intro.html">Certbot standalone HTTP</a> <em>and</em> <a href="2020-05-07-ipa-acme-mod_md.html">mod_md for Apache</a></p>
 <p>The ACME protocol defined in <a href="https://tools.ietf.org/html/rfc8555">RFC 8555</a> defines a <a href="https://tools.ietf.org/html/rfc8555#section-8.4">DNS challenge</a> for proving control of a domain name. In this post I’ll explain how the DNS challenge works and demonstrate how to use the <a href="https://certbot.eff.org/">Certbot</a> ACME client with the FreeIPA integrated DNS service.</p>
 <h2 id="the-dns-challenge">The DNS challenge</h2>
 <p>To prove control of a domain name (the <code>dns</code> identifier type) ACME defines the <code>dns-01</code> challenge type. It is up to ACME servers which challenges to create for a given identifier. If a server offers multiple challenges (e.g. <code>http-01</code> and <code>dns-01</code>) the client can choose which one to attempt.</p>

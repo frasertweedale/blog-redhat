@@ -26,6 +26,7 @@
 
 <div id="postContent">
     <h1 id="acme-for-apache-httpd-with-mod_md">ACME for Apache httpd with mod_md</h1>
+<p><em>This post is part of a series of ACME client demonstrations. See also the posts about</em> <a href="2020-05-06-ipa-acme-intro.html">Certbot standalone HTTP</a> <em>and</em> <a href="2020-05-13-ipa-acme-dns.html">Certbot with FreeIPA DNS</a>.</p>
 <p><a href>mod_md</a> is an ACME client module for Apache httpd. In this post I demonstrate the use mod_md with the FreeIPA ACME service to automatically acquire certificates for <strong>m</strong>anaged <strong>d</strong>omains from the FreeIPA CA.</p>
 <p>mod_md supports the <code>http-01</code> and <code>tls-alpn-01</code> challenges (also <code>dns-01</code> via external programs). The FreeIPA ACME service does not implement <code>tls-alpn-01</code> so we will use the HTTP-based challenge. For this httpd needs to be listening on port 80, which is the case in the default Fedora configuration:</p>
 <pre><code>[root@f31-0 ~]# grep ^Listen /etc/httpd/conf/httpd.conf

@@ -26,6 +26,7 @@
 
 <div id="postContent">
     <h1 id="introducing-the-freeipa-acme-service">Introducing the FreeIPA ACME service</h1>
+<p><em>This post is part of a series of ACME client demonstrations. See also the posts about</em> <a href="2020-05-07-ipa-acme-mod_md.html">mod_md for Apache</a> <em>and</em> <a href="2020-05-13-ipa-acme-dns.html">Certbot with FreeIPA DNS</a>.</p>
 <p><em>Automated Certificate Management Environment (ACME)</em> is a protocol for automated identifier validation and certificate issuance. Its goal is to improve security on the Internet by reducing certificate lifetimes and avoiding manual processes from certificate lifecycle management.</p>
 <p>ACME’s original use case is HTTPS on the public Internet. The public CA <a href="https://letsencrypt.org/">*Let's Encrypt*</a> is already one of the biggest CAs. Clients use ACME to talk to <em>Let’s Encrypt</em>, automating DNS name validation, certificate issuance and in most cases, certificate installation and renewal.</p>
 <p>But ACME is not limited to Let’s Encrypt. Other CAs implement it and enterprise (private) CAs can implement it too. And after a few years of talking about it, we are finally implementing an ACME service in FreeIPA.</p>
