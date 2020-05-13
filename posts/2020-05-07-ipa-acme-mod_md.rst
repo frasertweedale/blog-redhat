@@ -5,6 +5,15 @@ tags: acme, certificates, freeipa, sysadmin
 ACME for Apache httpd with mod_md
 =================================
 
+*This post is part of a series of ACME client demonstrations. See
+also the posts about*
+`Certbot standalone HTTP`_
+*and*
+`Certbot with FreeIPA DNS`_.
+
+.. _Certbot standalone HTTP: 2020-05-06-ipa-acme-intro.html
+.. _Certbot with FreeIPA DNS: 2020-05-13-ipa-acme-dns.html
+
 `mod_md`_ is an ACME client module for Apache httpd.  In this post I
 demonstrate the use mod_md with the FreeIPA ACME service to
 automatically acquire certificates for **m**anaged **d**omains from

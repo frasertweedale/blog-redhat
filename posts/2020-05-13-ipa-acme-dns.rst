@@ -5,6 +5,15 @@ tags: acme, freeipa, certificates
 ACME DNS challenges and FreeIPA
 ===============================
 
+*This post is part of a series of ACME client demonstrations. See
+also the posts about*
+`Certbot standalone HTTP`_
+*and*
+`mod_md for Apache`_
+
+.. _Certbot standalone HTTP: 2020-05-06-ipa-acme-intro.html
+.. _mod_md for Apache: 2020-05-07-ipa-acme-mod_md.html
+
 The ACME protocol defined in `RFC 8555`_ defines a `DNS challenge`_
 for proving control of a domain name.  In this post I'll explain how
 the DNS challenge works and demonstrate how to use the Certbot_ ACME

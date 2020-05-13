@@ -5,6 +5,15 @@ tags: acme, certificates, freeipa
 Introducing the FreeIPA ACME service
 ====================================
 
+*This post is part of a series of ACME client demonstrations. See
+also the posts about*
+`mod_md for Apache`_
+*and*
+`Certbot with FreeIPA DNS`_.
+
+.. _mod_md for Apache: 2020-05-07-ipa-acme-mod_md.html
+.. _Certbot with FreeIPA DNS: 2020-05-13-ipa-acme-dns.html
+
 *Automated Certificate Management Environment (ACME)* is a protocol
 for automated identifier validation and certificate issuance.  Its
 goal is to improve security on the Internet by reducing certificate
