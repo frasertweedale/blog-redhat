@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+    <head>
+        <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+        <title>Fraser's IdM Blog - CRLs for Dogtag Lightweight CAs</title>
+        <link rel="stylesheet" type="text/css" href="../css/default.css" />
+    </head>
+    <body>
+        <div id="header">
+            <div id="logo">
+                <a href="../">Fraser's IdM Blog</a>
+            </div>
+            <div id="navigation">
+                <a href="../">Home</a>
+                <a href="../archive.html">Archive</a>
+            </div>
+        </div>
+
+        <div id="content">
+            <div class="info">
+    
+    Tags: <a title="All pages tagged 'dogtag'." href="../tags/dogtag.html">dogtag</a>, <a title="All pages tagged 'certificates'." href="../tags/certificates.html">certificates</a>, <a title="All pages tagged 'revocation'." href="../tags/revocation.html">revocation</a>
+    
+</div>
+
+<div id="postContent">
+    <h1 id="crls-for-dogtag-lightweight-cas">CRLs for Dogtag Lightweight CAs</h1>
+<p>A few years ago I implemented <em>lightweight CAs</em> in Dogtag. This feature allows multiple CAs to be hosted in a single Dogtag server instance. For now these are restricted to sub-CAs of the <em>main CA</em> but this is not a fundamental restriction.</p>
+<p>An important aspect of CA operation is <em>revocation</em>: the ability to revoke a certificate because of (suspected) key compromise, cessation of operation, it was superseded, etc. There are currently two main ways of conveying revocation status to clients: <em>Certificate Revocation Lists (CRLs)</em> and <em>Online Certificate Status Protocol (OCSP)</em>. CRLs and OCSP have their respective advantages and drawbacks. Suffice to say, for many security-conscious organisations CRLs are important (as is OCSP).</p>
+<p>There is currently no support for lightweight CA certificates in CRLs produced by Dogtag. The purpose of this post is to discuss the challenges and possible approaches to closing this gap.</p>
+<h2 id="overview-of-ocsp-and-crls">Overview of OCSP and CRLs</h2>
+<p>OCSP (defined in <a href="https://tools.ietf.org/html/rfc6960">RFC 6960</a>) is a network protocol for determining certificate revocation status. Any relying party (e.g. a web browser validating a server certificate) can ask the CA’s <em>OCSP responder</em> for a signed assertion of whether or not the certificate is revoked. For scalability and performance reasons, TLS servers can periodically obtain OCSP responses for their certificate and convey them to clients in the TLS handshake; this feature is called <a href="https://en.wikipedia.org/wiki/OCSP_stapling">OCSP stapling</a>.</p>
+<p>On the other hand, CRLs are a more <em>passive</em> technology. X.509 CRLs are defined alongside X.509 certificates in <a href="https://tools.ietf.org/html/rfc5280">RFC 5280</a>. In the simple case a CRL is a signed, timestamped list of all revoked, non-exired certificates issued by a CA. The CA produces new CRLs on a fixed schedule (e.g. every 4 hours) and publishes them (e.g. on HTTP, in an LDAP directory, etc). Clients <em>somehow</em> obtain and refresh their CRL cache, and consult it when validating certificates. The CRL grows linearly in the number of revoked certificates so on a busy CA the CRL can become <em>huge</em>. Retrieving a large CRL takes time and bandwidth, storing it takes space, and consulting it takes time. The advantage is that validation requires no (additional) network traffic. The assumption is that the clients CRL cache is up to date.</p>
+<p>One further downside of CRLs is that they are only as good as their most recent update. What if your CRL is 3 hours old, the certificate of interest was revoked 1 hour ago, and it is still 1 hour until the next CRL gets published? In practice, every approach to revocation suffers from such a delay. Also in practice, the delay duration is often much greater for CRLs than for OCSP.</p>
+<h2 id="ocsp-support-for-lightweight-cas">OCSP support for Lightweight CAs</h2>
+<p>The initial release of the Dogtag lightweight CAs feature had OCSP support for certificates issued by lightweight CAs. It works properly and there is nothing more to be said about it.</p>
+<h2 id="crl-support-for-lightweight-cas">CRL support for lightweight CAs</h2>
+<p>As mentioned in the introduction, certificates issued by lightweight CAs are not included in the CRLs produced by Dogtag. <a href="https://pagure.io/dogtagpki/issue/1627">Ticket #1627</a> in the upstream Pagure tracks this issue.</p>
+<p>The reason this was not implemented in the initial release (or since) is that in the baseline case, a CRL can only include certificates from a single CA. Say we have the main CA <code>CN=MainCA</code> and lightweight sub-CA <code>CN=SubCA</code>. The CRL cannot include certificates from both CAs, because a CRL is just a list of serial numbers.</p>
+<h3 id="indirect-crls">Indirect CRLs</h3>
+<p>There is a way around this limitation. The <a href="https://tools.ietf.org/html/rfc5280#section-5.3.3">Certificate Issuer</a> CRL entry extension, if some other extensions on both the certificate and CRL are set up <em>just right</em>, allows a CRL to include certificates from multiple issuers. Such CRLs are called <em>indirect CRLs</em>. Conforming applications are not required to support indirect CRLs, and the extension is <em>critical</em> so there is a risk of compatibility issues if we were to use indirect CRLs for conveying revocation status of certificates issued by lightweight CAs.</p>
+<p>Apart from client support for the Certificate Issuer extension the other requirements for indirect CRLs to work are:</p>
+<ul>
+<li>The certificate’s <em>CRL Distribution Points (CRLDP)</em> extension must include the <code>cRLIssuer</code> field and its value must match the issuer of the CRL.</li>
+<li>The CRL must include the <em>Issuing Distribution Point</em> CRL extension that asserts the <code>indirectCRL</code> boolean. This is a critical extension.</li>
+<li>The trust anchor for the CRL must be the same as the trust anchor for the certificate. This means that indirect CRLs cannot work for lightweight CAs that do not chain to the same CA. This is only a potential problem if the lightweight CAs feature is enhanced to support hosting unrelated CAs (rather than sub-CAs).</li>
+</ul>
+<p>So to use indirect CRLs some minor changes to certificate profiles would be required. But the changes would be the same for all profiles and the content of the CRL Distribution Point extension would be the same regardless of which lightweight CA issues the certificate.</p>
+<h3 id="separate-crls">Separate CRLs</h3>
+<p>An alternative approach is to create a separate CRL for each lightweight CA. This would avoid compatibility issues caused by the use of critical extensions that clients are not required to support. It also avoids the trust anchor limitations that would arise when hosting a lightweight CA that does not share a common trust root with the CRL issuer.</p>
+<p>From an implementation point of view there are two major challenges with this approach.</p>
+<ol type="1">
+<li>Dogtag does not generate CRLs implicitly but currently requires explicit configuration for each CRL. The configuration is not stored in LDAP but in the <code>CS.cfg</code> configuration file, so there is no way to dynamically configure new CRLs as new lightweight CAs are created.</li>
+<li>The content of the CRL Distribution Point extension will differ according to the CA that is issuing the certificate. The CRLDP content is currently configured per-profile. New profile components or enhancements to the existing CRLDP profile component will be required.</li>
+</ol>
+<p>In my view it is not acceptable to have to define multiple profiles differing only the CRL Distribution Point extension. The CA issuing the certificate should, by default, set any extensions that relate specifically to itself, including the CRLDP (also <em>Authority Key Identifier</em> and <em>Authority Information Access</em>). For more specialised use cases, the CRLDP content could be <em>overridden</em> or <em>suppressed</em> on a per-profile basis.</p>
+<h3 id="deciding-the-approach">Deciding the approach</h3>
+<p>Indirect CRLs is the lower-effort approach. But before choosing it, we ought to audit certificate verification libraries (especially OpenSSL, NSS and other libraries used in Fedora, RHEL and other Red Hat products) to see if they support indirect CRLs. If support is widespread, the approach is viable. If support is not widespread, it is not a good idea.</p>
+<p>Thinking longer-term, this is a good opportunity to improve the administrator experience. Maybe now is a good time to implement useful features like automatic CRL generation for each CA in a Dogtag instance, and profile components that create a CRL Distribution Point extension that points to the CRL for the CA that is issuing the certificate. The current configuration approach is versatile and can handle all kinds of wild CRL scenarios. But it is <em>hostile</em> to getting things right for the common case.</p>
+<p>This decision will probably not be mine to make because I will soon be leaving the Dogtag team. But I hope this post is useful to whoever is involved in the eventual decision.</p>
+<h3 id="profile-changes">Profile changes</h3>
+<p>Both of the discussed approaches require some changes to profile configuration. Required profile changes means upgrade steps to update them. This can be tricky especially in mixed-version topologies when new profile components (if any) are present on some servers but not others.</p>
+<h3 id="the-do-nothing-option">The “do nothing” option</h3>
+<p>Lightweight CAs have been available for nearly 4 years. I can only recall one or two occasions customer queries about lightweight CA CRL support. To be clear, it is a reasonable ask. But it seems that OCSP is sufficient for most customers. Or perhaps there is just a lack of awareness that CRLs do not include certificates issued by lightweight CAs. Whatever the case, the low demand agrees with my own position that although CRL support for lightweight CAs is a nice-to-have, it is not of critical importance to many users or customers.</p>
+<h2 id="conclusion">Conclusion</h2>
+<p>In this post I identified two possible approaches to CRL support for lightweight CAs. Each approach has advantages, drawbacks and unique challenges. Never implementing it is also an option to be considered because demand, though it does exist, seems low.</p>
+<p>I haven’t often discussed revocation in detail, so it is probably worth mentioning other approaches besides CRLs and OCSP.</p>
+<p><em>Ephemeral PKI</em> avoids the problem by only issuing very short lived certificates, e.g. one week, one day or even less! Assuming keys are rotated just as frequently, when certificate lifetimes approach the “lag” time revocation solutions, the revocation solution is not needed.</p>
+<p><em>CRLite</em> is an experimental revocation solution currently in development. It achieves fast and scalable revocation checking through cascading Bloom filters produced by an <em>aggregator</em> that records certificate revocations from one or more CAs. The target use case is in fact <em>all publicly trusted CAs</em> and Firefox Nightly already uses the system (non-enforcing, telemetry-only by default). Scott Helme wrote an <a href="https://scotthelme.co.uk/crlite-finally-a-fix-for-broken-revocation/">excellent blog post</a> about it and you can read the <a href="https://obj.umiacs.umd.edu/papers_for_stories/crlite_oakland17.pdf">original paper</a> for the gory details.</p>
+<p>One final note. I found some compliance issues with how the CRL Distribution Point extension is configured in the default FreeIPA certificate profiles. A strict reading of <a href="https://tools.ietf.org/html/rfc5280">RFC 5280</a> suggests that the CRL Distribution Point extension data produced by the default FreeIPA profiles would lead to the certificate not being considered in scope of the CRLs produced by Dogtag. This issue is particular to FreeIPA configuration, not a general problem with FreeIPA. More investiation is required and I will probably write a separate post about this in the future.</p>
+</div>
+<div id="postFooter">
+    <div id="recent">
+Recent posts:
+<ul>
+    
+        <li>
+            <a href="../posts/2020-06-19-dogtag-lightweight-ca-crl.html">CRLs for Dogtag Lightweight CAs</a>
+        </li>
+    
+        <li>
+            <a href="../posts/2020-05-13-ipa-acme-dns.html">ACME DNS challenges and FreeIPA</a>
+        </li>
+    
+        <li>
+            <a href="../posts/2020-05-07-ipa-acme-mod_md.html">ACME for Apache httpd with mod_md</a>
+        </li>
+    
+        <li>
+            <a href="../posts/2020-05-06-ipa-acme-intro.html">Introducing the FreeIPA ACME service</a>
+        </li>
+    
+        <li>
+            <a href="../posts/2020-01-28-freeipa-override-ca-key-size.html">Deploying FreeIPA with a 4096-bit CA signing key</a>
+        </li>
+    
+</ul>
+
+<div id="recentLinks">
+    <a type="application/atom+xml" href="../atom.xml">Atom feed</a>
+     <!-- em space -->
+    <a href="../archive.html">All posts…</a>
+</div>
+
+</div>
+
+    <div id="license">
+    <a rel="license" href="https://creativecommons.org/licenses/by/4.0/">
+        <img alt="Creative Commons License" style="border-width:0" src="https://licensebuttons.net/l/by/4.0/88x31.png">
+    </a>
+    <br />
+    Except where otherwise noted, this work is licensed under a
+    <a rel="license" href="https://creativecommons.org/licenses/by/4.0/">
+        Creative Commons Attribution 4.0 International License
+    </a>.
+</div>
+
+</div>
+
+        </div>
+        <div class="clear"></div>
+        <div id="footer">
+            Generated by
+            <a href="https://jaspervdj.be/hakyll">Hakyll</a>
+        </div>
+    </body>
+</html>

@@ -8,8 +8,59 @@
         <name>Fraser Tweedale</name>
         <email>frase@frase.id.au</email>
     </author>
-    <updated>2020-05-13T00:00:00Z</updated>
+    <updated>2020-06-19T00:00:00Z</updated>
     <entry>
+    <title>CRLs for Dogtag Lightweight CAs</title>
+    <link href="https://frasertweedale.github.io/blog-redhat/posts/2020-06-19-dogtag-lightweight-ca-crl.html" />
+    <id>https://frasertweedale.github.io/blog-redhat/posts/2020-06-19-dogtag-lightweight-ca-crl.html</id>
+    <published>2020-06-19T00:00:00Z</published>
+    <updated>2020-06-19T00:00:00Z</updated>
+    <summary type="html"><![CDATA[<h1 id="crls-for-dogtag-lightweight-cas">CRLs for Dogtag Lightweight CAs</h1>
+<p>A few years ago I implemented <em>lightweight CAs</em> in Dogtag. This feature allows multiple CAs to be hosted in a single Dogtag server instance. For now these are restricted to sub-CAs of the <em>main CA</em> but this is not a fundamental restriction.</p>
+<p>An important aspect of CA operation is <em>revocation</em>: the ability to revoke a certificate because of (suspected) key compromise, cessation of operation, it was superseded, etc. There are currently two main ways of conveying revocation status to clients: <em>Certificate Revocation Lists (CRLs)</em> and <em>Online Certificate Status Protocol (OCSP)</em>. CRLs and OCSP have their respective advantages and drawbacks. Suffice to say, for many security-conscious organisations CRLs are important (as is OCSP).</p>
+<p>There is currently no support for lightweight CA certificates in CRLs produced by Dogtag. The purpose of this post is to discuss the challenges and possible approaches to closing this gap.</p>
+<h2 id="overview-of-ocsp-and-crls">Overview of OCSP and CRLs</h2>
+<p>OCSP (defined in <a href="https://tools.ietf.org/html/rfc6960">RFC 6960</a>) is a network protocol for determining certificate revocation status. Any relying party (e.g. a web browser validating a server certificate) can ask the CA’s <em>OCSP responder</em> for a signed assertion of whether or not the certificate is revoked. For scalability and performance reasons, TLS servers can periodically obtain OCSP responses for their certificate and convey them to clients in the TLS handshake; this feature is called <a href="https://en.wikipedia.org/wiki/OCSP_stapling">OCSP stapling</a>.</p>
+<p>On the other hand, CRLs are a more <em>passive</em> technology. X.509 CRLs are defined alongside X.509 certificates in <a href="https://tools.ietf.org/html/rfc5280">RFC 5280</a>. In the simple case a CRL is a signed, timestamped list of all revoked, non-exired certificates issued by a CA. The CA produces new CRLs on a fixed schedule (e.g. every 4 hours) and publishes them (e.g. on HTTP, in an LDAP directory, etc). Clients <em>somehow</em> obtain and refresh their CRL cache, and consult it when validating certificates. The CRL grows linearly in the number of revoked certificates so on a busy CA the CRL can become <em>huge</em>. Retrieving a large CRL takes time and bandwidth, storing it takes space, and consulting it takes time. The advantage is that validation requires no (additional) network traffic. The assumption is that the clients CRL cache is up to date.</p>
+<p>One further downside of CRLs is that they are only as good as their most recent update. What if your CRL is 3 hours old, the certificate of interest was revoked 1 hour ago, and it is still 1 hour until the next CRL gets published? In practice, every approach to revocation suffers from such a delay. Also in practice, the delay duration is often much greater for CRLs than for OCSP.</p>
+<h2 id="ocsp-support-for-lightweight-cas">OCSP support for Lightweight CAs</h2>
+<p>The initial release of the Dogtag lightweight CAs feature had OCSP support for certificates issued by lightweight CAs. It works properly and there is nothing more to be said about it.</p>
+<h2 id="crl-support-for-lightweight-cas">CRL support for lightweight CAs</h2>
+<p>As mentioned in the introduction, certificates issued by lightweight CAs are not included in the CRLs produced by Dogtag. <a href="https://pagure.io/dogtagpki/issue/1627">Ticket #1627</a> in the upstream Pagure tracks this issue.</p>
+<p>The reason this was not implemented in the initial release (or since) is that in the baseline case, a CRL can only include certificates from a single CA. Say we have the main CA <code>CN=MainCA</code> and lightweight sub-CA <code>CN=SubCA</code>. The CRL cannot include certificates from both CAs, because a CRL is just a list of serial numbers.</p>
+<h3 id="indirect-crls">Indirect CRLs</h3>
+<p>There is a way around this limitation. The <a href="https://tools.ietf.org/html/rfc5280#section-5.3.3">Certificate Issuer</a> CRL entry extension, if some other extensions on both the certificate and CRL are set up <em>just right</em>, allows a CRL to include certificates from multiple issuers. Such CRLs are called <em>indirect CRLs</em>. Conforming applications are not required to support indirect CRLs, and the extension is <em>critical</em> so there is a risk of compatibility issues if we were to use indirect CRLs for conveying revocation status of certificates issued by lightweight CAs.</p>
+<p>Apart from client support for the Certificate Issuer extension the other requirements for indirect CRLs to work are:</p>
+<ul>
+<li>The certificate’s <em>CRL Distribution Points (CRLDP)</em> extension must include the <code>cRLIssuer</code> field and its value must match the issuer of the CRL.</li>
+<li>The CRL must include the <em>Issuing Distribution Point</em> CRL extension that asserts the <code>indirectCRL</code> boolean. This is a critical extension.</li>
+<li>The trust anchor for the CRL must be the same as the trust anchor for the certificate. This means that indirect CRLs cannot work for lightweight CAs that do not chain to the same CA. This is only a potential problem if the lightweight CAs feature is enhanced to support hosting unrelated CAs (rather than sub-CAs).</li>
+</ul>
+<p>So to use indirect CRLs some minor changes to certificate profiles would be required. But the changes would be the same for all profiles and the content of the CRL Distribution Point extension would be the same regardless of which lightweight CA issues the certificate.</p>
+<h3 id="separate-crls">Separate CRLs</h3>
+<p>An alternative approach is to create a separate CRL for each lightweight CA. This would avoid compatibility issues caused by the use of critical extensions that clients are not required to support. It also avoids the trust anchor limitations that would arise when hosting a lightweight CA that does not share a common trust root with the CRL issuer.</p>
+<p>From an implementation point of view there are two major challenges with this approach.</p>
+<ol type="1">
+<li>Dogtag does not generate CRLs implicitly but currently requires explicit configuration for each CRL. The configuration is not stored in LDAP but in the <code>CS.cfg</code> configuration file, so there is no way to dynamically configure new CRLs as new lightweight CAs are created.</li>
+<li>The content of the CRL Distribution Point extension will differ according to the CA that is issuing the certificate. The CRLDP content is currently configured per-profile. New profile components or enhancements to the existing CRLDP profile component will be required.</li>
+</ol>
+<p>In my view it is not acceptable to have to define multiple profiles differing only the CRL Distribution Point extension. The CA issuing the certificate should, by default, set any extensions that relate specifically to itself, including the CRLDP (also <em>Authority Key Identifier</em> and <em>Authority Information Access</em>). For more specialised use cases, the CRLDP content could be <em>overridden</em> or <em>suppressed</em> on a per-profile basis.</p>
+<h3 id="deciding-the-approach">Deciding the approach</h3>
+<p>Indirect CRLs is the lower-effort approach. But before choosing it, we ought to audit certificate verification libraries (especially OpenSSL, NSS and other libraries used in Fedora, RHEL and other Red Hat products) to see if they support indirect CRLs. If support is widespread, the approach is viable. If support is not widespread, it is not a good idea.</p>
+<p>Thinking longer-term, this is a good opportunity to improve the administrator experience. Maybe now is a good time to implement useful features like automatic CRL generation for each CA in a Dogtag instance, and profile components that create a CRL Distribution Point extension that points to the CRL for the CA that is issuing the certificate. The current configuration approach is versatile and can handle all kinds of wild CRL scenarios. But it is <em>hostile</em> to getting things right for the common case.</p>
+<p>This decision will probably not be mine to make because I will soon be leaving the Dogtag team. But I hope this post is useful to whoever is involved in the eventual decision.</p>
+<h3 id="profile-changes">Profile changes</h3>
+<p>Both of the discussed approaches require some changes to profile configuration. Required profile changes means upgrade steps to update them. This can be tricky especially in mixed-version topologies when new profile components (if any) are present on some servers but not others.</p>
+<h3 id="the-do-nothing-option">The “do nothing” option</h3>
+<p>Lightweight CAs have been available for nearly 4 years. I can only recall one or two occasions customer queries about lightweight CA CRL support. To be clear, it is a reasonable ask. But it seems that OCSP is sufficient for most customers. Or perhaps there is just a lack of awareness that CRLs do not include certificates issued by lightweight CAs. Whatever the case, the low demand agrees with my own position that although CRL support for lightweight CAs is a nice-to-have, it is not of critical importance to many users or customers.</p>
+<h2 id="conclusion">Conclusion</h2>
+<p>In this post I identified two possible approaches to CRL support for lightweight CAs. Each approach has advantages, drawbacks and unique challenges. Never implementing it is also an option to be considered because demand, though it does exist, seems low.</p>
+<p>I haven’t often discussed revocation in detail, so it is probably worth mentioning other approaches besides CRLs and OCSP.</p>
+<p><em>Ephemeral PKI</em> avoids the problem by only issuing very short lived certificates, e.g. one week, one day or even less! Assuming keys are rotated just as frequently, when certificate lifetimes approach the “lag” time revocation solutions, the revocation solution is not needed.</p>
+<p><em>CRLite</em> is an experimental revocation solution currently in development. It achieves fast and scalable revocation checking through cascading Bloom filters produced by an <em>aggregator</em> that records certificate revocations from one or more CAs. The target use case is in fact <em>all publicly trusted CAs</em> and Firefox Nightly already uses the system (non-enforcing, telemetry-only by default). Scott Helme wrote an <a href="https://scotthelme.co.uk/crlite-finally-a-fix-for-broken-revocation/">excellent blog post</a> about it and you can read the <a href="https://obj.umiacs.umd.edu/papers_for_stories/crlite_oakland17.pdf">original paper</a> for the gory details.</p>
+<p>One final note. I found some compliance issues with how the CRL Distribution Point extension is configured in the default FreeIPA certificate profiles. A strict reading of <a href="https://tools.ietf.org/html/rfc5280">RFC 5280</a> suggests that the CRL Distribution Point extension data produced by the default FreeIPA profiles would lead to the certificate not being considered in scope of the CRLs produced by Dogtag. This issue is particular to FreeIPA configuration, not a general problem with FreeIPA. More investiation is required and I will probably write a separate post about this in the future.</p>]]></summary>
+</entry>
+<entry>
     <title>ACME DNS challenges and FreeIPA</title>
     <link href="https://frasertweedale.github.io/blog-redhat/posts/2020-05-13-ipa-acme-dns.html" />
     <id>https://frasertweedale.github.io/blog-redhat/posts/2020-05-13-ipa-acme-dns.html</id>
@@ -1212,206 +1263,6 @@ information about the status of the certificate.</code></pre>
 <p>So it is fine for issued certificate to have expiry dates beyond that of the CA.</p>
 <p>In fact, clamping the <code>notAfter</code> of issued certificates to the <code>notAfter</code> of the CA can cause operational challenges. At the same time as the CA needs renewal, so do potentially many issued certificates! You may end up with certificates with short validity periods if the CA certificate is renewed close to its <code>notAfter</code> time, and a flood of renewals to perform at the same time.</p>
 <p>There is one situation where it is required to clamp the <code>notAfter</code> of issued certificates to the issuer <code>notAfter</code>. This is when it is known that the issuer, including its CRL and OCSP facilities, will be decommissioned shortly after the expiry of the issuer certificate. Otherwise, in light of the potential operational hazards, I recommend issuing certificates with whatever validity period is appropriate for the application, regardless of when the issuer certificate expires.</p>]]></summary>
-</entry>
-<entry>
-    <title>Dogtag replica range management</title>
-    <link href="https://frasertweedale.github.io/blog-redhat/posts/2019-07-26-dogtag-replica-ranges.html" />
-    <id>https://frasertweedale.github.io/blog-redhat/posts/2019-07-26-dogtag-replica-ranges.html</id>
-    <published>2019-07-26T00:00:00Z</published>
-    <updated>2019-07-26T00:00:00Z</updated>
-    <summary type="html"><![CDATA[<h1 id="dogtag-replica-range-management">Dogtag replica range management</h1>
-<p>Dogtag supports distributed deployment, with multiple <em>replicas</em> (also called <em>clones</em>) processing requests and issuing certificates. All replicas read and write a replicated LDAP database. A Dogtag server can create many kinds of objects: certificates, requests, archived keys or secrets. These objects need identifiers that are unique across the deployment.</p>
-<p>How does a Dogtag clone choose an identifier for a new object? In this post I will explain Dogtag’s <em>range management</em>—how it works, how it can break, and what to do if it does.</p>
-<h2 id="object-types-with-managed-ranges">Object types with managed ranges</h2>
-<p>There are several types of objects for which Dogtag manages identifier ranges. For example:</p>
-<ul>
-<li>Certificate serial numbers; it is essential that these be unique. Collisions are a violation of X.509 and can lead to erroneous <strong>denial of service</strong>, or <strong>false positive</strong> validity, when revocation comes into play.</li>
-<li>Certificate requests (including revocation and renewal requests) are stored in the database and must have a unique ID. Clobbering of requests objects due to range conflicts can lead to renewal request failures resulting in <strong>denial of service</strong>, or worse, issuance of a valid certificate with incorrect details, allowing <strong>impersonation</strong> attacks.</li>
-<li>KRA request identifiers are assigned from a managed range.</li>
-<li>KRA archived key and data objects are assigned from a managed range.</li>
-<li>Clones themselves are assigned identifiers when they are created; these come from managed ranges.</li>
-</ul>
-<p>The identifiers themselves are unbounded nonzero integers. All of the managed ranges are separate domains. That is, the same numbers exist in each range, and the ranges are managed independently.</p>
-<h2 id="active-and-standby-ranges">Active and standby ranges</h2>
-<p>For each kind of range, each replica remembers up to two range assignments. The <em>active</em> range is the range from which identifiers are actively assigned. When the active range is exhausted, the <em>standby</em> range becomes the active range and the clone acquires a new range assignment, which will be the new standby range. A clone doesn’t necessarily have a standby range at all times. It only acquires a new allocation for the standby range when the unused amount of its active range falls below some configured <em>low water mark</em>.</p>
-<h2 id="range-assignments">Range assignments</h2>
-<p>Range assignments are recorded in LDAP. A clone’s active and standby ranges are also recorded in the clone’s <code>CS.cfg</code> configuration file. A range object looks like:</p>
-<pre><code>dn: cn=10000001,ou=certificateRepository,ou=ranges,o=ipaca
-objectClass: top
-objectClass: pkiRange
-beginRange: 10000001
-endRange: 20000000
-cn: 10000001
-host: f30-1.ipa.local
-SecurePort: 443</code></pre>
-<p>This is a serial number range assignment. Host <code>f30-1.ipa.local</code> has been assigned the range <code>10000001..20000000</code>. It is not apparent from this object, but these are actually <strong>hexadecimal</strong> numbers! Whether the numbers are decimal or hexadecimal varies among managed ranges.</p>
-<p>The directives in the <code>CS.cfg</code> on <code>f30-1.ipa.local</code> reflect this assignment:</p>
-<pre><code>dbs.enableSerialManagement=true
-
-dbs.beginSerialNumber=fff0001
-dbs.endSerialNumber=10000000
-
-dbs.nextBeginSerialNumber=10000001
-dbs.nextEndSerialNumber=20000000
-
-dbs.enableRandomSerialNumbers=false
-dbs.randomSerialNumberCounter=-1
-
-dbs.serialCloneTransferNumber=10000
-dbs.serialIncrement=10000000
-dbs.serialLowWaterMark=2000000</code></pre>
-<p>The active range is <code>fff0001..10000000</code>, and the standby range is <code>10000001..20000000</code>, which corresponds to the LDAP entry shown above.</p>
-<h3 id="range-delegation">Range delegation</h3>
-<p>Why is <code>f30-1</code>’s active range so much smaller than its standby range? This is the result of how ranges are assigned during cloning. When creating a clone, the server being configured contacts an existing clone and asks it for some configuration values, including serial/request/replica ID ranges. The existing clone <em>delegates</em> to the new clone a small segment of either its active or standby range. It delegates <em>from the end</em> of its active range, but if there are not enough numbers left in the active range, it delegates from the end the standby range instead.</p>
-<p>The size of the range delegation is configured in <code>CS.cfg</code>. For example, for serial numbers it is the <code>dbs.serialCloneTransferNumber</code> setting. I have never heard of anyone changing the default, and I can’t think of a reason to do so.</p>
-<p>Because the delegation is a portion of an already-assigned range (with corresponding LDAP object), new LDAP range objects are not created for delegated ranges, and the existing range object is not modified in any way. Therefore, LDAP only ever shows the <em>original</em> range assignments.</p>
-<p>This range delegation procedure has been a source of bugs. For example, <a href="https://pagure.io/dogtagpki/issue/3055">issue 3055</a> was a cloning failure when creating two clones (call them <em>C</em> and <em>D</em>) from a server that is itself a clone (call it <em>B</em>). Because the delegation size is fixed (the <code>dbs.serialCloneTransferNumber</code> setting), creating <em>C</em> delegates <em>B</em>’s whole active range to <em>C</em>. Unless <em>B</em> had a chance to switch to its standby range (when didn’t happen during cloning), creating the second clone <em>D</em> would fail because <em>B</em>’s active range was exhausted. This issue was fixed, but a more robust solution is to do away with range delegation entirely; the server can create full range assignments for the new clone instead of delegating part of its own range assignment. <a href="https://pagure.io/dogtagpki/issue/3060">Issue 3060</a> tracks this work.</p>
-<h2 id="random-serial-numbers">Random serial numbers</h2>
-<p>Most repositories with range management yield numbers sequentially from the active ranges. For the certificate repository only, you can optionally enable <em>random</em> serial numbers. Numbers are chosen by a uniform random sample from the clone’s assigned range. Dogtag checks to make sure the number was not already used; if it was used, it tries again (and again, up to a limit).</p>
-<p>Some additional configuration values come into play when using random serial numbers:</p>
-<dl>
-<dt><code>dbs.enableRandomSerialNumbers</code></dt>
-<dd><p>Enable random serial numbers (default: off)</p>
-</dd>
-<dt><code>dbs.collisionRecoverySteps</code></dt>
-<dd><p>How many retries when a collision is detected (default: 10)</p>
-</dd>
-<dt><code>dbs.minimumRandomBits</code></dt>
-<dd><p>Minimum size of the range, in bits (default: 4 bits)</p>
-</dd>
-<dt><code>dbs.serialLowWaterMark</code></dt>
-<dd><p>Switch to standby range when there are fewer than this many serials left in the range (default: 2000000)</p>
-</dd>
-</dl>
-<p>Critically, The <code>dbs.minimumRandomBits</code> does <em>not</em> determine how much entry is in the serial number. If many serial numbers in the range have already been used, the actual number of serials left could be less than <code>dbs.minimumRandomBits</code> of entropy. When issuing random serial numbers, the server keeps a running count of how many serial numbers have been used in the active range. When the range size minus the current count falls below <code>dbs.serialLowWaterMark</code>, the server switches to the standby range. Therefore it is <code>dbs.serialLowWaterMark</code>, not <code>dbs.minimumRandomBits</code>, that actually controls the minimum amount of randomness in the serial number.</p>
-<h2 id="switching-to-the-standby-range">Switching to the standby range</h2>
-<p>The actions performed by the subroutine that switches to the next range are:</p>
-<dl>
-<dt>1. Set the active range start and end variables to the standby range</dt>
-<dd><p>start and end</p>
-</dd>
-</dl>
-<ol>
-<li>Reset the standby range start and end variables to <code>null</code></li>
-<li>Reset counters</li>
-<li>Persist these changes to <code>CS.cfg</code>.</li>
-</ol>
-<p>The switchover procedure <strong>does not acquire a new standby range assignment</strong>. Immediately after switching to the standby range, there isn’t a standby range anymore.</p>
-<h2 id="acquiring-a-new-range-assignment">Acquiring a new range assignment</h2>
-<p>As currently implemented, a new standby range is <strong>only acquired at system startup</strong>. Dogtag checks each repository to see if the amount of unused numbers in the active range has fallen below the <em>low water mark</em>. If it has, and if there is no standby range, it self-allocates a new range assignment in LDAP. The size of the allocation is determined by <code>CS.cfg</code> configurables, and its lower bound is the value of the <code>nextRange</code> attribute in the repository parent LDAP object. It adds a range object to the ranges subtree, and updates the <code>nextRange</code> attribute on the repository parent. See the appendix for a list of which subtree parents and range entries are involved for each repository.</p>
-<p>This procedure is brittle under the possibliity of LDAP replication races or transient failures. Two clones could end up adding the same range, and a replication error will occur. This can lead to identifier collisions resulting in problems later (see earlier discussion).</p>
-<h2 id="internals">Internals</h2>
-<p>Most of everything discussed so far lives in the <code>Repository</code> class, with <code>CertificateRepository</code> providing additional behaviour related to random serial numbers. Code for acquiring a new range assignment lives in <code>DBSubsystem</code>. Some methods of interest include:</p>
-<dl>
-<dt><code>Repository.getNextSerialNumber</code></dt>
-<dd><p>Get the next number; calls <code>checkRange</code> before returning it</p>
-</dd>
-<dt><code>Repository.checkRange</code></dt>
-<dd><p>Check if the range is exhausted; if so call <code>switchToNextRange</code></p>
-</dd>
-<dt><code>Repository.switchToNextRange</code></dt>
-<dd><p>Switches to next range (see discussion in earlier section)</p>
-</dd>
-<dt><code>Repository.checkRanges</code></dt>
-<dd><p>Sanity checks the active and standby ranges; acquires new range allocation if necessary (by calling <code>DBSubsystem.getNextRange</code>) and persists the changes to <code>CS.cfg</code>.</p>
-</dd>
-<dt><code>DBSubsystem.getNextRange</code></dt>
-<dd><p>This method creates the LDAP range object and updates the <code>nextRange</code> attribute, returning the range bounds to the caller.</p>
-</dd>
-</dl>
-<h2 id="fixing-range-conflicts">Fixing range conflicts</h2>
-<p>If you have range conflicts, the following high-level steps can be followed to fix them:</p>
-<ol type="1">
-<li>Stop all Dogtag servers.</li>
-<li>Resolve any replication issues or conflict entries.</li>
-<li>Examine active and standby ranges in <code>CS.cfg</code> on all replicas.</li>
-<li>If there are any conflicts (including between active and standby ranges), choose new ranges such that there are no conflicts. Update <code>CS.cfg</code> of each replica with its new ranges.</li>
-<li>Update the <code>nextRange</code> attribute for each repository object to a number <em>greater than</em> the highest number of any allocated range (<em>max + 1</em> is fine). See appendix for the objects involved.</li>
-<li><em>(Optional)</em> Update and add new range entries. This is not essential because nothing will break if the ranges entries don’t actually correspond to what’s in each replica’s <code>CS.cfg</code>. But is is still desirable that the LDAP entries reflect the configuration of each server.</li>
-<li>Start Dogtag servers. If some servers do not have a standby range, it is a good idea to stagger their startup. Otherwise there is a high risk of an immediate replication race causing range conflicts as servers acquire new range assignments.</li>
-</ol>
-<p>Note that this procedure will <em>not</em> save your skin if, e.g., multiple certificates with the same serial number were issued. Renewal problems may be unavoidable when collisions have occurred. This is the main reason we are switching to <a href="https://pagure.io/freeipa/issue/7991">profile-based renewal</a> for FreeIPA system certificates. Renewal requests refer to existing certificate and requests by serial / request ID. Thus if there have been range conflicts they are susceptible to failure or issuance of certificates with incorrect attributes. Performing a “fresh enrolment” when renewing system certificates avoids these problems because the profile enrolment request does not refer to any existing certificates or requests.</p>
-<h2 id="discussion">Discussion</h2>
-<p>Dogtag is over 20 years old, and I suppose that sequential numbers with range management made sense at the time. Maybe a multi-server deployment with a replicated database was not foreseen, and range management was bolted on later when the requirement emerged. Maybe using random identifiers was seen as difficult to get write; UUIDs were not widespread back then. Or maybe using random numbers was seen as not user-friendly (and that is true, but when you have more than one replica the ranged identifiers aren’t much better).</p>
-<p>On the fact of some ranges using base 16 (hexademical) and others using base 10: I cannot even imagine why this is so. Extra user and operator pain, for what gain? I cannot tell. The reasons are probably, like so many things in old programs, lost in time.</p>
-<p>The random serial number configuration and behaviour is… not state of the art. The program logic is difficult to follow and it is not clear which configuration directives govern the (minimum) amount of entropy in the chosen numbers.</p>
-<p>If I were designing a system like Dogtag today, I would use random UUIDs for everything, except possibly serial numbers. There are <a href="https://en.wikipedia.org/wiki/UUID#Version_4_(random)">122 bits of entropy</a> in a Version 4 UUID. The current CA/Browser Forum <a href="https://cabforum.org/wp-content/uploads/CA-Browser-Forum-BR-1.6.5.pdf">Baseline Requirements</a> (v1.6.5) require serial numbers with 64 bits of high-quality randomness, but if that is ever increased beyond 122 bits a UUID won’t cut it anymore. So I would just use very large random numbers for all serial numbers.</p>
-<p>Can we move Dogtag from what we have now to something more robust? Of course it is possible, but it would be a big effort. So all that is likely to happen is smaller, well understood and bounded efforts with an obvious payoff, like avoiding range delegation (<a href="https://pagure.io/dogtagpki/issue/3060">Issue 3060</a>).</p>
-<p>The new FreeIPA <a href="https://www.freeipa.org/page/V4/Healthcheck">Health Check</a> system provides pluggable checks for system health. There is an open ticket to implement Dogtag range conflict and sanity checking in the Health Check tool, so that problems can be detected before they cause major failures.</p>
-<h2 id="appendix-range-configuration-directives-and-objects">Appendix: range configuration directives and objects</h2>
-<p>In all LDAP DNs below, substitute <code>o=ipaca</code> with the relevant base DN.</p>
-<h3 id="certificate-serial-numbers">Certificate serial numbers</h3>
-<p>Base: <strong>hexademical</strong></p>
-<p><code>CS.cfg</code> attributes:</p>
-<pre><code>dbs.beginSerialNumber
-dbs.endSerialNumber
-dbs.nextBeginSerialNumber
-dbs.nextEndSerialNumber
-dbs.serialIncrement</code></pre>
-<p>LDAP repository object (<code>nextRange</code> attribute):</p>
-<pre><code>dn: ou=certificateRepository,ou=ca,o=ipaca</code></pre>
-<p>LDAP ranges subtree parent:</p>
-<pre><code>dn: ou=certificateRepository,ou=ranges,o=ipaca</code></pre>
-<h3 id="ca-requests">CA requests</h3>
-<p>Base: <strong>demical</strong></p>
-<p><code>CS.cfg</code> attributes:</p>
-<pre><code>dbs.beginRequestNumber
-dbs.endRequestNumber
-dbs.nextBeginRequestNumber
-dbs.nextEndRequestNumber
-dbs.requestIncrement</code></pre>
-<p>LDAP repository object (<code>nextRange</code> attribute):</p>
-<pre><code>dn: ou=ca,ou=requests,o=ipaca</code></pre>
-<p>LDAP ranges subtree parent:</p>
-<pre><code>dn: ou=requests,ou=ranges,o=ipaca</code></pre>
-<h3 id="replica-numbers">Replica numbers</h3>
-<p>Base: <strong>demical</strong></p>
-<p><code>CS.cfg</code> attributes:</p>
-<pre><code>dbs.beginReplicaNumber
-dbs.endReplicaNumber
-dbs.nextBeginReplicaNumber
-dbs.nextEndReplicaNumber
-dbs.replicaIncrement</code></pre>
-<p>LDAP repository object (<code>nextRange</code> attribute):</p>
-<pre><code>dn: ou=replica,o=ipaca</code></pre>
-<p>LDAP ranges subtree parent:</p>
-<pre><code>dn: ou=replica,ou=ranges,o=ipaca</code></pre>
-<h3 id="kra-keys">KRA keys</h3>
-<p>Base: <strong>hexademical</strong></p>
-<p><code>kra/CS.cfg</code> attributes:</p>
-<pre><code>dbs.beginSerialNumber
-dbs.endSerialNumber
-dbs.nextBeginSerialNumber
-dbs.nextEndSerialNumber
-dbs.serialIncrement</code></pre>
-<p>LDAP repository object (<code>nextRange</code> attribute):</p>
-<pre><code>dn: ou=keyRepository,ou=kra,o=kra,o=ipaca</code></pre>
-<p>LDAP ranges subtree parent:</p>
-<pre><code>dn: ou=keyRepository,ou=ranges,o=kra,o=ipaca</code></pre>
-<h3 id="kra-requests">KRA requests</h3>
-<p>Base: <strong>demical</strong></p>
-<p><code>kra/CS.cfg</code> attributes:</p>
-<pre><code>dbs.beginRequestNumber
-dbs.endRequestNumber
-dbs.nextBeginRequestNumber
-dbs.nextEndRequestNumber
-dbs.requestIncrement</code></pre>
-<p>LDAP repository object (<code>nextRange</code> attribute):</p>
-<pre><code>dn: ou=kra,ou=requests,o=kra,o=ipaca</code></pre>
-<p>LDAP ranges subtree parent:</p>
-<pre><code>dn: ou=requests,ou=ranges,o=kra,o=ipaca</code></pre>
-<h3 id="kra-replicas-numbers">KRA replicas numbers</h3>
-<p>Base: <strong>demical</strong></p>
-<p><code>CS.cfg</code> attributes:</p>
-<pre><code>dbs.beginReplicaNumber
-dbs.endReplicaNumber
-dbs.nextBeginReplicaNumber
-dbs.nextEndReplicaNumber
-dbs.replicaIncrement</code></pre>
-<p>LDAP repository object (<code>nextRange</code> attribute):</p>
-<pre><code>dn: ou=replica,o=kra,o=ipaca</code></pre>
-<p>LDAP ranges subtree parent:</p>
-<pre><code>dn: ou=replica,ou=ranges,o=kra,o=ipaca</code></pre>]]></summary>
 </entry>
 
 </feed>
