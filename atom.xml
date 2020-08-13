@@ -8,8 +8,157 @@
         <name>Fraser Tweedale</name>
         <email>frase@frase.id.au</email>
     </author>
-    <updated>2020-06-19T00:00:00Z</updated>
+    <updated>2020-08-13T00:00:00Z</updated>
     <entry>
+    <title>Dynamic volume provisioning with OpenShift storage classes</title>
+    <link href="https://frasertweedale.github.io/blog-redhat/posts/2020-08-13-openshift-storage-classes.html" />
+    <id>https://frasertweedale.github.io/blog-redhat/posts/2020-08-13-openshift-storage-classes.html</id>
+    <published>2020-08-13T00:00:00Z</published>
+    <updated>2020-08-13T00:00:00Z</updated>
+    <summary type="html"><![CDATA[<h1 id="dynamic-volume-provisioning-with-openshift-storage-classes">Dynamic volume provisioning with OpenShift storage classes</h1>
+<p>For containerised applications that require persistent storage, the Kubernetes <code>PersistentVolumeClaim</code> (PVC) object provides the link between a <code>PersistentVolume</code> (PV) and the pod. When scaling such an application or even deploying it the first time, the operator (human or otherwise) has to create the PVC; the pod specification can then refer to it.</p>
+<p>For example, a <code>StatefulSet</code> object can optionally specify <code>volumeClaimTemplates</code> alongside the pod <code>template</code>. As the application creates pods, so will it create the associated PVCs according to the defined templates.</p>
+<p>But PVCs need PVs to bind to. Can these also be created on the fly? And if so, how can we abstract over the details of the underlying storage provider(s), which may vary from cluster to cluster? In this post I provide an overview of <em>storage classes</em>, which solve these problems.</p>
+<h2 id="creating-volumes">Creating volumes</h2>
+<p>A cluster can provide a variety of types of volumes: Ceph, NFS, <code>hostPath</code>, iSCSI and several more. Storage types of the infrastructure the cluster is deployed in may also be available, e.g. AWS EBS, Azure Disk, GCE PersistentDisk (PD), Cinder (OpenStack), etc.</p>
+<p>Creating a <code>PersistentVolume</code> requires knowing about what volume types are supported, and possibly additional details about that storage type. For example, to create a PV based on a GCE PD:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb1-1"><a href="#cb1-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
+<span id="cb1-2"><a href="#cb1-2"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> PersistentVolume</span></span>
+<span id="cb1-3"><a href="#cb1-3"></a><span class="fu">metadata</span><span class="kw">:</span></span>
+<span id="cb1-4"><a href="#cb1-4"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> pv-test</span></span>
+<span id="cb1-5"><a href="#cb1-5"></a><span class="fu">spec</span><span class="kw">:</span></span>
+<span id="cb1-6"><a href="#cb1-6"></a><span class="at">  </span><span class="fu">capacity</span><span class="kw">:</span></span>
+<span id="cb1-7"><a href="#cb1-7"></a><span class="at">    </span><span class="fu">storage</span><span class="kw">:</span><span class="at"> 100Gi</span></span>
+<span id="cb1-8"><a href="#cb1-8"></a><span class="at">  </span><span class="fu">accessModes</span><span class="kw">:</span></span>
+<span id="cb1-9"><a href="#cb1-9"></a><span class="at">  </span><span class="kw">-</span><span class="at"> ReadWriteOnce</span></span>
+<span id="cb1-10"><a href="#cb1-10"></a><span class="at">  </span><span class="fu">gcePersistentDisk</span><span class="kw">:</span></span>
+<span id="cb1-11"><a href="#cb1-11"></a><span class="at">    </span><span class="fu">pdName</span><span class="kw">:</span><span class="at"> my-data-disk</span></span>
+<span id="cb1-12"><a href="#cb1-12"></a><span class="at">    </span><span class="fu">fsType</span><span class="kw">:</span><span class="at"> ext4</span></span>
+<span id="cb1-13"><a href="#cb1-13"></a><span class="at">  </span><span class="fu">nodeAffinity</span><span class="kw">:</span></span>
+<span id="cb1-14"><a href="#cb1-14"></a><span class="at">    </span><span class="fu">required</span><span class="kw">:</span></span>
+<span id="cb1-15"><a href="#cb1-15"></a><span class="at">      </span><span class="fu">nodeSelectorTerms</span><span class="kw">:</span></span>
+<span id="cb1-16"><a href="#cb1-16"></a><span class="at">      </span><span class="kw">-</span><span class="at"> </span><span class="fu">matchExpressions</span><span class="kw">:</span></span>
+<span id="cb1-17"><a href="#cb1-17"></a><span class="at">        </span><span class="kw">-</span><span class="at"> </span><span class="fu">key</span><span class="kw">:</span><span class="at"> failure-domain.beta.kubernetes.io/zone</span></span>
+<span id="cb1-18"><a href="#cb1-18"></a><span class="at">          </span><span class="fu">operator</span><span class="kw">:</span><span class="at"> In</span></span>
+<span id="cb1-19"><a href="#cb1-19"></a><span class="at">          </span><span class="fu">values</span><span class="kw">:</span></span>
+<span id="cb1-20"><a href="#cb1-20"></a><span class="at">          </span><span class="kw">-</span><span class="at"> us-central1-a</span></span>
+<span id="cb1-21"><a href="#cb1-21"></a><span class="at">          </span><span class="kw">-</span><span class="at"> us-central1-b</span></span></code></pre></div>
+<p>Creating this PV required:</p>
+<ul>
+<li>knowing that the cluster provides the GCE PD volume type</li>
+<li>knowing the name and region/zones of the PD to use</li>
+</ul>
+<p>Having to know these details and encoding them into an application’s deployment manifests imposes a greater burden on administrators, or necessitates more complex operators, or results in a less portable application. Or some combination of those outcomes.</p>
+<h2 id="storage-classes">Storage classes</h2>
+<p>What we really want is to abstract over the storage implementations. We want to able to specify some high-level characteristics of the storage (e.g. block or file, fast or slow?). This is what <em>storage classes</em> provide. Then when we create a PVC, we can specify the desired capacity and class, and the cluster should <em>dynamically provision</em> an appropriate volume. As a result, applications are simpler to deploy and more portable.</p>
+<p>To see the storage classes available in a cluster:</p>
+<pre><code>ftweedal% oc get storageclass
+NAME                 PROVISIONER            RECLAIMPOLICY   VOLUMEBINDINGMODE      ALLOWVOLUMEEXPANSION   AGE
+standard (default)   kubernetes.io/cinder   Delete          WaitForFirstConsumer   true                   28d</code></pre>
+<p>This cluster has only one storage class, called <code>standard</code>. It is also the default storage class for this cluster. To use dynamic provisioning, in the PVC spec instead of <code>volumeName</code> specify <code>storageClassName</code>:</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb3-1"><a href="#cb3-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
+<span id="cb3-2"><a href="#cb3-2"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> PersistentVolumeClaim</span></span>
+<span id="cb3-3"><a href="#cb3-3"></a><span class="fu">metadata</span><span class="kw">:</span></span>
+<span id="cb3-4"><a href="#cb3-4"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> pvc-test</span></span>
+<span id="cb3-5"><a href="#cb3-5"></a><span class="fu">spec</span><span class="kw">:</span></span>
+<span id="cb3-6"><a href="#cb3-6"></a><span class="at">  </span><span class="fu">accessModes</span><span class="kw">:</span></span>
+<span id="cb3-7"><a href="#cb3-7"></a><span class="at">    </span><span class="kw">-</span><span class="at"> ReadWriteOnce</span></span>
+<span id="cb3-8"><a href="#cb3-8"></a><span class="at">  </span><span class="fu">resources</span><span class="kw">:</span></span>
+<span id="cb3-9"><a href="#cb3-9"></a><span class="at">    </span><span class="fu">requests</span><span class="kw">:</span></span>
+<span id="cb3-10"><a href="#cb3-10"></a><span class="at">      </span><span class="fu">storage</span><span class="kw">:</span><span class="at"> 10Gi</span></span>
+<span id="cb3-11"><a href="#cb3-11"></a><span class="at">  </span><span class="fu">storageClassName</span><span class="kw">:</span><span class="at"> standard</span></span></code></pre></div>
+<p>If you want to use the default storage class, you can even omit the <code>storageClassName</code> field:</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb4-1"><a href="#cb4-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
+<span id="cb4-2"><a href="#cb4-2"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> PersistentVolumeClaim</span></span>
+<span id="cb4-3"><a href="#cb4-3"></a><span class="fu">metadata</span><span class="kw">:</span></span>
+<span id="cb4-4"><a href="#cb4-4"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> pvc-test</span></span>
+<span id="cb4-5"><a href="#cb4-5"></a><span class="fu">spec</span><span class="kw">:</span></span>
+<span id="cb4-6"><a href="#cb4-6"></a><span class="at">  </span><span class="fu">accessModes</span><span class="kw">:</span></span>
+<span id="cb4-7"><a href="#cb4-7"></a><span class="at">    </span><span class="kw">-</span><span class="at"> ReadWriteOnce</span></span>
+<span id="cb4-8"><a href="#cb4-8"></a><span class="at">  </span><span class="fu">resources</span><span class="kw">:</span></span>
+<span id="cb4-9"><a href="#cb4-9"></a><span class="at">    </span><span class="fu">requests</span><span class="kw">:</span></span>
+<span id="cb4-10"><a href="#cb4-10"></a><span class="at">      </span><span class="fu">storage</span><span class="kw">:</span><span class="at"> 10Gi</span></span></code></pre></div>
+<h2 id="dynamic-provisioning-in-action">Dynamic provisioning in action</h2>
+<p>Let’s see what actually happens when we use dynamic provisioning. We will observe what objects are created and how their status changes as we create, use and delete a PVC that uses the default storage class.</p>
+<p>First let’s see what PVs exist:</p>
+<pre><code>ftweedal% oc get pv
+NAME                                       CAPACITY   ACCESS MODES   RECLAIM POLICY   STATUS    CLAIM                                             STORAGECLASS   REASON    AGE
+pvc-d3bc7c81-8a24-4318-a914-296dbdc5ec3f   100Gi      RWO            Delete           Bound     openshift-image-registry/image-registry-storage   standard                 7d22h</code></pre>
+<p>There is one PV, with a 100Gi capacity. It is used for the image registry.</p>
+<p>Now, lets create <code>pvc-test</code> as specified above:</p>
+<pre><code>ftweedal% oc create -f deploy/pvc-test.yaml
+persistentvolumeclaim/pvc-test created
+
+ftweedal% oc get pvc pvc-test
+NAME       STATUS    VOLUME    CAPACITY   ACCESS MODES   STORAGECLASS   AGE
+pvc-test   Pending                                       standard       11s
+
+ftweedal% oc get pv
+NAME                                       CAPACITY   ACCESS MODES   RECLAIM POLICY   STATUS    CLAIM                                             STORAGECLASS   REASON    AGE
+pvc-d3bc7c81-8a24-4318-a914-296dbdc5ec3f   100Gi      RWO            Delete           Bound     openshift-image-registry/image-registry-storage   standard                 7d22h
+
+ftweedal% oc get pvc pvc-test -o yaml |grep storageClassName
+storageClassName: standard</code></pre>
+<p>The PVC <code>pvc-test</code> was created and has status <code>pending</code>. No new PV has been created yet. Finally note that the PVC has <code>storageClassName: standard</code> (which is the cluster default).</p>
+<p>Now lets create a pod that uses <code>pvc-test</code>, mounting it at <code>/data</code>. The pod spec is:</p>
+<div class="sourceCode" id="cb7"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb7-1"><a href="#cb7-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
+<span id="cb7-2"><a href="#cb7-2"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Pod</span></span>
+<span id="cb7-3"><a href="#cb7-3"></a><span class="fu">metadata</span><span class="kw">:</span></span>
+<span id="cb7-4"><a href="#cb7-4"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> pod-test</span></span>
+<span id="cb7-5"><a href="#cb7-5"></a><span class="fu">spec</span><span class="kw">:</span></span>
+<span id="cb7-6"><a href="#cb7-6"></a><span class="at">  </span><span class="fu">containers</span><span class="kw">:</span></span>
+<span id="cb7-7"><a href="#cb7-7"></a><span class="at">    </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> pod-test-container</span></span>
+<span id="cb7-8"><a href="#cb7-8"></a><span class="at">      </span><span class="fu">image</span><span class="kw">:</span><span class="at"> freeipa/freeipa-server:fedora-31</span></span>
+<span id="cb7-9"><a href="#cb7-9"></a><span class="at">      </span><span class="fu">volumeMounts</span><span class="kw">:</span></span>
+<span id="cb7-10"><a href="#cb7-10"></a><span class="at">        </span><span class="kw">-</span><span class="at"> </span><span class="fu">mountPath</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;/data&quot;</span></span>
+<span id="cb7-11"><a href="#cb7-11"></a><span class="at">          </span><span class="fu">name</span><span class="kw">:</span><span class="at"> data</span></span>
+<span id="cb7-12"><a href="#cb7-12"></a><span class="at">      </span><span class="fu">command</span><span class="kw">:</span></span>
+<span id="cb7-13"><a href="#cb7-13"></a><span class="at">        </span><span class="kw">-</span><span class="at"> sleep</span></span>
+<span id="cb7-14"><a href="#cb7-14"></a><span class="at">        </span><span class="kw">-</span><span class="at"> </span><span class="st">&quot;3600&quot;</span></span>
+<span id="cb7-15"><a href="#cb7-15"></a><span class="at">  </span><span class="fu">volumes</span><span class="kw">:</span></span>
+<span id="cb7-16"><a href="#cb7-16"></a><span class="at">    </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> data</span></span>
+<span id="cb7-17"><a href="#cb7-17"></a><span class="at">      </span><span class="fu">persistentVolumeClaim</span><span class="kw">:</span></span>
+<span id="cb7-18"><a href="#cb7-18"></a><span class="at">        </span><span class="fu">claimName</span><span class="kw">:</span><span class="at"> pvc-test</span></span></code></pre></div>
+<p>After creating the pod we will write a file under <code>/data</code>, delete then re-create the pod, and observe that the file we wrote persists.</p>
+<pre><code>ftweedal% oc create -f deploy/pod-test.yaml
+pod/pod-test created
+
+ftweedal% oc exec pod-test -- sh -c &#39;echo &quot;hello world&quot; &gt; /data/foo&#39;
+
+ftweedal% oc delete pod pod-test
+pod &quot;pod-test&quot; deleted
+
+ftweedal% oc create -f deploy/pod-test.yaml
+pod/pod-test created
+
+ftweedal% oc exec pod-test -- cat /data/foo
+hello world
+
+ftweedal% oc delete pod pod-test
+pod &quot;pod-test&quot; deleted</code></pre>
+<p>This confirms that the PVC works as intended. Let’s check the status of the PVC and PVs to see what happened behind the scenes:</p>
+<pre><code>ftweedal% oc get pvc pvc-test
+NAME       STATUS    VOLUME                                     CAPACITY   ACCESS MODES   STORAGECLASS   AGE
+pvc-test   Bound     pvc-26d82d50-8e66-4938-bdee-f28ff2bcb49c   10Gi       RWO            standard       16m
+
+ftweedal% oc get pv
+NAME                                       CAPACITY   ACCESS MODES   RECLAIM POLICY   STATUS    CLAIM                                             STORAGECLASS   REASON    AGE
+pvc-26d82d50-8e66-4938-bdee-f28ff2bcb49c   10Gi       RWO            Delete           Bound     ftweedal-operator/pvc-test                        standard                 4m53s
+pvc-d3bc7c81-8a24-4318-a914-296dbdc5ec3f   100Gi      RWO            Delete           Bound     openshift-image-registry/image-registry-storage   standard                 7d23h</code></pre>
+<p>Before creating the pod <code>pvc-test</code> had status <code>Pending</code>. Now it is <code>Bound</code> to the volume <code>pvc-26d82d50-8e66-4938-bdee-f28ff2bcb49c</code> which was dynamically provisioned with capacity 10Gi as required by <code>pvc-test</code>.</p>
+<p>Finally as we delete <code>pvc-test</code>, observe the automatic deletion of the dynamically provisioned volume:</p>
+<pre><code>ftweedal% oc delete pvc pvc-test
+persistentvolumeclaim &quot;pvc-test&quot; deleted
+
+ftweedal% oc get pv
+NAME                                       CAPACITY   ACCESS MODES   RECLAIM POLICY   STATUS    CLAIM                                             STORAGECLASS   REASON    AGE
+pvc-d3bc7c81-8a24-4318-a914-296dbdc5ec3f   100Gi      RWO            Delete           Bound     openshift-image-registry/image-registry-storage   standard                 7d23h</code></pre>
+<p><code>pvc-26d82d50-8e66-4938-bdee-f28ff2bcb49c</code> went away, as expected.</p>
+<h2 id="conclusion">Conclusion</h2>
+<p>As we work toward operationalising FreeIPA in OpenShift, I am interested in how we can use storage classes to make for a smooth deployment across different environments and especially those for which OpenShift Dedicated is available.</p>
+<p>I also need to learn more about the best practices or common idioms for representing in storage classes the application suitability (e.g. file versus block storage) or performance characteristics of supported volume types in a cluster. To make it a bit more concrete, consider that for performance reasons we might require low-latency/high-throughput block storage for the 389 DS LDAP database storage. How can we express this abstract requirement such that we get a satisfactory result across a variety of “clouds” with no administrator effort? Hopefully storage classes are the answer. But if they are not the whole solution, from what I have learned so far I have a strong feeling that they will be a bit part of the solution.</p>]]></summary>
+</entry>
+<entry>
     <title>CRLs for Dogtag Lightweight CAs</title>
     <link href="https://frasertweedale.github.io/blog-redhat/posts/2020-06-19-dogtag-lightweight-ca-crl.html" />
     <id>https://frasertweedale.github.io/blog-redhat/posts/2020-06-19-dogtag-lightweight-ca-crl.html</id>
@@ -52,7 +201,7 @@
 <h3 id="profile-changes">Profile changes</h3>
 <p>Both of the discussed approaches require some changes to profile configuration. Required profile changes means upgrade steps to update them. This can be tricky especially in mixed-version topologies when new profile components (if any) are present on some servers but not others.</p>
 <h3 id="the-do-nothing-option">The “do nothing” option</h3>
-<p>Lightweight CAs have been available for nearly 4 years. I can only recall one or two occasions customer queries about lightweight CA CRL support. To be clear, it is a reasonable ask. But it seems that OCSP is sufficient for most customers. Or perhaps there is just a lack of awareness that CRLs do not include certificates issued by lightweight CAs. Whatever the case, the low demand agrees with my own position that although CRL support for lightweight CAs is a nice-to-have, it is not of critical importance to many users or customers.</p>
+<p>Lightweight CAs have been available for nearly 4 years. I can only recall one or two queries about lightweight CA CRL support. To be clear, it is a fair ask. But it seems that OCSP is sufficient for most customers. Or perhaps there is a lack of awareness that CRLs do not include certificates issued by lightweight CAs. Whatever the case, the low demand aligns with my own opinion that although CRL support for lightweight CAs is a nice-to-have, it is not of critical importance to many users or customers.</p>
 <h2 id="conclusion">Conclusion</h2>
 <p>In this post I identified two possible approaches to CRL support for lightweight CAs. Each approach has advantages, drawbacks and unique challenges. Never implementing it is also an option to be considered because demand, though it does exist, seems low.</p>
 <p>I haven’t often discussed revocation in detail, so it is probably worth mentioning other approaches besides CRLs and OCSP.</p>
@@ -1241,28 +1390,6 @@ Server at https://rhel76-0.ipa.local/ipa/xml denied our request,
 <p>Newer releases of Certmonger added support for requesting certificates using a different certificate profile, or a different IPA (sub-)CA. On RHEL 6, it is not possible to request a different profile so the default profile (<code>caIPAserviceCert</code>) is always used. IPA server on RHEL 7 and later does support modifying profiles, including the default profile.</p>
 <p>The Certmonger IPA request helper uses <code>/etc/ipa/ca.crt</code> as the trust store for the HTTPS requests it makes to the FreeIPA server. If the IPA CA certificate is updated, this file will have to be updated on clients. When there are systems not IPA-enrolled á la <code>ipa-client-install</code>, it may be worthwhile to use configuration management tools such as Ansible to do this.</p>
 <p>As for getting certificates from AD-CS directly, there is interest from users and customers. I would like to see it implemented, but when or by whom, or whether we even will, has not been decided as of September 2019.</p>]]></summary>
-</entry>
-<entry>
-    <title>Certificates need not be limited to the CA’s validity period</title>
-    <link href="https://frasertweedale.github.io/blog-redhat/posts/2019-08-02-validity-exceeding-ca.html" />
-    <id>https://frasertweedale.github.io/blog-redhat/posts/2019-08-02-validity-exceeding-ca.html</id>
-    <published>2019-08-02T00:00:00Z</published>
-    <updated>2019-08-02T00:00:00Z</updated>
-    <summary type="html"><![CDATA[<h1 id="certificates-need-not-be-limited-to-the-cas-validity-period">Certificates need not be limited to the CA’s validity period</h1>
-<p>All X.509 certificates have a <code>notBefore</code> and <code>notAfter</code> date. These define the <em>validity period</em> of the certificate. When we talk about certificate <em>expiry</em>, we are talking about the <code>notAfter</code> date. The question often arises: can a certificate’s <code>notAfter</code> date exceed the <code>notAfter</code> date of the issuer’s certificate?</p>
-<p>The naïve intuition says, <em>surely a certificate’s validity period cannot exceed the CA’s</em>. But let’s think it through, and look at what these fields actually mean. According to <a href="https://tools.ietf.org/html/rfc5280#section-4.1.2.5">RFC 5280 §4.1.2.5</a>:</p>
-<pre><code>The certificate validity period is the time interval
-during which the CA warrants that it will maintain
-information about the status of the certificate.</code></pre>
-<p>The whole section makes no mention of the issuer’s <code>notAfter</code> date or validity period. It only says that the CA must maintain status (i.e. revocation) information about the issued certificate until (at least) the <code>notAfter</code> date.</p>
-<p>But what if the CA certificate expires before an issued certificate? One of two things happens:</p>
-<ol type="1">
-<li>The CA certificate got renewed and the verifier has a copy of the new certificate. The certificate being verified is within its validity period and so is the CA certificate, so there is a certificate path and everything is fine.</li>
-<li>The CA certificate was not renewed (or the verifier doesn’t have the renewed certificate). The certificate being verified is within its validity period, but the issuer certificate is <em>not</em>. So there is no certificate path; the certificate being verified cannot not be trusted.</li>
-</ol>
-<p>So it is fine for issued certificate to have expiry dates beyond that of the CA.</p>
-<p>In fact, clamping the <code>notAfter</code> of issued certificates to the <code>notAfter</code> of the CA can cause operational challenges. At the same time as the CA needs renewal, so do potentially many issued certificates! You may end up with certificates with short validity periods if the CA certificate is renewed close to its <code>notAfter</code> time, and a flood of renewals to perform at the same time.</p>
-<p>There is one situation where it is required to clamp the <code>notAfter</code> of issued certificates to the issuer <code>notAfter</code>. This is when it is known that the issuer, including its CRL and OCSP facilities, will be decommissioned shortly after the expiry of the issuer certificate. Otherwise, in light of the potential operational hazards, I recommend issuing certificates with whatever validity period is appropriate for the application, regardless of when the issuer certificate expires.</p>]]></summary>
 </entry>
 
 </feed>

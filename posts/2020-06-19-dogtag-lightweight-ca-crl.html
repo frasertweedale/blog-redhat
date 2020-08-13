@@ -20,7 +20,7 @@
         <div id="content">
             <div class="info">
     
-    Tags: <a title="All pages tagged 'dogtag'." href="../tags/dogtag.html">dogtag</a>, <a title="All pages tagged 'certificates'." href="../tags/certificates.html">certificates</a>, <a title="All pages tagged 'revocation'." href="../tags/revocation.html">revocation</a>
+    Tags: <a href="../tags/dogtag.html">dogtag</a>, <a href="../tags/certificates.html">certificates</a>, <a href="../tags/revocation.html">revocation</a>
     
 </div>
 
@@ -62,7 +62,7 @@
 <h3 id="profile-changes">Profile changes</h3>
 <p>Both of the discussed approaches require some changes to profile configuration. Required profile changes means upgrade steps to update them. This can be tricky especially in mixed-version topologies when new profile components (if any) are present on some servers but not others.</p>
 <h3 id="the-do-nothing-option">The “do nothing” option</h3>
-<p>Lightweight CAs have been available for nearly 4 years. I can only recall one or two occasions customer queries about lightweight CA CRL support. To be clear, it is a reasonable ask. But it seems that OCSP is sufficient for most customers. Or perhaps there is just a lack of awareness that CRLs do not include certificates issued by lightweight CAs. Whatever the case, the low demand agrees with my own position that although CRL support for lightweight CAs is a nice-to-have, it is not of critical importance to many users or customers.</p>
+<p>Lightweight CAs have been available for nearly 4 years. I can only recall one or two queries about lightweight CA CRL support. To be clear, it is a fair ask. But it seems that OCSP is sufficient for most customers. Or perhaps there is a lack of awareness that CRLs do not include certificates issued by lightweight CAs. Whatever the case, the low demand aligns with my own opinion that although CRL support for lightweight CAs is a nice-to-have, it is not of critical importance to many users or customers.</p>
 <h2 id="conclusion">Conclusion</h2>
 <p>In this post I identified two possible approaches to CRL support for lightweight CAs. Each approach has advantages, drawbacks and unique challenges. Never implementing it is also an option to be considered because demand, though it does exist, seems low.</p>
 <p>I haven’t often discussed revocation in detail, so it is probably worth mentioning other approaches besides CRLs and OCSP.</p>
@@ -74,6 +74,10 @@
     <div id="recent">
 Recent posts:
 <ul>
+    
+        <li>
+            <a href="../posts/2020-08-13-openshift-storage-classes.html">Dynamic volume provisioning with OpenShift storage classes</a>
+        </li>
     
         <li>
             <a href="../posts/2020-06-19-dogtag-lightweight-ca-crl.html">CRLs for Dogtag Lightweight CAs</a>
@@ -89,10 +93,6 @@ Recent posts:
     
         <li>
             <a href="../posts/2020-05-06-ipa-acme-intro.html">Introducing the FreeIPA ACME service</a>
-        </li>
-    
-        <li>
-            <a href="../posts/2020-01-28-freeipa-override-ca-key-size.html">Deploying FreeIPA with a 4096-bit CA signing key</a>
         </li>
     
 </ul>
