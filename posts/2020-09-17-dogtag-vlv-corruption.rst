@@ -211,7 +211,7 @@ Historical commentary: I don't know why the ``serialno``,
 ``requestId`` and other attributes use Directory String syntax,
 which necessitates the length prefixing hack.  Maybe SSS/VLV only
 work on strings (or it was thus in the past).  The code predates our
-current VCS and the reasons are lost in time.  The impication of
+current VCS and the reasons are lost in time.  The implication of
 this is that we can only handle numbers up to 99 decimal digits.
 Assumptions like this do bother me, but I think we are probably OK
 here.  For my lifetime, anyway.
