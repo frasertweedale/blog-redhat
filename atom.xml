@@ -98,6 +98,7 @@ nsTaskExitCode: 0</code></pre>
 <h2 id="discussion">Discussion</h2>
 <p>This year I have encountered variations of this problem on several occasions. I don’t know what the cause(s) are, i.e. why VLV indices get corrupted or stop updating. Hopefully DS experts will be able to shed more light on the issue.</p>
 <p>We are considering adding an automated check to the FreeIPA <em>Health Check</em> system, specifically for the range management VLVs. The <a href="">GitHub ticket</a> already contains some discussion and high level steps of how the check would work.</p>
+<p>The proper fix for this issue is to move to UUIDs for all object identifiers. Serial numbers might need something different but it is the same idea. This work is on the roadmap. <em>So many problems</em> will go away when we make this change.</p>
 <p>Historical commentary: I don’t know why the <code>serialno</code>, <code>requestId</code> and other attributes use Directory String syntax, which necessitates the length prefixing hack. Maybe SSS/VLV only work on strings (or it was thus in the past). The code predates our current VCS and the reasons are lost in time. The implication of this is that we can only handle numbers up to 99 decimal digits. Assumptions like this do bother me, but I think we are probably OK here. For my lifetime, anyway.</p>]]></summary>
 </entry>
 <entry>
