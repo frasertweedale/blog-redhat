@@ -205,6 +205,11 @@ Check* system, specifically for the range management VLVs.  The
 `GitHub ticket`_ already contains some discussion and high level
 steps of how the check would work.
 
+The proper fix for this issue is to move to UUIDs for all object
+identifiers.  Serial numbers might need something different but it
+is the same idea.  This work is on the roadmap.  *So many problems*
+will go away when we make this change.
+
 .. _upstream ticket: https://github.com/freeipa/freeipa-healthcheck/issues/151
 
 Historical commentary: I don't know why the ``serialno``,
