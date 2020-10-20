@@ -1,0 +1,170 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+    <head>
+        <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+        <title>Fraser's IdM Blog - Issuing certificates for long hostnames</title>
+        <link rel="stylesheet" type="text/css" href="../css/default.css" />
+    </head>
+    <body>
+        <div id="header">
+            <div id="logo">
+                <a href="../">Fraser's IdM Blog</a>
+            </div>
+            <div id="navigation">
+                <a href="../">Home</a>
+                <a href="../archive.html">Archive</a>
+            </div>
+        </div>
+
+        <div id="content">
+            <div class="info">
+    
+    Tags: <a title="All pages tagged 'freeipa'." href="../tags/freeipa.html">freeipa</a>, <a title="All pages tagged 'certificates'." href="../tags/certificates.html">certificates</a>
+    
+</div>
+
+<div id="postContent">
+    <h1 id="issuing-certificates-for-long-hostnames">Issuing certificates for long hostnames</h1>
+<p>X.509, specified in <a href="https://tools.ietf.org/html/rfc5280">RFC 5280</a>, restricts the length of the <em>Common Name (CN)</em> attribute to 64 characters:</p>
+<pre><code>X520CommonName ::= DirectoryName (SIZE (1..ub-common-name))
+ub-common-name-length INTEGER ::= 64</code></pre>
+<p>Although the use of the CN attribute to carry DNS names is deprecated, it is still common practice. Furthermore, FreeIPA still requires the CN to appear in a <em>Certificate Signing Request (CSR)</em> and validates that its value corresponds to the nominated <em>subject principal</em>.</p>
+<p>As a consequence of this restriction, when a host or service has a DNS name longer than 64 characters, that name cannot be used as the CN. But it can still be included in the <em>Subject Alternative Name</em> extension, as a <em>dNSName</em> value.</p>
+<p>How do we issue such a certificate in FreeIPA? The trick is to add a <em>principal alias</em> whose hostname is 64 characters or shorter. This shorter hostname will be the Common Name attribute value. The full hostname will appear in the Subject Alternative Name extension.</p>
+<p>The following sections demonstrate the method. I conclude with an outline of what needs to be done to support certificates with empty Subject DN, which would avoid the problem and this workaround.</p>
+<h2 id="creating-a-principal-with-a-long-hostname">Creating a principal with a long hostname</h2>
+<p>To experiment and verify the workaround, I needed a principal with a hostname longer than 64 characters. The initial attempt failed:</p>
+<pre><code>% ipa host-add --force \
+    verylongverylongverylongverylongverylongverylonghostname.ipa.local
+ipa: ERROR: invalid 'hostname': can be at most 64 characters</code></pre>
+<p>FreeIPA has a default maximum hostname length of 64 characters, but this is configurable. After adjusting the limit, adding the host succeeded:</p>
+<pre><code>% ipa config-mod --maxhostname 255
+  Maximum username length: 32
+  Maximum hostname length: 255
+  ...
+
+% ipa host-add --force \
+    verylongverylongverylongverylongverylongverylonghostname.ipa.local
+-------------------------------------------------------------------------------
+Added host &quot;verylongverylongverylongverylongverylongverylonghostname.ipa.local&quot;
+-------------------------------------------------------------------------------
+  Host name: verylongverylongverylongverylongverylongverylonghostname.ipa.local
+  Principal name: host/verylongverylongverylongverylongverylongverylonghostname.ipa.local@IPA.LOCAL
+  Principal alias: host/verylongverylongverylongverylongverylongverylonghostname.ipa.local@IPA.LOCAL
+  ...</code></pre>
+<h2 id="adding-the-principal-alias">Adding the principal alias</h2>
+<p>For a host principal, use the <code>ipa host-add-principal</code> command to add a principal alias. The alias must also be a host principal, i.e. must have the form <code>host/$hostname</code>:</p>
+<pre><code>% ipa host-add-principal \
+    verylongverylongverylongverylongverylongverylonghostname.ipa.local \
+    host/longhostname.ipa.local
+----------------------------------------------------------------------------------------------
+Added new aliases to host &quot;verylongverylongverylongverylongverylongverylonghostname.ipa.local&quot;
+----------------------------------------------------------------------------------------------
+Host name: verylongverylongverylongverylongverylongverylonghostname.ipa.local
+Principal alias: host/verylongverylongverylongverylongverylongverylonghostname.ipa.local@IPA.LOCAL,
+                 host/longhostname.ipa.local@IPA.LOCAL</code></pre>
+<p>For a service principal, use the <code>ipa service-add-principal</code> command. Ensure the principal alias has the same service type as the subject principal’s <em>canonical name</em> (i.e. the value its <code>krbcanonicalname</code> attribute). For example, if the canonical principal name is <code>HTTP/$LONGHOSTNAME</code>, then the principal alias should be <code>HTTP/$SHORTHOSTNAME</code>.</p>
+<p>I omitted the realm parts of principal names (the default realm will be added automatically). For the avoidance of doubt, the princpial alias must have the same realm as the canonical principal.</p>
+<h2 id="creating-a-csr">Creating a CSR</h2>
+<p>There are many different ways to create a CSR. I will give a single example using OpenSSL. The private key already exists (file <code>key.pem</code>).</p>
+<p>The configuration file:</p>
+<pre><code>% cat longhostname.conf
+[ req ]
+prompt = no
+encrypt_key = no
+
+distinguished_name = dn
+req_extensions = exts
+
+[ dn ]
+commonName = &quot;longhostname.ipa.local
+
+[ exts ]
+subjectAltName=DNS:verylongverylongverylongverylongverylongverylonghostname.ipa.local</code></pre>
+<p>Create the CSR:</p>
+<pre><code>% openssl req -new -key key.pem \
+    -config longhostname.conf -extensions exts \
+    &gt; longhostname.csr</code></pre>
+<h2 id="issuing-the-certificate">Issuing the certificate</h2>
+<p>Now we can issue the certificate:</p>
+<pre><code>% ipa cert-request longhostname.csr \
+    --principal host/verylongverylongverylongverylongverylongverylonghostname.ipa.local
+  Issuing CA: ipa
+  Certificate: MIIE...
+  Subject: CN=longhostname.ipa.local,O=IPA.LOCAL 202009291726
+  Subject DNS name: verylongverylongverylongverylongverylongverylonghostname.ipa.local,
+                    longhostname.ipa.local
+  Issuer: CN=Certificate Authority,O=IPA.LOCAL 202009291726
+  Not Before: Mon Oct 19 13:46:16 2020 UTC
+  Not After: Thu Oct 20 13:46:16 2022 UTC
+  Serial number: 11
+  Serial number (hex): 0xB</code></pre>
+<p>The CN attribute contains the shorter host name, and the SAN extension contains both the long and shorter hostnames. (We did not include the short hostname in the CSR SAN extension, but the <code>CommonNameToSANDefault</code> profile component copied it there).</p>
+<h2 id="supporting-san-only-certificates">Supporting SAN-only certificates</h2>
+<p>This workaround is straightforward but it is not the ideal solution. A better approach is to enhance FreeIPA and Dogtag to support issuing certificates with an empty Subject DN, using only the Subject Alternative Name extension to carry subject information.</p>
+<p>RFC 5280 allows an empty Subject DN in a certificate, in which case the certificate must include the SAN extension, which must be marked as <em>critical</em>. <a href="https://tools.ietf.org/html/rfc6125#section-2.3">RFC 6125</a> further clarifies that such a certificate is acceptable for use with TLS.</p>
+<p><a href="https://pagure.io/freeipa/issue/5706">Upstream ticket #5706</a> requests support for SAN-only certificates. The work will involve:</p>
+<ul>
+<li>Change the <code>ipa cert-request</code> command to accept empty subjects. When the subject is empty ensure a non-empty SAN extension is present in the CSR, and that it is marked criticial. This is straightforward.</li>
+<li>On the Dogtag side we must implement new behaviour in the request processor to ensure that the certificate to be issued satisfies the X.509 requirements about empty/non-empty Subject DN and the presence and criticality of the SAN extension.</li>
+<li>It may be necessary to define a new profile default or constraint component that allows an empty subject DN.</li>
+<li>It is likely that FreeIPA will need to either modify the default profile (<code>caIPAserviceCert</code>) to allow for an empty Subject DN, or ship a separate profile that is suitable.</li>
+</ul>
+</div>
+<div id="postFooter">
+    <div id="recent">
+Recent posts:
+<ul>
+    
+        <li>
+            <a href="../posts/2020-10-20-ipa-cert-long-hostname.html">Issuing certificates for long hostnames</a>
+        </li>
+    
+        <li>
+            <a href="../posts/2020-09-17-dogtag-vlv-corruption.html">Dogtag, number ranges and VLV indices</a>
+        </li>
+    
+        <li>
+            <a href="../posts/2020-08-13-openshift-storage-classes.html">Dynamic volume provisioning with OpenShift storage classes</a>
+        </li>
+    
+        <li>
+            <a href="../posts/2020-06-19-dogtag-lightweight-ca-crl.html">CRLs for Dogtag Lightweight CAs</a>
+        </li>
+    
+        <li>
+            <a href="../posts/2020-05-13-ipa-acme-dns.html">ACME DNS challenges and FreeIPA</a>
+        </li>
+    
+</ul>
+
+<div id="recentLinks">
+    <a type="application/atom+xml" href="../atom.xml">Atom feed</a>
+     <!-- em space -->
+    <a href="../archive.html">All posts…</a>
+</div>
+
+</div>
+
+    <div id="license">
+    <a rel="license" href="https://creativecommons.org/licenses/by/4.0/">
+        <img alt="Creative Commons License" style="border-width:0" src="https://licensebuttons.net/l/by/4.0/88x31.png">
+    </a>
+    <br />
+    Except where otherwise noted, this work is licensed under a
+    <a rel="license" href="https://creativecommons.org/licenses/by/4.0/">
+        Creative Commons Attribution 4.0 International License
+    </a>.
+</div>
+
+</div>
+
+        </div>
+        <div class="clear"></div>
+        <div id="footer">
+            Generated by
+            <a href="https://jaspervdj.be/hakyll">Hakyll</a>
+        </div>
+    </body>
+</html>

@@ -8,8 +8,101 @@
         <name>Fraser Tweedale</name>
         <email>frase@frase.id.au</email>
     </author>
-    <updated>2020-09-17T00:00:00Z</updated>
+    <updated>2020-10-20T00:00:00Z</updated>
     <entry>
+    <title>Issuing certificates for long hostnames</title>
+    <link href="https://frasertweedale.github.io/blog-redhat/posts/2020-10-20-ipa-cert-long-hostname.html" />
+    <id>https://frasertweedale.github.io/blog-redhat/posts/2020-10-20-ipa-cert-long-hostname.html</id>
+    <published>2020-10-20T00:00:00Z</published>
+    <updated>2020-10-20T00:00:00Z</updated>
+    <summary type="html"><![CDATA[<h1 id="issuing-certificates-for-long-hostnames">Issuing certificates for long hostnames</h1>
+<p>X.509, specified in <a href="https://tools.ietf.org/html/rfc5280">RFC 5280</a>, restricts the length of the <em>Common Name (CN)</em> attribute to 64 characters:</p>
+<pre><code>X520CommonName ::= DirectoryName (SIZE (1..ub-common-name))
+ub-common-name-length INTEGER ::= 64</code></pre>
+<p>Although the use of the CN attribute to carry DNS names is deprecated, it is still common practice. Furthermore, FreeIPA still requires the CN to appear in a <em>Certificate Signing Request (CSR)</em> and validates that its value corresponds to the nominated <em>subject principal</em>.</p>
+<p>As a consequence of this restriction, when a host or service has a DNS name longer than 64 characters, that name cannot be used as the CN. But it can still be included in the <em>Subject Alternative Name</em> extension, as a <em>dNSName</em> value.</p>
+<p>How do we issue such a certificate in FreeIPA? The trick is to add a <em>principal alias</em> whose hostname is 64 characters or shorter. This shorter hostname will be the Common Name attribute value. The full hostname will appear in the Subject Alternative Name extension.</p>
+<p>The following sections demonstrate the method. I conclude with an outline of what needs to be done to support certificates with empty Subject DN, which would avoid the problem and this workaround.</p>
+<h2 id="creating-a-principal-with-a-long-hostname">Creating a principal with a long hostname</h2>
+<p>To experiment and verify the workaround, I needed a principal with a hostname longer than 64 characters. The initial attempt failed:</p>
+<pre><code>% ipa host-add --force \
+    verylongverylongverylongverylongverylongverylonghostname.ipa.local
+ipa: ERROR: invalid &#39;hostname&#39;: can be at most 64 characters</code></pre>
+<p>FreeIPA has a default maximum hostname length of 64 characters, but this is configurable. After adjusting the limit, adding the host succeeded:</p>
+<pre><code>% ipa config-mod --maxhostname 255
+  Maximum username length: 32
+  Maximum hostname length: 255
+  ...
+
+% ipa host-add --force \
+    verylongverylongverylongverylongverylongverylonghostname.ipa.local
+-------------------------------------------------------------------------------
+Added host &quot;verylongverylongverylongverylongverylongverylonghostname.ipa.local&quot;
+-------------------------------------------------------------------------------
+  Host name: verylongverylongverylongverylongverylongverylonghostname.ipa.local
+  Principal name: host/verylongverylongverylongverylongverylongverylonghostname.ipa.local@IPA.LOCAL
+  Principal alias: host/verylongverylongverylongverylongverylongverylonghostname.ipa.local@IPA.LOCAL
+  ...</code></pre>
+<h2 id="adding-the-principal-alias">Adding the principal alias</h2>
+<p>For a host principal, use the <code>ipa host-add-principal</code> command to add a principal alias. The alias must also be a host principal, i.e. must have the form <code>host/$hostname</code>:</p>
+<pre><code>% ipa host-add-principal \
+    verylongverylongverylongverylongverylongverylonghostname.ipa.local \
+    host/longhostname.ipa.local
+----------------------------------------------------------------------------------------------
+Added new aliases to host &quot;verylongverylongverylongverylongverylongverylonghostname.ipa.local&quot;
+----------------------------------------------------------------------------------------------
+Host name: verylongverylongverylongverylongverylongverylonghostname.ipa.local
+Principal alias: host/verylongverylongverylongverylongverylongverylonghostname.ipa.local@IPA.LOCAL,
+                 host/longhostname.ipa.local@IPA.LOCAL</code></pre>
+<p>For a service principal, use the <code>ipa service-add-principal</code> command. Ensure the principal alias has the same service type as the subject principal’s <em>canonical name</em> (i.e. the value its <code>krbcanonicalname</code> attribute). For example, if the canonical principal name is <code>HTTP/$LONGHOSTNAME</code>, then the principal alias should be <code>HTTP/$SHORTHOSTNAME</code>.</p>
+<p>I omitted the realm parts of principal names (the default realm will be added automatically). For the avoidance of doubt, the princpial alias must have the same realm as the canonical principal.</p>
+<h2 id="creating-a-csr">Creating a CSR</h2>
+<p>There are many different ways to create a CSR. I will give a single example using OpenSSL. The private key already exists (file <code>key.pem</code>).</p>
+<p>The configuration file:</p>
+<pre><code>% cat longhostname.conf
+[ req ]
+prompt = no
+encrypt_key = no
+
+distinguished_name = dn
+req_extensions = exts
+
+[ dn ]
+commonName = &quot;longhostname.ipa.local
+
+[ exts ]
+subjectAltName=DNS:verylongverylongverylongverylongverylongverylonghostname.ipa.local</code></pre>
+<p>Create the CSR:</p>
+<pre><code>% openssl req -new -key key.pem \
+    -config longhostname.conf -extensions exts \
+    &gt; longhostname.csr</code></pre>
+<h2 id="issuing-the-certificate">Issuing the certificate</h2>
+<p>Now we can issue the certificate:</p>
+<pre><code>% ipa cert-request longhostname.csr \
+    --principal host/verylongverylongverylongverylongverylongverylonghostname.ipa.local
+  Issuing CA: ipa
+  Certificate: MIIE...
+  Subject: CN=longhostname.ipa.local,O=IPA.LOCAL 202009291726
+  Subject DNS name: verylongverylongverylongverylongverylongverylonghostname.ipa.local,
+                    longhostname.ipa.local
+  Issuer: CN=Certificate Authority,O=IPA.LOCAL 202009291726
+  Not Before: Mon Oct 19 13:46:16 2020 UTC
+  Not After: Thu Oct 20 13:46:16 2022 UTC
+  Serial number: 11
+  Serial number (hex): 0xB</code></pre>
+<p>The CN attribute contains the shorter host name, and the SAN extension contains both the long and shorter hostnames. (We did not include the short hostname in the CSR SAN extension, but the <code>CommonNameToSANDefault</code> profile component copied it there).</p>
+<h2 id="supporting-san-only-certificates">Supporting SAN-only certificates</h2>
+<p>This workaround is straightforward but it is not the ideal solution. A better approach is to enhance FreeIPA and Dogtag to support issuing certificates with an empty Subject DN, using only the Subject Alternative Name extension to carry subject information.</p>
+<p>RFC 5280 allows an empty Subject DN in a certificate, in which case the certificate must include the SAN extension, which must be marked as <em>critical</em>. <a href="https://tools.ietf.org/html/rfc6125#section-2.3">RFC 6125</a> further clarifies that such a certificate is acceptable for use with TLS.</p>
+<p><a href="https://pagure.io/freeipa/issue/5706">Upstream ticket #5706</a> requests support for SAN-only certificates. The work will involve:</p>
+<ul>
+<li>Change the <code>ipa cert-request</code> command to accept empty subjects. When the subject is empty ensure a non-empty SAN extension is present in the CSR, and that it is marked criticial. This is straightforward.</li>
+<li>On the Dogtag side we must implement new behaviour in the request processor to ensure that the certificate to be issued satisfies the X.509 requirements about empty/non-empty Subject DN and the presence and criticality of the SAN extension.</li>
+<li>It may be necessary to define a new profile default or constraint component that allows an empty subject DN.</li>
+<li>It is likely that FreeIPA will need to either modify the default profile (<code>caIPAserviceCert</code>) to allow for an empty Subject DN, or ship a separate profile that is suitable.</li>
+</ul>]]></summary>
+</entry>
+<entry>
     <title>Dogtag, number ranges and VLV indices</title>
     <link href="https://frasertweedale.github.io/blog-redhat/posts/2020-09-17-dogtag-vlv-corruption.html" />
     <id>https://frasertweedale.github.io/blog-redhat/posts/2020-09-17-dogtag-vlv-corruption.html</id>
@@ -931,303 +1024,6 @@ Request &quot;20191206060652&quot; modified.
 <p>Similarly, we want to prune expired authorisations, challenges and orders from the ACME database. Perhaps inactive accounts too.</p>
 <h2 id="conclusion">Conclusion</h2>
 <p>So, those are the plans for ACME support in FreeIPA. There is a lot of work to do. I’m hoping to make good progress in the next few months. I look forward to giving progress updates and demos in early 2020.</p>]]></summary>
-</entry>
-<entry>
-    <title>Removing the CA from a FreeIPA deployment</title>
-    <link href="https://frasertweedale.github.io/blog-redhat/posts/2019-10-24-removing-ipa-ca.html" />
-    <id>https://frasertweedale.github.io/blog-redhat/posts/2019-10-24-removing-ipa-ca.html</id>
-    <published>2019-10-24T00:00:00Z</published>
-    <updated>2019-10-24T00:00:00Z</updated>
-    <summary type="html"><![CDATA[<h1 id="removing-the-ca-from-a-freeipa-deployment">Removing the CA from a FreeIPA deployment</h1>
-<p>FreeIPA can be deployed with or without a CA. By default a CA is installed; we call this a <em>CA-ful</em> deployment. But if you provide third party signed certificates for the HTTP, LDAP and (optionally) Kerberos KDC, then you can create a <em>CA-less</em> deployment.</p>
-<p>It is possible and supported to promote a CA-less deployment to CA-ful via the <code>ipa-ca-install</code> command. But the opposite is not true. There is no supported way to remove the CA from a CA-ful deployment. Nevertheless this is sometimes desired, for example to comply with a corporate security policy.</p>
-<p>In this post I will explore how to mutate an existing FreeIPA deployment from CA-ful to CA-less.</p>
-<h2 id="deployment-overview">Deployment overview</h2>
-<p>The deployment I used for this exercise has two servers: <code>f30-0.ipa.local</code> and <code>f30-1.ipa.local</code>. Both have the CA role installed. The CA subject DN is <code>CN=Doomed CA,O=IPA.LOCAL</code>. There is no KRA installed. Kerberos PKINIT is disabled.</p>
-<p>Both servers are running builds of the FreeIPA <code>master</code> branch from October 2019, on Fedora 30. There should be no substantial differences in the procedure for official builds in recent versions of Fedora, RHEL 8 or RHEL 7.</p>
-<p>The external CA that will sign the HTTP and LDAP service certificates is <code>CN=Certificate Authority,O=ACME Corporation</code>.</p>
-<h2 id="success-criteria">Success criteria</h2>
-<p>Simply uninstalling the Dogtag CA on all CA replicas is not enough. We want all servers to migrate away from certificate that were issued by the internal CA. Specific goals include:</p>
-<ul>
-<li>Replace HTTP, LDAP and (if Kerberos PKINIT enabled) KDC certificates with certificates issued by an external CA, on all replicas.</li>
-<li>Actually uninstall the Dogtag CA on all CA replicas.</li>
-<li>Cause IPA servers and clients to behave as if the deployment is (and always was) CA-less. In particular, programs like <code>ipa-server-upgrade</code> and <code>ipa-certupdate</code> must work.</li>
-<li>Replica installation succeeds in the modified deployment (third-party service certificates must be supplied, of course).</li>
-<li>Be able to promote the deployment to CA-ful again via the <code>ipa-ca-install</code> command.</li>
-</ul>
-<h2 id="removing-the-internal-ca">Removing the internal CA</h2>
-<p>There are two main approaches one could take. The first is to remove the CA role from existing CA replicas. The second is to install replicas without the CA role, then remove the CA replicas from the topology. In both cases some of the steps (e.g. installing externally-signed service certificates) will be the same. This post describes the first approach (it seems like less work overall).</p>
-<h3 id="add-external-ca-to-trust-store">Add external CA to trust store</h3>
-<p>First add the external root CA certificate to the FreeIPA trust store:</p>
-<pre><code>[root@f30-0 ~]# ipa-cacert-manage install /root/extca.pem
-Installing CA certificate, please wait
-Verified CN=Certificate Authority,O=ACME Corporation
-CA certificate successfully installed
-The ipa-cacert-manage command was successful</code></pre>
-<p>Then run <code>ipa-certupdate</code> to add the new certificate to system certificate databases, <strong>on every replica</strong> (not just CA replicas):</p>
-<pre><code>[root@f30-0 ~]# ipa-certupdate
-Systemwide CA database updated.
-Systemwide CA database updated.
-The ipa-certupdate command was successful</code></pre>
-<h3 id="replacing-service-certificates">Replacing service certificates</h3>
-<p>Next run <code>ipa-server-certinstall</code> to replace the HTTP and LDAP service certificates issued by the internal CA with externally-signed certificates. Do this <strong>for every server</strong> (only <code>f30-0.ipa.local</code> is shown below). <code>/root/dmpass</code> contains the <code>Directory Manager</code> password. <code>/root/httpd.pin</code> and <code>/root/ldap.pin</code> contain the passwords for the HTTP and LDAP private keys.</p>
-<pre><code>[root@f30-0 ~]# ipa-server-certinstall \
-    --dirman-pass $(cat /root/dmpass) \
-    --http /root/httpd.pem --pin $(cat /root/httpd.pin)
-Please restart ipa services after installing certificate (ipactl restart)
-The ipa-server-certinstall command was successful
-
-[root@f30-0 ~]# ipa-server-certinstall \
-    --dirman-pass $(cat /root/dmpass) \
-    --dirsrv /root/ldap.pem --pin $(cat /root/ldap.pin)
-Please restart ipa services after installing certificate (ipactl restart)
-The ipa-server-certinstall command was successful
-
-[root@f30-0 ~]# ipactl restart
-Restarting Directory Service
-Restarting krb5kdc Service
-Restarting kadmin Service
-Restarting httpd Service
-Restarting ipa-custodia Service
-Restarting pki-tomcatd Service
-Restarting ipa-otpd Service
-ipa: INFO: The ipactl command was successful</code></pre>
-<p>Verify that Apache is presenting the externally-signed service certificate:</p>
-<pre><code>[root@f30-0 ~]# echo \
-   | openssl s_client -connect $(hostname):443 &gt;/dev/null
-depth=1 O = ACME Corporation, CN = Certificate Authority
-verify return:1
-depth=0 O = ACME Corporation, CN = f30-0.ipa.local
-verify return:1
-DONE</code></pre>
-<h3 id="delete-ca-role-configuration">Delete CA role configuration</h3>
-<p>FreeIPA uses role entries to track which servers have which features (CA, KRA, DNS, etc.) enabled. Search for the entries to delete:</p>
-<pre><code>[root@f30-0 ~]# ldapsearch -Y GSSAPI -QLLL \
-    -b cn=masters,cn=ipa,cn=etc,dc=ipa,dc=local \
-    &#39;(cn=CA)&#39;
-dn: cn=CA,cn=f30-0.ipa.local,cn=masters,cn=ipa,cn=etc,dc=ipa,dc=local
-ipaConfigString: startOrder 50
-ipaConfigString: caRenewalMaster
-ipaConfigString: enabledService
-cn: CA
-objectClass: nsContainer
-objectClass: ipaConfigObject
-objectClass: top
-
-dn: cn=CA,cn=f30-1.ipa.local,cn=masters,cn=ipa,cn=etc,dc=ipa,dc=local
-objectClass: nsContainer
-objectClass: ipaConfigObject
-objectClass: top
-cn: CA
-ipaConfigString: startOrder 50
-ipaConfigString: enabledService</code></pre>
-<p>Delete these entries:</p>
-<pre><code>[root@f30-0 ~]# ldapdelete -Y GSSAPI -Q \
-    cn=CA,cn=f30-0.ipa.local,cn=masters,cn=ipa,cn=etc,dc=ipa,dc=local
-
-[root@f30-0 ~]# ldapdelete -Y GSSAPI -Q \
-    cn=CA,cn=f30-1.ipa.local,cn=masters,cn=ipa,cn=etc,dc=ipa,dc=local</code></pre>
-<p>At this point, any command that attempts to communicate with the CA will fail with a message that the CA is not configured:</p>
-<pre><code>[root@f30-0 ~]# ipa ca-find
-ipa: ERROR: CA is not configured
-[root@f30-0 ~]# ipa cert-show 5
-ipa: ERROR: CA is not configured</code></pre>
-<h3 id="uninstalling-dogtag">Uninstalling Dogtag</h3>
-<p>Issue the <code>pkidestroy</code> command <strong>on each CA replica</strong> to uninstall the Dogtag CA:</p>
-<pre><code>[root@f30-0 ~]# pkidestroy -i pki-tomcat -s CA                                                                                 
-Uninstallation log: /var/log/pki/pki-ca-destroy.20191023173820.log                      
-Loading deployment configuration from /var/lib/pki/pki-tomcat/ca/registry/ca/deployment.cfg.
-WARNING: The &#39;pki_ssl_server_token&#39; in [CA] has been deprecated. Use &#39;pki_sslserver_token&#39; instead.
-WARNING: The &#39;pki_pin&#39; in [DEFAULT] has been deprecated. Use &#39;pki_server_database_password&#39; instead.
-Uninstalling CA from /var/lib/pki/pki-tomcat.                                                                                  
-WARNING: pkihelper      Directory &#39;/etc/pki/pki-tomcat/alias&#39; is either missing or is NOT a directory!
-
-Uninstallation complete.        </code></pre>
-<p>The warnings can be ignored.</p>
-<h3 id="remove-service-configuration-from-state-file">Remove service configuration from state file</h3>
-<p>Some processes read from the deployment state file at <code>/var/lib/ipa/sysrestore/sysrestore.state</code> to decide whether the CA is installed. <strong>On every CA replica</strong> delete the following lines from this file:</p>
-<pre><code>[pki-tomcatd]
-installed = True</code></pre>
-<h3 id="removing-or-retaining-trust-in-the-deleted-ca">Removing (or retaining) trust in the deleted CA</h3>
-<p>If there are no more certificates in use that were issued by the (now removed) internal CA, we can remove it from the LDAP trust store:</p>
-<pre><code>% ldapdelete -Y GSSAPI -Q \
-    &quot;cn=IPA.LOCAL IPA CA,cn=certificates,cn=ipa,cn=etc,dc=ipa,dc=local&quot;</code></pre>
-<p>Otherwise if we still need to trust the old IPA CA, we can rename it. This step is necessary because the name <code>{REALM} IPA CA</code> indicates that this is the internal CA (which it no longer is).</p>
-<pre><code>% ldapmodrdn -Y GSSAPI -Q -r \
-    &quot;cn=IPA.LOCAL IPA CA,cn=certificates,cn=ipa,cn=etc,dc=ipa,dc=local&quot; \
-    &quot;cn=CN\=Doomed CA\,O\=IPA.LOCAL&quot;</code></pre>
-<p>We also have to remove the <code>{REALM} IPA CA</code> certificate from the FreeIPA 389 DS certificate databases <strong>on every replica</strong>. Leaving it as-is will impede future reinstallation of the CA:</p>
-<pre><code>[root@f30-0 ~]# certutil -d /etc/dirsrv/slapd-IPA-LOCAL \
-                    -D -n &#39;IPA.LOCAL IPA CA&#39;
-
-[root@f30-0 ~]# certutil -d /etc/ipa/nssdb \
-                    -D -n &#39;IPA.LOCAL IPA CA&#39;</code></pre>
-<h3 id="delete-ipa-ca-and-sub-ca-entries">Delete IPA CA and sub-CA entries</h3>
-<p>Search for all entries with object class <code>ipaca</code> and delete them:</p>
-<pre><code>[root@f30-0 ~]# ldapsearch -Y GSSAPI -QLLL \
-     -b dc=ipa,dc=local &#39;(objectclass=ipaca)&#39; 1.1
-dn: cn=ipa,cn=cas,cn=ca,dc=ipa,dc=local
-
-[root@f30-0 ~]# ldapdelete -Y GSSAPI -Q \
-     cn=ipa,cn=cas,cn=ca,dc=ipa,dc=local</code></pre>
-<p>Unless you have created additional (sub-)CAs via the <code>ipa ca-add</code> command there will be only one entry (<code>cn=ipa</code>).</p>
-<h3 id="remove-certmonger-tracking-requests">Remove Certmonger tracking requests</h3>
-<p>Certmonger tracking requests for the Dogtag system certificates and IPA RA agent certificate should be removed <strong>on each server</strong>. The easiest way to achieve this is with a small Python script:</p>
-<pre><code>[root@f30-0 ~]# python3 &lt;&lt;EOF
-from ipaserver.install.cainstance import CAInstance
-ca = CAInstance()
-ca.stop_tracking_certificates()
-EOF</code></pre>
-<h2 id="testing-the-outcome">Testing the outcome</h2>
-<p>We already confirmed that the <code>ipa</code> subcommands (i.e. commands that query the IPA API) fail gracefully with a message that the CA role is not installed. But there are other commands to check. In particular we want to test <code>ipa-certupdate</code>, <code>ipa-server-upgrade</code>, and client and replica installation.</p>
-<pre><code>[root@f30-0 ~]# ipa-certupdate
-Systemwide CA database updated.
-Systemwide CA database updated.
-The ipa-certupdate command was successful</code></pre>
-<pre><code>[root@f30-0 ~]# ipa-server-upgrade
-Upgrading IPA:. Estimated time: 1 minute 30 seconds
-...
-The IPA services were upgraded                                      
-The ipa-server-upgrade command was successful                       </code></pre>
-<p>So far so good. I used a third host, <code>f30-2.ipa.local</code>, to test client and replica installation. I don’t have the required DNS records so I had to specify the domain and server.</p>
-<pre><code>[root@f30-2 ~]# ipa-client-install --server f30-0.ipa.local --domain ipa.local
-This program will set up FreeIPA client.
-Version 4.9.0.dev201910230357+gitc6769ad12
-
-Autodiscovery of servers for failover cannot work with this configuration.
-If you proceed with the installation, services will be configured to always acce
-ss the discovered server for all operations and will not fail over to other serv
-ers in case of failure.
-Proceed with fixed values and no DNS discovery? [no]: y
-Do you want to configure chrony with NTP server or pool address? [no]: 
-Client hostname: f30-2.ipa.local
-Realm: IPA.LOCAL
-DNS Domain: ipa.local
-IPA Server: f30-0.ipa.local
-BaseDN: dc=ipa,dc=local
-
-Continue to configure the system with these values? [no]: y
-Synchronizing time
-No SRV records of NTP servers found and no NTP server or pool address was provid
-ed.
-Using default chrony configuration.
-Attempting to sync time with chronyc.
-Time synchronization was successful.
-User authorized to enroll computers: admin
-Password for admin@IPA.LOCAL: 
-Successfully retrieved CA cert
-    Subject:     CN=Certificate Authority,O=ACME Corporation
-    Issuer:      CN=Certificate Authority,O=ACME Corporation
-    Valid From:  2019-10-24 04:01:33
-    Valid Until: 2039-10-24 04:01:33
-
-Enrolled in IPA realm IPA.LOCAL
-Created /etc/ipa/default.conf
-Configured sudoers in /etc/authselect/user-nsswitch.conf
-Configured /etc/sssd/sssd.conf
-Configured /etc/krb5.conf for IPA realm IPA.LOCAL
-Systemwide CA database updated.
-Adding SSH public key from /etc/ssh/ssh_host_ed25519_key.pub
-Adding SSH public key from /etc/ssh/ssh_host_ecdsa_key.pub
-Adding SSH public key from /etc/ssh/ssh_host_rsa_key.pub
-Could not update DNS SSHFP records.
-SSSD enabled
-Configured /etc/openldap/ldap.conf
-Configured /etc/ssh/ssh_config
-Configured /etc/ssh/sshd_config
-Configuring ipa.local as NIS domain.
-Client configuration complete.
-The ipa-client-install command was successful</code></pre>
-<p>Client installation succeeded. We can see that external CA certificate was retrieved. I proceeded with replica installation:</p>
-<pre><code>[root@f30-2 ~]# kinit admin                                                     
-Password for admin@IPA.LOCAL: XXXXXXX
-
-[root@f30-2 ~]# ipa-replica-install \
-    --http-cert-file /root/httpd.pem \
-    --http-pin $(cat /root/httpd.pin) \
-    --dirsrv-cert-file /root/ldap.pem \
-    --dirsrv-pin $(cat /root/ldap.pin) \
-    --no-pkinit --unattended
-Run connection check to master
-Connection check OK
-Disabled p11-kit-proxy
-Configuring directory server (dirsrv). Estimated time: 30 seconds
-  [1/41]: creating directory server instance
-  ...
-  [10/10]: starting directory server
-Done.
-Finalize replication settings
-Restarting the KDC
-The ipa-replica-install command was successful</code></pre>
-<h2 id="reinstating-the-internal-ca">Reinstating the internal CA</h2>
-<p>If you want to once again have a CA-ful FreeIPA deployment, use the <code>ipa-ca-install</code> command to install the CA. There is one critical constraint: <strong>the new CA must not have the same Subject DN as the previous CA</strong>. This is to avoid a recurrence of the same issuer/serial combination, which is a big no-no both for security and because errors are likely to arise.</p>
-<p>So let’s install the CA again. To play it safe I’ll use the newly-installed replica <code>f30-2.ipa.local</code>. Just in case there is some “residue” left on the other servers that would prevent reinstallation of the CA role.</p>
-<pre><code>[root@f30-2 ~]# ipa-ca-install \
-      --ca-subject &quot;CN=Restored CA,O=IPA.LOCAL&quot;
-Directory Manager (existing master) password:                                   
-
-The CA will be configured with:                                                 
-Subject DN:   CN=Restored CA,O=IPA.LOCAL                      
-Subject base: O=IPA.LOCAL                                                       
-Chaining:     self-signed                                                       
-
-Continue to configure the CA with these values? [no]: y                         
-Configuring certificate server (pki-tomcatd). Estimated time: 3 minutes
-  [1/29]: configuring certificate server instance               
-  [2/29]: Add ipa-pki-wait-running                                              
-  [3/29]: reindex attributes                                                    
-  [4/29]: exporting Dogtag certificate store pin                
-  [5/29]: stopping certificate server instance to update CS.cfg 
-  [6/29]: backing up CS.cfg                                                     
-  [7/29]: disabling nonces                                                      
-  [8/29]: set up CRL publishing
-  [9/29]: enable PKIX certificate path discovery and validation
-  [10/29]: starting certificate server instance
-  [11/29]: configure certmonger for renewals
-  [12/29]: requesting RA certificate from CA
-  [13/29]: setting audit signing renewal to 2 years
-  [14/29]: restarting certificate server 
-  [15/29]: publishing the CA certificate 
-  [16/29]: adding RA agent as a trusted user
-  [17/29]: authorizing RA to modify profiles
-  [18/29]: authorizing RA to manage lightweight CAs
-  [19/29]: Ensure lightweight CAs container exists
-  [20/29]: configure certificate renewals
-  [21/29]: Configure HTTP to proxy connections
-  [22/29]: restarting certificate server 
-  [23/29]: updating IPA configuration
-  [24/29]: enabling CA instance
-  [25/29]: migrating certificate profiles to LDAP
-  [26/29]: importing IPA certificate profiles
-  [27/29]: adding default CA ACL
-  [28/29]: adding &#39;ipa&#39; CA entry
-  [29/29]: configuring certmonger renewal for lightweight CAs
-Done configuring certificate server (pki-tomcatd).</code></pre>
-<p>The installation completed without error. The deployment is CA-ful again, but it is a different CA from before.</p>
-<h2 id="issues-encountered">Issues encountered</h2>
-<p>I encountered a significant issue when reinstalling the CA. If there are multiple trusted CAs (including the old internal CA) in <code>/etc/ipa/ca.crt</code>, then if the issuer of the 389 DS service certificate is not the first certificate in that file Dogtag installation will fail. This is because the wrong CA certificate is imported into Dogtag’s NSSDB and the issuer of the LDAP certificate is <em>not</em> imported. As a consequence, Dogtag cannot verify the LDAP certificate and cannot communicate with the database. Installation fails.</p>
-<p>This issue is tracked in <a href="https://pagure.io/freeipa/issue/8103">upstream ticket 8103</a>.</p>
-<p>I also encountered problems when reinstalling a CA on the servers from which it had been uninstalled. A <em>duplicate entry</em> error occurs when setting up the LDAP database:</p>
-<pre><code>[root@f30-1 ~]# ipa-ca-install
-Directory Manager (existing master) password:
-
-Run connection check to master
-Connection check OK
-Configuring certificate server (pki-tomcatd). Estimated time: 3 minutes
-  [1/27]: creating certificate server db
-  [error] DuplicateEntry: This entry already exists
-
-Your system may be partly configured.
-Run /usr/sbin/ipa-server-install --uninstall to clean up.
-
-Unexpected error - see /var/log/ipareplica-ca-install.log for details:
-DuplicateEntry: This entry already exists</code></pre>
-<p>This can probably be averted with additional cleanup steps. I did not investigate further because installation of the CA role on a <em>new replica</em> did succeed. That seems good enough to me.</p>
-<h2 id="conclusion">Conclusion</h2>
-<p>In this post I explored how to demote a CA-ful FreeIPA deployment to a CA-less deployment. The procedure has many steps. Even in a CA-less deployment TLS is still required for secure communication between components. So one important step is to install externally-signed service certificates for the web server, directory server and (if used) the KDC certificates. But there are several other steps required to remove the CA from an existing deployment.</p>
-<p>The procedure is not officially supported. If you need to perform this operation make a snapshot of your deployment so you can roll back if anything goes wrong, or verify everything in a test environment first (or both!)</p>
-<p>If you need to move from a CA-ful to a CA-less deployment, an alternative approach would be to create a new, CA-less deployment and migrate your data across. Neither approach is very attractive, to be fair.</p>
-<p>As a final observation, the procedure has several steps that are similar or identical to the steps for <a href="2018-05-31-replacing-lost-ca.html">replacing a lost CA</a>.</p>]]></summary>
 </entry>
 
 </feed>
