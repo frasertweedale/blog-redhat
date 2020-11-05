@@ -12,9 +12,9 @@ operationalising FreeIPA for the OpenShift container platform.  Our
 initial efforts are focused around this "monolithic" container,
 trying to get it to run in OpenShift, securely.  Although we
 recognise we may eventually need to split up the container, it will
-be a major engineering effort.  We want to have a working proof of
-concept as early as possible, so that we (and others) can start the
-important integration work (e.g. with Keycloak / RHSSO).
+be a major engineering effort to do so.  We want to have a working
+proof of concept as early as possible, so that we (and others) can
+start the important integration work (e.g. with Keycloak / RHSSO).
 
 This "lift and shift" of a complex traditional application to
 OpenShift results in a container that needs to run several processes
@@ -24,12 +24,12 @@ in their own PID namespace.  This is good, but if we are to run
 container processes as ``root`` (in the container), we do not want
 them to also be ``root`` on the host.  Rather, they should map to an
 unprivileged account.  If we want secure multitenancy of multiple
-IDM servers on a single worker node, we want the user accounts on
+IDM servers on a single worker node, we want the user accounts in
 different IDM pods to map to disjoint sets of unprivileged users on
 the host.
 
 Linux ``user_namespaces(7)`` provide this kind of isolation.  To
-what extend are user namespaces supported in OpenShift?  We needed
+what extent are user namespaces supported in OpenShift?  We needed
 to find out, in order to decide how to proceed with the FreeIPA
 OpenShift effort.  In this blog post I discuss my investigation and
 findings.
@@ -38,8 +38,8 @@ Investigating current OpenShift behaviour
 -----------------------------------------
 
 To investigate the use (or not) of user namespaces I deployed pods
-on our team's OpenShift cluster and ran commands as various users,
-observing the effects on the worker node.
+on our team's OpenShift cluster, running a simple command, and
+observed the effects on the worker node.
 
 As cluster admin, I created a new project::
 
@@ -47,9 +47,10 @@ As cluster admin, I created a new project::
   Now using project "test" on server "https://api.permanent.idmocp.lab.eng.rdu2.redhat.com:6443".
   ...
 
-To avoid the cluster admin user's SCC applying to pod creation, I
-created a user ``test`` and granted it the *project* ``admin`` role.
-Subsequent pod creation operations will be performed as ``test``.
+To avoid the cluster admin user's SCC bindings applying to pod
+creation, I created a user named ``test`` and granted it the
+*project* (not cluster) ``admin`` role.  Subsequent pod creation
+operations were performed as user ``test``.
 
 ::
 
@@ -110,7 +111,7 @@ The process was running as user ``1000620000``, and UID map has an
 offset of ``0`` and a size of ``2^32``.  Which is to say, this
 process is running in the same user namespace as the host.  We can
 use the ``lsns`` command to confirm that everything on this
-node–including all container processes–is sharing the single user
+node–including all container processes–shares the single user
 namespace::
 
   sh-4.4# lsns -t user
@@ -137,8 +138,9 @@ Create the pod (as user ``test``)::
   % oc --as test create -f pod-test.yaml
   pod/test created
 
-Following the same procedure as earlier, find the PID (``1381728``)
-and observe that it is running as ``root`` (UID ``0``) on the host::
+Following the same procedure as earlier, find the PID (it was
+``1381728``) and observe that it is running as ``root`` (UID ``0``)
+on the host::
 
   sh-4.4# ls -l -d /proc/1381728
   dr-xr-xr-x. 9 root root 0 Nov  5 05:55 /proc/1381728
@@ -187,12 +189,12 @@ been several experimental implementations (e.g. `#55707`_,
 .. _#55707: https://github.com/kubernetes/kubernetes/pull/55707
 .. _#64005: https://github.com/kubernetes/kubernetes/pull/64005
 
-There has been a recent resurgence of interest and activity on this
-KEP, and related discussions and pull requests.  But that has
-happened before.  I believe that every new (or resurrected)
-discussion or experiment can move you closer to the goal, and that
-there can be several false starts before things happen.  Maybe this
-time it will happen?  But maybe not.
+There has been a recent resurgence of activity on this KEP, and
+related discussions and pull requests.  But that has happened
+before.  I believe that every new (or resurrected) discussion or
+experiment can move you closer to the goal, and that there can be
+several false starts before things happen.  Maybe this time it will
+happen… or maybe not.
 
 Right now there is no final proposal and no implementation plan.  As
 a team we cannot proceed on the assumption that Kubernetes will
@@ -220,7 +222,7 @@ the pod, e.g.:
 
 Using annotations means that no explicit support in Kubernetes is
 required.  All that is required is that Kubernetes is using the
-CRI-O container runtime, and CRI-O is configured to enable this
+CRI-O container runtime, and that CRI-O is configured to enable this
 feature.  OpenShift 4.x does use CRI-O, so we're halfway there.  The
 remaining step is to enable the feature in ``crio.conf``::
 
@@ -252,7 +254,7 @@ container.
 This would be a big engineering effort.  Apart from FreeIPA as a
 whole, most of the constituent services are also "traditional"
 applications that make assumptions about their environment and
-execution context.  Assumptions that do not hold in the OpenShift
+execution context—assumptions that do not hold in the OpenShift
 container paradigm.
 
 There is a general (albeit unevenly distributed) feeling in the team
