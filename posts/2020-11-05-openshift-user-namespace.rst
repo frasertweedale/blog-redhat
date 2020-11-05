@@ -7,7 +7,7 @@ OpenShift and user namespaces
 
 FreeIPA in its current form is very much not a "cloud native"
 application.  Likewise the current FreeIPA container, which runs all
-the required services under Systemd.  My current team is working on
+the required services under systemd.  My current team is working on
 operationalising FreeIPA for the OpenShift container platform.  Our
 initial efforts are focused around this "monolithic" container,
 trying to get it to run in OpenShift, securely.  Although we
@@ -148,7 +148,7 @@ Consequences for FreeIPA
 
 Traditional applications sometimes assume they will run as ``root``
 or some other "reserved" user.  FreeIPA is such a case.  Likewise,
-running Systemd in a container means running as UID 0 (from the
+running systemd in a container means running as UID 0 (from the
 container's point of view).
 
 The lack of user namespace use in OpenShift means that for a process
