@@ -299,9 +299,9 @@ I also intend to submit another Internet-Draft proposing a mechanism
 for servers to advertise their capabilities in the ACME directory
 object.  This could be useful to help clients choose from multiple
 servers (regardless of how they find out about the servers).  And I
-think it's just practice that when a protocol has many possible
-features that a server may or may not implement, that clients can
-obtain from a server a declaration of its capabilities.
+think it's good practice.  When a protocol has many possible
+features that a server may or may not implement, servers should
+declare their capabilities for the benefit of clients.
 
 Beyond that, I am starting to think about SRVName support in ACME.
 This would be useful in enterprise environments and on the open
