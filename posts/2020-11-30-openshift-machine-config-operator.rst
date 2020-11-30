@@ -1,3 +1,7 @@
+---
+tags: openshift
+---
+
 Using the OpenShift Machine Config Operator
 ===========================================
 
