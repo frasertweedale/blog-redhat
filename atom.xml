@@ -8,8 +8,60 @@
         <name>Fraser Tweedale</name>
         <email>frase@frase.id.au</email>
     </author>
-    <updated>2020-11-13T00:00:00Z</updated>
+    <updated>2020-11-30T00:00:00Z</updated>
     <entry>
+    <title>Using the OpenShift Machine Config Operator</title>
+    <link href="https://frasertweedale.github.io/blog-redhat/posts/2020-11-30-openshift-machine-config-operator.html" />
+    <id>https://frasertweedale.github.io/blog-redhat/posts/2020-11-30-openshift-machine-config-operator.html</id>
+    <published>2020-11-30T00:00:00Z</published>
+    <updated>2020-11-30T00:00:00Z</updated>
+    <summary type="html"><![CDATA[<h1 id="using-the-openshift-machine-config-operator">Using the OpenShift Machine Config Operator</h1>
+<p>In a <a href="2020-11-05-openshift-user-namespace.html">recent post</a> I discussed how OpenShift and Kubernetes do not have user namespace isolation. An <a href="https://github.com/cri-o/cri-o/pull/3944">upcoming CRI-O enhancement</a> should allow pods to be run in separate user namespaces. This feature is controlled via <em>annotations</em>; no explicit Kubernetes support is required.</p>
+<p>To experiment with this feature I deployed an OpenShift nightly (4.7) cluster, which uses a CRI-O v1.20 prerelease build. But having CRI-O v1.20 is not enough. The feature must be explicitly enabled in the CRI-O configuration. This leads to the question, <em>what is the proper way to manage machine configuration in an OpenShift cluster?</em> The answer is the <em>Machine Config Operator (MCO)</em>.</p>
+<p>The <a href="https://access.redhat.com/documentation/en-us/openshift_container_platform/4.6/html/post-installation_configuration/post-install-machine-configuration-tasks">official OpenShift documentation</a> does a good job of introducing and explaining the MCO, so there’s no need to regurgitate it all here. Instead I’ll review the configuration, object definitions and procedure from my CRI-O use case.</p>
+<h2 id="configuring-cri-o-via-the-machine-config-operator">Configuring CRI-O via the Machine Config Operator</h2>
+<p>CRI-O is configured via <code>/etc/crio/crio.conf</code> and additional files in the <code>/etc/crio/crio.conf.d/</code> directory. Directives from <code>crio.conf.d</code> files have higher precedence and files are processed in lexicographic order.</p>
+<p>The follow configuration enables the user namespaces feature:</p>
+<pre><code>[crio.runtime.runtimes.runc]
+allowed_annotations=[&quot;io.kubernetes.cri-o.userns-mode&quot;]</code></pre>
+<p>I used MCO to drop that configuration snippet into the file <code>/etc/crio/crio.conf.d/99-crio-userns.conf</code>. First I needed the base64 encoding of the configuration content:</p>
+<pre><code>$ base64 --wrap=0 &lt;&lt;EOF
+[crio.runtime.runtimes.runc]
+allowed_annotations=[&quot;io.kubernetes.cri-o.userns-mode&quot;]
+EOF
+W2NyaW8ucnVudGltZS5ydW50aW1lcy5ydW5jXQphbGxvd2VkX2Fubm90YXRpb25zPVsiaW8ua3ViZXJuZXRlcy5jcmktby51c2VybnMtbW9kZSJdCg==</code></pre>
+<p>Next I created <code>machineconfig-crio-userns.yaml</code>. This defines a <code>MachineConfig</code>, the primary resource type handled by the MCO. The base64 output from above is used in this file.</p>
+<pre><code>apiVersion: machineconfiguration.openshift.io/v1
+kind: MachineConfig
+metadata:
+  labels:
+    machineconfiguration.openshift.io/role: worker
+  name: crio-userns
+spec:
+  config:
+    ignition:
+      version: 3.1.0
+    storage:
+      files:
+      - path: /etc/crio/crio.conf.d/99-crio-userns.conf
+        overwrite: true
+        contents:
+          source: data:text/plain;charset=utf-8;base64,W2NyaW8ucnVudGltZS5ydW50aW1lcy5ydW5jXQphbGxvd2VkX2Fubm90YXRpb25zPVsiaW8ua3ViZXJuZXRlcy5jcmktby51c2VybnMtbW9kZSJdCg==</code></pre>
+<p>Note that the examples in the official documentation contain a lot of extraneous fields that can be omitted. <code>MachineConfig</code> objects use the <em>Ignition</em> configuration format. Read the <a href="https://github.com/coreos/ignition/blob/master/docs/configuration-v3_1.md">Ignition Configuration Specification</a> to see what fields are available or required (or not) for your use case.</p>
+<p>There are just a few things about this <code>MachineConfig</code> that I’d like to highlight.</p>
+<ul>
+<li>For creating files, the <code>mode</code> field allows specifying the file access permissions. The default is <code>420</code> (<em>decimal!</em>, equivalent to <code>0644</code>); this was suitable for my use case so I omitted it. But there may be many cases where the default is not suitable and it will be necessary to specify the <code>mode</code>.</li>
+<li>This config only needs to be applied on worker nodes. The <code>machineconfiguration.openshift.io/role: worker</code> label accomplishes this. The value <code>master</code> can be used for master-only configurations.</li>
+<li>The file content is specified via a <a href="https://tools.ietf.org/html/rfc2397">"data" URI</a>. Other supported schemes include <code>https</code>, <code>s3</code> and <code>tftp</code>.</li>
+</ul>
+<p>Next I created the <code>MachineConfig</code> object:</p>
+<pre><code>$ oc create -f machineconfig-crio-userns.yaml
+machineconfig.machineconfiguration.openshift.io/crio-userns created</code></pre>
+<p>Over the next several minutes, the Machine Config Operator applied the configuration change to all the worker nodes and restarted them.</p>
+<h2 id="closing-thoughts">Closing thoughts</h2>
+<p>Everything went smoothly and my impressions of MCO, from this first “hands on” experience, are very positive. It was a simple use case, I admit. But I am still very pleased that it was so easy and everything Just Worked. Hopefully other people have as good an experience with MCO as I did, even for more complex configuration changes.</p>]]></summary>
+</entry>
+<entry>
     <title>ACME Service Discovery</title>
     <link href="https://frasertweedale.github.io/blog-redhat/posts/2020-11-13-acme-service-discovery.html" />
     <id>https://frasertweedale.github.io/blog-redhat/posts/2020-11-13-acme-service-discovery.html</id>
@@ -1100,53 +1152,6 @@ Certificate:
 <p>All of these are on the roadmap, but they are likely to be deferred beyond the initial release.</p>
 <h2 id="conclusion">Conclusion</h2>
 <p>That’s all for this post. I’ll be following up soon with a post about using Apache <a href="https://httpd.apache.org/docs/current/mod/mod_md.html">mod_md</a> with the FreeIPA ACME service.</p>]]></summary>
-</entry>
-<entry>
-    <title>Deploying FreeIPA with a 4096-bit CA signing key</title>
-    <link href="https://frasertweedale.github.io/blog-redhat/posts/2020-01-28-freeipa-override-ca-key-size.html" />
-    <id>https://frasertweedale.github.io/blog-redhat/posts/2020-01-28-freeipa-override-ca-key-size.html</id>
-    <published>2020-01-28T00:00:00Z</published>
-    <updated>2020-01-28T00:00:00Z</updated>
-    <summary type="html"><![CDATA[<h1 id="deploying-freeipa-with-a-4096-bit-ca-signing-key">Deploying FreeIPA with a 4096-bit CA signing key</h1>
-<p>Recent versions of FreeIPA create a 3072-bit CA signing key by default. Older versions used 2048-bit signing keys. Until recently, there was no supported way to deploy FreeIPA with a larger signing key. It was an open secret that you could hack a single file to change the key size when deploying, and everything would work just fine. But still, it was not supported or recommended to do this.</p>
-<p>As of FreeIPA 4.8 (RHEL 8.1; Fedora 30) there is an officially supported way to choose a different key size when installing FreeIPA. In this short post I will demonstrate how to do it.</p>
-<p>First, an admonition. Choosing a larger key size can negatively affect performance, for both signing and verification (i.e. <em>all clients are affected</em>). 4096-bit RSA operations are twice as slow as 3072-bit RSA, but the bits of security grows at a smaller rate. 3072-bit RSA has 128 bits of security, but 4096-bit RSA only increases your security to 140 bits. For 256 bits of security you need a 15360-bit key. In practice 3072-bit RSA is expected to be secure for at least another decade.</p>
-<p>With that out of the way, let’s look at how to do it. The procedure works for both self-signed and externally-signed CAs. It is done via the <code>--pki-config-override</code> option, which allows the server administrator to specify a file that sets or overrides Dogtag <code>pkispawn(8)</code> configuration directives. <code>pki_default.cfg(5)</code> gives a comprehensive overview of the directives available, although not all of these are allowed to be overriden in a FreeIPA installation (<code>ipa-server-install</code> itself checks the file for directives that are not allowed to be overridden).</p>
-<p>Fortunately, override is allowed for the <code>pki_ca_signing_key_size</code> directive. Setting this to 4096 (or some other sensible value) will have the desired effect, as the following transcript demonstrates:</p>
-<pre><code>[root@rhel82-0 ~]# cat &gt; pki_override.cfg &lt;&lt;EOF
-[CA]
-pki_ca_signing_key_size=4096
-EOF
-
-[root@rhel82-0 ~]# ipa-server-install \
-    --unattended \
-    --realm IPA.LOCAL \
-    --ds-password &quot;$DM_PASS&quot; --admin-password &quot;$ADMIN_PASS&quot; \
-    --external-ca \
-    --pki-config-override $PWD/pki_override.cfg
-
-... stuff happens ...
-
-  [1/10]: configuring certificate server instance
-The next step is to get /root/ipa.csr signed by your
-CA and re-run /usr/sbin/ipa-server-install as:
-/usr/sbin/ipa-server-install \
-  --external-cert-file=/path/to/signed_certificate \
-  --external-cert-file=/path/to/external_ca_certificate
-The ipa-server-install command was successful
-
-[root@rhel82-0 ~]# openssl req -text &lt; /root/ipa.csr | head
-Certificate Request:
-    Data:
-        Version: 1 (0x0)
-        Subject: O = IPA.LOCAL, CN = Certificate Authority
-        Subject Public Key Info:
-            Public Key Algorithm: rsaEncryption
-                RSA Public-Key: (4096 bit)
-                Modulus:
-                    00:c6:05:36:7b:28:c6:03:19:19:91:d3:e9:31:28:
-                    5f:50:ab:60:a4:e8:fa:09:ba:5d:a1:25:53:cf:74:</code></pre>
-<p>The key size is 4096-bit, as expected. Had the <code>--external-ca</code> option <em>not</em> been provided a 4096-bit self-signed CA would have been created and the installation would have run to completion.</p>]]></summary>
 </entry>
 
 </feed>
