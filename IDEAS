@@ -1,10 +1,8 @@
 - openshift service SRV record issue (cannot have both tcp and udp
   with same serv name)
 
-- openshift container hostname stuff
-  - https://github.com/kubernetes/enhancements/issues/1797
-  - https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/1797-configure-fqdn-as-hostname-for-pods - https://github.com/kubernetes/kubernetes/issues/91036
-  - freeipa analysis: https://docs.google.com/document/d/e/2PACX-1vQzxjMw3eqkpuPfqaLbCW-GN8gwS1QvFjrs9TnPM02DMfNqBVSGapqITvAyZyxc2TN9jJShJrbqGayC/pub
+- ACME SRVName support?
+  - Using Caddy with FreeIPA ACME service
 
 - JNA 
   https://github.com/dogtagpki/pki/pull/569
@@ -13,8 +11,6 @@
   - https://docs.oracle.com/javase/9/docs/api/javax/net/ssl/SSLSocket.html#setHandshakeApplicationProtocolSelector-java.util.function.BiFunction-
   - https://docs.oracle.com/javase/9/docs/api/javax/net/ssl/SSLParameters.html#setApplicationProtocols-java.lang.String:A-
   - https://www.iana.org/assignments/tls-extensiontype-values/tls-extensiontype-values.xhtml#alpn-protocol-ids
-
-- ACME SRVName support
 
 - profile (vs-"renewal request") based certmonger renewal
 
