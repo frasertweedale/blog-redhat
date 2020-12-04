@@ -1,0 +1,173 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+    <head>
+        <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+        <title>Fraser's IdM Blog - Pod hostnames and FQDNs</title>
+        <link rel="stylesheet" type="text/css" href="../css/default.css" />
+    </head>
+    <body>
+        <div id="header">
+            <div id="logo">
+                <a href="../">Fraser's IdM Blog</a>
+            </div>
+            <div id="navigation">
+                <a href="../">Home</a>
+                <a href="../archive.html">Archive</a>
+            </div>
+        </div>
+
+        <div id="content">
+            <div class="info">
+    
+    Tags: <a title="All pages tagged 'openshift'." href="../tags/openshift.html">openshift</a>
+    
+</div>
+
+<div id="postContent">
+    <h1 id="pod-hostnames-and-fqdns">Pod hostnames and FQDNs</h1>
+<p>Some complex or legacy applications make strict and pervasive assumptions about their execution environment. Relying on the host having a <em>fully qualified domain name (FQDN)</em> is an example of this kind of assumption. Indeed this is a particularly thorny kind of assumption because there are several ways an application can query the hostname, and they don’t always agree!</p>
+<p>It is not surprising that we have hit this particular issue during our effort to containerise FreeIPA and operationalise it for OpenShift. Whereas container runtimes like Podman and Docker offer full control of a container’s FQDN, Kubernetes (and by extension OpenShift) is more strongly opinionated. By default, a Kubernetes pod has only a short name, not a fully qualified domain name. There are limited ways to configure a pod’s hostname and FQDN. Furthermore, there is currently no way to use a pod’s FQDN as the (Kernel) hostname.</p>
+<p>In this post I will outline the challenges and document the attempted workarounds as we try to make FreeIPA run in OpenShift in spite of the Kubernetes hostname restriction.</p>
+<h2 id="querying-the-fqdn">Querying the FQDN</h2>
+<p>There are several ways an a program can query the host’s hostname.</p>
+<ul>
+<li>Read <code>/etc/hostname</code>. The name in this file may or may not be fully qualified.</li>
+<li>Via the POSIX <code>uname(2)</code> system call. The <code>nodename</code> field in the <code>utsname</code> struct returned by this system call is intended to hold a network node name. Once again, it could be a short name or fully qualified. Furthermore, on most systems it is limited to 64 bytes. From userland you can use the <code>uname(1)</code> program or <code>uname(3)</code> library routine. The <code>gethostname(2)</code> and <code>gethostname(3)</code> are another way to retrieve this datum.</li>
+<li>On systems that use <em>systemd</em> the <code>hostnamectl(1)</code> program can be used to get or set the hostname. Once again, the hostname is not necessarily fully qualified. <code>hostnamectl</code> distinguishes between the <em>static</em> hostname (set at boot by static configuration) and <em>transient</em> hostname (derived from network configuration). These can be queried separately.</li>
+<li>A program could query DNS PTR records for its non-loopback IP addresses. This approach could yield zero, one or multiple FQDNs.</li>
+<li>The <code>getaddrinfo(3)</code> routine when invoked with the <code>AI_CANONNAME</code> flag can return a FQDN for a given hostname (e.g. the name return by <code>gethostname(2)</code>. This allows any <em>Name Service Switch (NSS)</em> plugin to provide a canonical FQDN for a short name. NSS is usually configured to map hostnames using the data from <code>/etc/hosts</code>, but there are other plugins including for <em>systemd-resolved</em>, <em>dns</em> and <em>sss</em> (SSSD). From the command line, <code>hostname --fqdn</code> or <code>hostname --all-fqdns</code> will return result(s) from <code>getaddrinfo(3)</code>.</li>
+</ul>
+<p>Side-note: the “UTS” in <code>utsname</code> stands for <em>Unix Timesharing System</em>. Container runtimes can set a unique UTS hostname in each container because each container (or pod) has a unique <a href="https://www.man7.org/linux/man-pages/man7/uts_namespaces.7.html">UTS namespace</a>.</p>
+<h2 id="auditing-freeipas-fqdn-query-behaviour">Auditing FreeIPA’s FQDN query behaviour</h2>
+<p>In order to decide how to proceed, we first needed to audit both FreeIPA and its dependencies to see how they query the hostname and host FQDN. I have published <a href="https://docs.google.com/document/d/e/2PACX-1vQzxjMw3eqkpuPfqaLbCW-GN8gwS1QvFjrs9TnPM02DMfNqBVSGapqITvAyZyxc2TN9jJShJrbqGayC/pub">the results of this audit</a>. It is perhaps not exhaustive, but hopefully fairly thorough.</p>
+<h2 id="pod-hostname-configuration">Pod hostname configuration</h2>
+<p>We assume that the operator (human or machine) will create pods with deterministic FQDN. That is, it knows what the pod’s FQDN should be. Or to be more precise, the operator knows what it wants the application(s) running in the pod to recognise as the host FQDN. These are not necessarily the same thing (more on that in the next section).</p>
+<p>First, let’s investigate how OpenShift configures pod hostnames. I created a standalone pod with no associated services and shelled into it to query the FQDN in various ways. The pod configuration:</p>
+<pre><code>apiVersion: v1
+kind: Pod
+metadata:
+  name: test
+spec:
+  containers:
+  - name: test
+    image: freeipa/freeipa-server:fedora-31
+    command: [&quot;sleep&quot;, &quot;3666&quot;]</code></pre>
+<p>Interactive session:</p>
+<pre><code>$ oc rsh test
+sh-5.0$ uname -n
+test
+sh-5.0$ hostname
+test
+sh-5.0$ hostname --fqdn
+test
+sh-5.0$ cat /etc/hostname
+test
+sh-5.0$ hostnamectl get-hostname
+System has not been booted with systemd as init system (PID 1).
+Can't operate.
+Failed to create bus connection: Host is down</code></pre>
+<p>All the various ways of querying the hostname return <code>test</code>, except for <code>hostnamectl(1)</code> which fails because the container doesn’t use systemd.</p>
+<p>What other ways can Kubernetes configure the hostname? <a href>PodSpec</a> has a <code>hostname</code> field for configuring the pod hostname:</p>
+<pre><code>$ grep -C2 hostname pod-test.yaml 
+  name: test
+spec:
+  hostname: test.example.com
+  containers:
+  - name: test</code></pre>
+<p>Unfortunately, <code>hostname</code> only accepts a short name:</p>
+<pre><code>$ oc create -f pod-test.yaml
+The Pod &quot;test&quot; is invalid: spec.hostname: Invalid value:
+&quot;test.example.com&quot;: a DNS-1123 label must consist of lower case
+alphanumeric characters or '-', and must start and end with an
+alphanumeric character (e.g. 'my-name',  or '123-abc', regex used
+for validation is '[a-z0-9]([-a-z0-9]*[a-z0-9])?')</code></pre>
+<p>Some container runtimes (e.g. Podman) do allow full control over the UTS hostname. But it seems Kubernetes is (for the time being) opinionated and only allows a short name.</p>
+<p>Another <code>PodSpec</code> field of interest is <code>subdomain</code>. The documentation says:</p>
+<blockquote>
+<p>If specified, the fully qualified Pod hostname will be “&lt;hostname&gt;.&lt;subdomain&gt;.&lt;pod namespace&gt;.svc.&lt;cluster domain&gt;”. If not specified, the pod will not have a domainname at all.</p>
+</blockquote>
+<p>Sounds promising. Let’s give it a go.</p>
+<pre><code>$ grep -C2 subdomain pod-test.yaml 
+  name: test
+spec:
+  subdomain: subdomain
+  containers:
+  - name: test</code></pre>
+<pre><code>$ oc rsh test
+sh-5.0# uname -n 
+test
+sh-5.0# hostname
+test
+sh-5.0# hostname --fqdn
+test.subdomain.test.svc.cluster.local</code></pre>
+<p><code>hostname --fqdn</code> has returned a fully-qualified name. This works because the FQDN appears in <code>/etc/hosts</code> (associated with the IP address of the pod). My understanding is that <em>kubelet</em> uses a <code>ConfigMap</code> to inject this configuration into the pod.</p>
+<pre><code>sh-5.0# grep subdomain /etc/hosts
+10.129.3.84     test.subdomain.test.svc.cluster.local   test</code></pre>
+<p>The preceding examples involve pods that I created directly. The configurations of pods that are created indirectly are under the (partial) control of the corresponding controllers. For example, pods created by the <code>StatefulSet</code> controller have their <code>subdomain</code> field set to the <code>name</code> of the <code>StatefulSet</code>.</p>
+<h3 id="upcoming-changes">Upcoming changes</h3>
+<p>An <a href="https://github.com/kubernetes/enhancements/issues/1797">upcoming Kubernetes enhancement</a> will allow pods to specify that its UTS hostname should be set to the pod FQDN (if the pod has an FQDN). This enhancement will introduces a new <code>setHostnameAsFQDN</code> field to the <code>PodSpec</code>. It is currently scheduled to land as <em>alpha</em> in Kubernetes v1.19, move to <em>beta</em> in v1.20 and become <em>stable</em> in v1.22.</p>
+<h2 id="freeipa-changes">FreeIPA changes</h2>
+<p>With sufficient craftiness, or code changes, or network configuration changes, or some combination thereof, it is possible to convince a program that it’s FQDN is a particular value. Although Kubernetes and OpenShift currently offer few ways to configure the pod (UTS) hostname, the operator could use some mechanism (e.g. pod environment variables or a <code>ConfigMap</code>, along with changes to application code) to ensure that each application instance “knows” its correct FQDN.</p>
+<p>The hostname query audit revealed that FreeIPA asks for the host FQDN or the system hostname (in order to check that it is a FQDN) in lots of places and uses different query mechanisms. If we find all those places we can abstract away the check. In practice this means one common interface for FreeIPA’s C code and one for the Python code.</p>
+<p>With hostname query logic abstracted behind these interfaces, we can perform the lookup in whatever way is appropriate for the deployment environment. For a traditional deployment, we use <code>gethostname(3)</code> and <code>getaddrinfo(3)</code> with <code>AI_CANONNAME</code>. But in an OpenShift deployment we can instead return a value supplied via a <code>ConfigMap</code> or other appropriate mechanism.</p>
+<p>Upstream pull request <a href="https://github.com/freeipa/freeipa/pull/5107">#5107</a> implemented this change. It consolidated the hostname query behaviour into new C and Python routines. It did not implement alternative behaviour for other environments such as OpenShift, but abstracting the query behind a single interface (for each language) makes it easy to do this later. Whether we would use an environment variable, <code>ConfigMap</code>, or some other mechanism does not need to be decided at this time.</p>
+<h2 id="next-steps">Next steps</h2>
+<p>The investigation into hostname/FQDN query behaviour of FreeIPA’s dependencies continues. In particular, we have not yet undertaken a thorough investigation of Samba, which is used for Active Directory trust support. Also, there are open questions about some other dependencies including Dogtag and Certmonger. It is possible that configuration or code changes will be required to make these programs work in environments</p>
+</div>
+<div id="postFooter">
+    <div id="recent">
+Recent posts:
+<ul>
+    
+        <li>
+            <a href="../posts/2020-12-05-pod-hostname-fqdn.html">Pod hostnames and FQDNs</a>
+        </li>
+    
+        <li>
+            <a href="../posts/2020-12-01-openshift-crio-userns.html">User namespaces in OpenShift via CRI-O annotations</a>
+        </li>
+    
+        <li>
+            <a href="../posts/2020-11-30-openshift-machine-config-operator.html">Using the OpenShift Machine Config Operator</a>
+        </li>
+    
+        <li>
+            <a href="../posts/2020-11-13-acme-service-discovery.html">ACME Service Discovery</a>
+        </li>
+    
+        <li>
+            <a href="../posts/2020-11-05-openshift-user-namespace.html">OpenShift and user namespaces</a>
+        </li>
+    
+</ul>
+
+<div id="recentLinks">
+    <a type="application/atom+xml" href="../atom.xml">Atom feed</a>
+     <!-- em space -->
+    <a href="../archive.html">All posts…</a>
+</div>
+
+</div>
+
+    <div id="license">
+    <a rel="license" href="https://creativecommons.org/licenses/by/4.0/">
+        <img alt="Creative Commons License" style="border-width:0" src="https://licensebuttons.net/l/by/4.0/88x31.png">
+    </a>
+    <br />
+    Except where otherwise noted, this work is licensed under a
+    <a rel="license" href="https://creativecommons.org/licenses/by/4.0/">
+        Creative Commons Attribution 4.0 International License
+    </a>.
+</div>
+
+</div>
+
+        </div>
+        <div class="clear"></div>
+        <div id="footer">
+            Generated by
+            <a href="https://jaspervdj.be/hakyll">Hakyll</a>
+        </div>
+    </body>
+</html>
