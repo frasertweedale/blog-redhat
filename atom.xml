@@ -8,8 +8,149 @@
         <name>Fraser Tweedale</name>
         <email>frase@frase.id.au</email>
     </author>
-    <updated>2020-12-05T00:00:00Z</updated>
+    <updated>2020-12-08T00:00:00Z</updated>
     <entry>
+    <title>Kubernetes DNS Service Discovery limitations</title>
+    <link href="https://frasertweedale.github.io/blog-redhat/posts/2020-12-08-k8s-srv-limitation.html" />
+    <id>https://frasertweedale.github.io/blog-redhat/posts/2020-12-08-k8s-srv-limitation.html</id>
+    <published>2020-12-08T00:00:00Z</published>
+    <updated>2020-12-08T00:00:00Z</updated>
+    <summary type="html"><![CDATA[<h1 id="kubernetes-dns-service-discovery-limitations">Kubernetes DNS Service Discovery limitations</h1>
+<p>Kubernetes <em>Service</em> objects expose applications running in Pods as network services. For each combination of service name, port and associated Pod, the Kubernetes DNS system creates a DNS <code>SRV</code> record that can be used for service discovery.</p>
+<p>In this post I demonstrate a deficiency in this system that obstructs important, real-world use cases, and sketch potential solutions.</p>
+<h2 id="overview-of-kubernetes-services-and-dns">Overview of Kubernetes Services and DNS</h2>
+<p>The following Service definition defines an LDAP service:</p>
+<pre><code>$ oc create -f service-test.yaml 
+apiVersion: v1
+kind: Service
+metadata:
+  name: service-test
+  labels:
+    app: service-test
+spec:
+  selector:
+    app: service-test
+  clusterIP: None
+  ports:
+  - name: ldap
+    protocol: TCP
+    port: 389
+
+$ oc create -f service-test.yaml                                                                                                                
+service/service-test created</code></pre>
+<p>The Service controller creates <em>Endpoint</em> objects to associating each of the Service <code>ports</code> with each Pod matching the Service <code>selector</code>. If there are no matching pods, there are no endpoints:</p>
+<pre><code>$ oc get endpoints service-test
+NAME           ENDPOINTS   AGE
+service-test   &lt;none&gt;      8m1s</code></pre>
+<p>If we add a matching pod:</p>
+<pre><code>$ cat pod-service-test.yaml 
+apiVersion: v1
+kind: Pod
+metadata:
+  name: service-test
+  labels:
+    app: service-test
+spec:
+  containers:
+  - name: service-test
+    image: freeipa/freeipa-server:fedora-31
+    command: [&quot;sleep&quot;, &quot;3601&quot;]
+
+$ oc create -f pod-service-test.yaml 
+pod/service-test created</code></pre>
+<p>Then the Service controller creates an endpoint that maps the Service to the Pod:</p>
+<pre><code>$ oc get endpoints service-test
+NAME           ENDPOINTS         AGE
+service-test   10.129.2.13:389   16m
+
+$ oc get -o yaml endpoints service-test
+apiVersion: v1
+kind: Endpoints
+metadata:
+  labels:
+    app: service-test
+    service.kubernetes.io/headless: &quot;&quot;
+  ... 
+subsets:
+- addresses:
+  - ip: 10.129.2.13
+    nodeName: ft-47dev-2-27h8r-worker-0-f8bnl
+    targetRef:
+      kind: Pod
+      name: service-test
+      namespace: test
+      resourceVersion: &quot;4556709&quot;
+      uid: 296030f5-8dff-4f69-be96-ce6f0aa12653
+  ports:
+  - name: ldap
+    port: 389
+    protocol: TCP</code></pre>
+<p>Cluster DNS systems (there are different implementations, e.g. <a href="https://github.com/kubernetes/dns">kubedns</a>, and the OpenShift <a href="https://github.com/openshift/cluster-dns-operator">Cluster DNS Operator</a>) use the Endpoints objects to manage DNS records for applications running in the cluster. In particular, it creates <code>SRV</code> records mapping each service <code>name</code> and <code>protocol</code> combination to the pod(s) that provide that service. The behaviour is defined in the <a href="">Kubernetes DNS-Based Service Discovery specification</a>.</p>
+<p>The SRV record owner name has the form:</p>
+<pre><code>_&lt;port&gt;._&lt;proto&gt;.&lt;service&gt;.&lt;ns&gt;.svc.&lt;zone&gt;.</code></pre>
+<p>where <code>ns</code> is the project namespace and <code>zone</code> is the cluster DNS zone. The objects created above result in the follow <code>SRV</code> and <code>A</code> records:</p>
+<pre><code>$ oc rsh service-test
+
+sh-5.0# dig +short SRV \
+    _ldap._tcp.service-test.test.svc.cluster.local
+0 100 389 10-129-2-13.service-test.test.svc.cluster.local.
+
+sh-5.0# dig +short A \
+    10-129-2-13.service-test.test.svc.cluster.local
+10.129.2.13</code></pre>
+<p>For more information above DNS <code>SRV</code> records, see <a href="https://tools.ietf.org/html/rfc2782">RFC 2782</a>.</p>
+<h2 id="kubernetes-srv-limitation">Kubernetes SRV limitation</h2>
+<p>Some services operate over TCP, some over UDP. And some operate over <em>both</em> TCP and UDP. Two examples are DNS and Kerberos. <code>SRV</code> records are of particular importance for Kerberos; they are used (<a href="https://web.mit.edu/kerberos/krb5-devel/doc/admin/realm_config.html#hostnames-for-kdcs">widely</a>, by <a href="https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-adts/7fcdce70-5205-44d6-9c3a-260e616a2f04">multiple</a> <a href="https://www.freeipa.org/page/V4/DNS_Location_Mechanism">implementations</a>) for KDC discovery.</p>
+<p>So to host a Kerberos KDC in Kubernetes and enable service discovery, we need two sets of SRV records: <code>_kerberos._tcp</code> and <code>_kerberos._udp</code>. And likewise for the <code>kpasswd</code> and <code>kerberos-master</code> service names. There could be (probably are) other protocols where a similar arrangement is required.</p>
+<p>So, let’s update the Service object and add the <code>kerberos</code> ServicePort specs:</p>
+<pre><code>$ cat service-test.yaml 
+apiVersion: v1
+kind: Service
+metadata:
+  name: service-test
+  labels:
+    app: service-test
+spec:
+  selector:
+    app: service-test
+  clusterIP: None
+  ports:
+  - name: ldap
+    protocol: TCP
+    port: 389
+  - name: kerberos
+    protocol: TCP
+    port: 88
+  - name: kerberos
+    protocol: UDP
+    port: 88
+
+$ oc replace -f service-test.yaml 
+The Service &quot;service-test&quot; is invalid:
+spec.ports[2].name: Duplicate value: &quot;kerberos&quot;</code></pre>
+<p>Well, that’s a shame. Kerberos does not admit this important use case.</p>
+<h2 id="possible-resolutions">Possible resolutions</h2>
+<p>I am not aware of any workarounds, but I see two possible approaches to resolving this issue.</p>
+<p>One approach is to relax the uniqueness check. Instead of checking for uniqueness of ServicePort <code>name</code>, check for the uniqueness of the <code>name</code>/<code>protocol</code> pair. This is conceptually simple but I am not familiar enough with Kubernetes internals to judge the feasibility or technical tradeoffs of this approach. For users, nothing changes (except the example above would work!)</p>
+<p>Another approach is to add a new ServicePort field to specify the actual DNS service label to use. For the sake of discussion I’ll call it <code>serviceName</code>. It would be optional, defaulting to the value of <code>name</code>. This means <code>name</code> can still be the “primary key”, but the approach requires <em>another</em> uniqueness check on the <code>serviceName</code>/<code>protocol</code> pair. In our use case the configuration would look like:</p>
+<pre><code>...
+ports:
+- name: ldap
+  protocol: TCP
+  port: 389
+- name: kerberos-tcp
+  serviceName: kerberos
+  protocol: TCP
+  port: 88
+- name: kerberos-udp
+  serviceName: kerberos
+  protocol: UDP
+  port: 88</code></pre>
+<p>From a UX perspective I prefer the first approach, because there are no changes or additions to the ServicePort configuration schema. But to maintain compatibility with programs that assume that <code>name</code> is unique (as is currently enforced), it might be necessary to introduce a new field.</p>
+<h2 id="next-steps">Next steps</h2>
+<p>I will file a bug report and solicit feedback about this post from Kubernetes and OpenShift DNS experts. It might be necessary to submit a <a href="https://github.com/kubernetes/enhancements/blob/master/keps/README.md">Kubernetes Enhancement Proposal</a> (KEP), but that seems (as a Kubernetes outsider) a long and windy road to landing what is a conceptually small change.</p>]]></summary>
+</entry>
+<entry>
     <title>Pod hostnames and FQDNs</title>
     <link href="https://frasertweedale.github.io/blog-redhat/posts/2020-12-05-pod-hostname-fqdn.html" />
     <id>https://frasertweedale.github.io/blog-redhat/posts/2020-12-05-pod-hostname-fqdn.html</id>
@@ -1108,203 +1249,6 @@ pvc-d3bc7c81-8a24-4318-a914-296dbdc5ec3f   100Gi      RWO            Delete     
 <p><em>Ephemeral PKI</em> avoids the problem by only issuing very short lived certificates, e.g. one week, one day or even less! Assuming keys are rotated just as frequently, when certificate lifetimes approach the “lag” time revocation solutions, the revocation solution is not needed.</p>
 <p><em>CRLite</em> is an experimental revocation solution currently in development. It achieves fast and scalable revocation checking through cascading Bloom filters produced by an <em>aggregator</em> that records certificate revocations from one or more CAs. The target use case is in fact <em>all publicly trusted CAs</em> and Firefox Nightly already uses the system (non-enforcing, telemetry-only by default). Scott Helme wrote an <a href="https://scotthelme.co.uk/crlite-finally-a-fix-for-broken-revocation/">excellent blog post</a> about it and you can read the <a href="https://obj.umiacs.umd.edu/papers_for_stories/crlite_oakland17.pdf">original paper</a> for the gory details.</p>
 <p>One final note. I found some compliance issues with how the CRL Distribution Point extension is configured in the default FreeIPA certificate profiles. A strict reading of <a href="https://tools.ietf.org/html/rfc5280">RFC 5280</a> suggests that the CRL Distribution Point extension data produced by the default FreeIPA profiles would lead to the certificate not being considered in scope of the CRLs produced by Dogtag. This issue is particular to FreeIPA configuration, not a general problem with FreeIPA. More investiation is required and I will probably write a separate post about this in the future.</p>]]></summary>
-</entry>
-<entry>
-    <title>ACME DNS challenges and FreeIPA</title>
-    <link href="https://frasertweedale.github.io/blog-redhat/posts/2020-05-13-ipa-acme-dns.html" />
-    <id>https://frasertweedale.github.io/blog-redhat/posts/2020-05-13-ipa-acme-dns.html</id>
-    <published>2020-05-13T00:00:00Z</published>
-    <updated>2020-05-13T00:00:00Z</updated>
-    <summary type="html"><![CDATA[<h1 id="acme-dns-challenges-and-freeipa">ACME DNS challenges and FreeIPA</h1>
-<p><em>This post is part of a series of ACME client demonstrations. See also the posts about</em> <a href="2020-05-06-ipa-acme-intro.html">Certbot standalone HTTP</a> <em>and</em> <a href="2020-05-07-ipa-acme-mod_md.html">mod_md for Apache</a></p>
-<p>The ACME protocol defined in <a href="https://tools.ietf.org/html/rfc8555">RFC 8555</a> defines a <a href="https://tools.ietf.org/html/rfc8555#section-8.4">DNS challenge</a> for proving control of a domain name. In this post I’ll explain how the DNS challenge works and demonstrate how to use the <a href="https://certbot.eff.org/">Certbot</a> ACME client with the FreeIPA integrated DNS service.</p>
-<h2 id="the-dns-challenge">The DNS challenge</h2>
-<p>To prove control of a domain name (the <code>dns</code> identifier type) ACME defines the <code>dns-01</code> challenge type. It is up to ACME servers which challenges to create for a given identifier. If a server offers multiple challenges (e.g. <code>http-01</code> and <code>dns-01</code>) the client can choose which one to attempt.</p>
-<p>A DNS challenge object looks like:</p>
-<pre><code>{
-  &quot;type&quot;: &quot;dns-01&quot;,
-  &quot;url&quot;: &quot;https://example.com/acme/chall/Rg5dV14Gh1Q&quot;,
-  &quot;status&quot;: &quot;pending&quot;,
-  &quot;token&quot;: &quot;evaGxfADs6pSRb2LAv9IZf17Dt3juxGJ-PCt92wr-oA&quot;
-}</code></pre>
-<p>The <code>token</code> field is a base64url-encoded high-entropy random value. Due to the use of TLS this value should be known only to the server and client.</p>
-<p>The client responds to a <code>dns-01</code> challenge by provisioning a DNS <strong>TXT</strong> record containing the SHA-256 digest of the <em>key authorisation</em> value, which is the concatenation of the <code>token</code> value from the challenge object and the JWK Thumbprint of the account key. For example:</p>
-<pre><code>_acme-challenge.www.example.org. 300 IN TXT &quot;gfj9Xq...Rg85nM&quot;</code></pre>
-<p>The client then informs the ACME server that it can validate the challenge:</p>
-<pre><code>POST /acme/chall/Rg5dV14Gh1Q
-Host: example.com
-Content-Type: application/jose+json
-
-{
-  &quot;protected&quot;: base64url({
-    &quot;alg&quot;: &quot;ES256&quot;,
-    &quot;kid&quot;: &quot;https://example.com/acme/acct/evOfKhNU60wg&quot;,
-    &quot;nonce&quot;: &quot;SS2sSl1PtspvFZ08kNtzKd&quot;,
-    &quot;url&quot;: &quot;https://example.com/acme/chall/Rg5dV14Gh1Q&quot;
-  }),
-  &quot;payload&quot;: base64url({}),
-  &quot;signature&quot;: &quot;Q1bURgJoEslbD1c5...3pYdSMLio57mQNN4&quot;
-}</code></pre>
-<p>The ACME server will query the DNS. When it sees that the expected TXT record, the challenge (and corresponding identifier authorisation) are completed.</p>
-<p>Because DNSSEC is not widely deployed, ACME servers can mitigate against DNS-based attacks by querying DNS from mutiple vantage points. This increases attack cost and complexity.</p>
-<h2 id="dns-and-certbot">DNS and Certbot</h2>
-<p>Certbot provides the <code>--preferred-challenges={dns,http}</code> CLI option to specify which challenge type to prefer if the server offers multiple challenges.</p>
-<p>There are several <a href="https://certbot.eff.org/docs/using.html#dns-plugins">DNS plugins</a> available for using Certbot with particular DNS services. For example there are plugins for Cloudflare, Route53 and many other services. At a glance, many of them are packaged for Fedora. Each DNS plugin has different options to activate and configure it. Because we are not using any of these services I won’t go into further details here.</p>
-<p>Certbot also provides <a href="https://certbot.eff.org/docs/using.html#pre-and-post-validation-hooks">pre and post validation hooks</a> for the <code>--manual</code> strategy. These let the user specify scripts to carry out challenge provisioning and cleanup steps. The command line options are <code>--manual-auth-hook</code> and <code>--manual-cleanup-hook</code>.</p>
-<h2 id="certbot-and-freeipa-dns">Certbot and FreeIPA DNS</h2>
-<p>You can use the CLI options described above to implement arbitrary means of responding to ACME challenges. And I have done just that for responding to the <code>dns-01</code> challenge using the FreeIPA integrated DNS service.</p>
-<p>The FreeIPA integrated DNS is an optional component of FreeIPA. It is implmented using the BIND DNS server and a database plugin causing BIND to read from the FreeIPA replicated LDAP database. The DNS service can be installed at server install time, or afterwards via the <code>ipa-dns-install</code> command. The <code>freeipa-server-dns</code> (Fedora) or <code>ipa-server-dns</code> (RHEL) package provides this feature. The rest of this section assumes that the FreeIPA integrated DNS server is installed and FreeIPA-enrolled client machines are configured to use it.</p>
-<p>The <code>ipa dnsrecord-add &lt;zone&gt; &lt;name&gt; ...</code> command adds record(s) to the zone. The resource types and values are given in options like <code>--aaaa-rec=&lt;ip6addr&gt;</code> or <code>--txt-rec=&lt;string&gt;</code>. The corresponding command <code>dnsrecord-del</code> command has the same format. Knowing that we can also interact with the FreeIPA server via the <code>ipalib</code> Python library, we have everything we need to implement the Certbot hook script(s) that will use FreeIPA’s DNS to satisfy the ACME <code>dns-01</code> challenge.</p>
-<h3 id="hook-script">Hook script</h3>
-<p>The script is so short I will just include the whole thing here. I have broken it into chunks with commentary.</p>
-<div class="sourceCode" id="cb4"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1"></a><span class="co">#!/usr/bin/python3</span></span>
-<span id="cb4-2"><a href="#cb4-2"></a><span class="im">import</span> os</span>
-<span id="cb4-3"><a href="#cb4-3"></a><span class="im">from</span> dns <span class="im">import</span> resolver</span>
-<span id="cb4-4"><a href="#cb4-4"></a><span class="im">from</span> ipalib <span class="im">import</span> api </span>
-<span id="cb4-5"><a href="#cb4-5"></a><span class="im">from</span> ipapython <span class="im">import</span> dnsutil</span></code></pre></div>
-<p>Shebang, imports. Trivial.</p>
-<div class="sourceCode" id="cb5"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1"></a>certbot_domain <span class="op">=</span> os.environ[<span class="st">&#39;CERTBOT_DOMAIN&#39;</span>]</span>
-<span id="cb5-2"><a href="#cb5-2"></a>certbot_validation <span class="op">=</span> os.environ[<span class="st">&#39;CERTBOT_VALIDATION&#39;</span>]</span>
-<span id="cb5-3"><a href="#cb5-3"></a><span class="cf">if</span> <span class="st">&#39;CERTBOT_AUTH_OUTPUT&#39;</span> <span class="kw">in</span> os.environ:</span>
-<span id="cb5-4"><a href="#cb5-4"></a>    command <span class="op">=</span> <span class="st">&#39;dnsrecord_del&#39;</span></span>
-<span id="cb5-5"><a href="#cb5-5"></a><span class="cf">else</span>:</span>
-<span id="cb5-6"><a href="#cb5-6"></a>    command <span class="op">=</span> <span class="st">&#39;dnsrecord_add&#39;</span></span></code></pre></div>
-<p>Certbot provides the domain name and the <em>authorisation string</em> via environment variables. In the cleanup phase it also sets the <code>CERTBOT_AUTH_OUTPUT</code> environment variable. Therefore I use this same script for both the authorisation and cleanup phases. Because the commands are so similar, the only thing that changes during cleanup is the command name.</p>
-<div class="sourceCode" id="cb6"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1"></a>validation_domain <span class="op">=</span> <span class="ss">f&#39;_acme-challenge.</span><span class="sc">{</span>certbot_domain<span class="sc">}</span><span class="ss">&#39;</span></span>
-<span id="cb6-2"><a href="#cb6-2"></a>fqdn <span class="op">=</span> dnsutil.DNSName(validation_domain).make_absolute()</span>
-<span id="cb6-3"><a href="#cb6-3"></a>zone <span class="op">=</span> dnsutil.DNSName(resolver.zone_for_name(fqdn))</span>
-<span id="cb6-4"><a href="#cb6-4"></a>name <span class="op">=</span> fqdn.relativize(zone)</span></code></pre></div>
-<p>Construct the validation domain name and find the corresponding DNS zone, i.e. the zone in which we must create the TXT record. Then we relativise the validation domain name against the zone.</p>
-<div class="sourceCode" id="cb7"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1"></a>api.bootstrap(context<span class="op">=</span><span class="st">&#39;cli&#39;</span>)</span>
-<span id="cb7-2"><a href="#cb7-2"></a>api.finalize()</span>
-<span id="cb7-3"><a href="#cb7-3"></a>api.Backend.rpcclient.<span class="ex">connect</span>()</span>
-<span id="cb7-4"><a href="#cb7-4"></a></span>
-<span id="cb7-5"><a href="#cb7-5"></a>api.Command[command](</span>
-<span id="cb7-6"><a href="#cb7-6"></a>  zone,</span>
-<span id="cb7-7"><a href="#cb7-7"></a>  name,</span>
-<span id="cb7-8"><a href="#cb7-8"></a>  txtrecord<span class="op">=</span>[certbot_validation],</span>
-<span id="cb7-9"><a href="#cb7-9"></a>  dnsttl<span class="op">=</span><span class="dv">60</span>)</span></code></pre></div>
-<p>Initialise the API and execute the command. Note that names of the keyword arguments are different from the corresponding CLI options.</p>
-<p>There are some important <strong>caveats</strong>. There must be latent, non-expired Kerberos credentials in the execution environment. These can be in the default credential cache or specified via the <code>KRB5CCNAME</code> environment variable (e.g. to point to a keytab file). The principal must also have permissions to add and remove DNS records.</p>
-<h2 id="demo">Demo</h2>
-<p>As in previous ACME demos the client machine is enrolled as a FreeIPA client and trusts the FreeIPA CA. For this demo Certbot does not need to run as <code>root</code>. But by default Certbot tries to read and write files under <code>/etc/letsencrypt</code>. I had to override this behaviour with the following command line options:</p>
-<dl>
-<dt><code>--config-dir DIR</code></dt>
-<dd><p>Configuration directory. (default: <code>/etc/letsencrypt</code>)</p>
-</dd>
-<dt><code>--work-dir DIR</code></dt>
-<dd><p>Working directory. (default: <code>/var/lib/letsencrypt</code>)</p>
-</dd>
-<dt><code>--logs-dir LOGS_DIR</code></dt>
-<dd><p>Logs directory. (default: <code>/var/log/letsencrypt</code>)</p>
-</dd>
-</dl>
-<p>I defined these options in a shell array variable for use in subsequent commands. I included the ACME server configuration too:</p>
-<pre><code>[f31-0:~] ftweedal% CERTBOT_ARGS=( 
-array&gt; --logs-dir ~/certbot/log
-array&gt; --work-dir ~/certbot/work
-array&gt; --config-dir ~/certbot/config
-array&gt; --server https://ipa-ca.ipa.local/acme/directory
-array&gt; )</code></pre>
-<p>Next I registered an account:</p>
-<pre><code>[f31-0:~] ftweedal% certbot $CERTBOT_ARGS \
-    register --email ftweedal@redhat.com \
-    --agree-tos --no-eff-email --quiet
-Saving debug log to /home/ftweedal/certbot/log/letsencrypt.log
-
-IMPORTANT NOTES:
- - Your account credentials have been saved in your Certbot
-   configuration directory at /home/ftweedal/certbot/config. You
-   should make a secure backup of this folder now. This configuration
-   directory will also contain certificates and private keys obtained
-   by Certbot so making regular backups of this folder is ideal.</code></pre>
-<p>The <code>--no-eff-email</code> option suppressed the <em>“Would you be willing to share your email address with the Electronic Frontier Foundation?”</em> prompt.</p>
-<p>The FreeIPA hook script requires Kerberos credentials so I executed <code>kinit admin</code>. <strong>In production use a less privileged account</strong> with permissions to add and delete DNS records.</p>
-<pre><code>[f31-0:~] ftweedal% kinit admin
-Password for admin@IPA.LOCAL: XXXXXXXX</code></pre>
-<p>Now I was ready to request the certificate. Alongside executing <code>certbot</code>, in another terminal I executed DNS queries to observe the creation and deletion of the TXT record.</p>
-<pre><code>[root@f31-0 ~]# certbot $CERTBOT_ARGS \
-    certonly --domain $(hostname) \
-    --preferred-challenges dns \
-    --manual --manual-public-ip-logging-ok \
-    --manual-auth-hook /home/ftweedal/certbot-dns-ipa.py \
-    --manual-cleanup-hook /home/ftweedal/certbot-dns-ipa.py
-Saving debug log to /home/ftweedal/certbot/log/letsencrypt.log 
-Plugins selected: Authenticator manual, Installer None                                                            
-Obtaining a new certificate                                                                                       
-Performing the following challenges:
-dns-01 challenge for f31-0.ipa.local
-Running manual-auth-hook command: /home/ftweedal/certbot-dns-ipa.py
-Waiting for verification...
-Cleaning up challenges
-Running manual-cleanup-hook command: /home/ftweedal/certbot-dns-ipa.py
-
-IMPORTANT NOTES:
- - Congratulations! Your certificate and chain have been saved at:
-   /home/ftweedal/certbot/config/live/f31-0.ipa.local/fullchain.pem
-   Your key file has been saved at:
-   /home/ftweedal/certbot/config/live/f31-0.ipa.local/privkey.pem
-   Your cert will expire on 2020-08-11. To obtain a new or tweaked
-   version of this certificate in the future, simply run certbot
-   again. To non-interactively renew *all* of your certificates, run
-   &quot;certbot renew&quot;
- - If you like Certbot, please consider supporting our work by:
-
-   Donating to ISRG / Let&#39;s Encrypt:   https://letsencrypt.org/donate
-   Donating to EFF:                    https://eff.org/donate-le</code></pre>
-<p>The certificate was issued and the process took about 10 seconds. In the other terminal, running <code>dig</code> every couple of seconds let me observe the TXT record that was created and then deleted:</p>
-<pre><code>[f31-0:~] ftweedal% dig +short TXT _acme-challenge.f31-0.ipa.local
-
-[f31-0:~] ftweedal% dig +short TXT _acme-challenge.f31-0.ipa.local
-&quot;5qkVb3ykx8nRdJOKbKf-xDtoySFl-B2W37bBBOHGoyc&quot;
-
-[f31-0:~] ftweedal% dig +short TXT _acme-challenge.f31-0.ipa.local
-&lt;&lt; no output; record is gone &gt;&gt;</code></pre>
-<h2 id="error-handling">Error handling</h2>
-<p>To my surprise, a failure (non-zero exit status) of the authorisation hook script <em>does not</em> cause Certbot to halt. For example, after deleting my credential cache with <code>kdestroy</code> and running <code>certbot</code> with the same options as above, Certbot output an error message and the standard error output from the hook script:</p>
-<pre><code>...
-Running manual-auth-hook command: /home/ftweedal/certbot-dns-ipa.py                                               
-manual-auth-hook command &quot;/home/ftweedal/certbot-dns-ipa.py&quot;
-returned error code 1                                
-Error output from manual-auth-hook command certbot-dns-ipa.py:                                                    
-Traceback (most recent call last):                                                                                
-  File &quot;/usr/lib/python3.7/site-packages/ipalib/rpc.py&quot;, line 647,
-  in get_auth_info                               
-      response = self._sec_context.step()                                          
-  ...</code></pre>
-<p>Nevertheless Certbot proceeded to indicating to the server that the challenge is ready for verification:</p>
-<pre><code>Waiting for verification...                                                                                       
-&lt; 20 seconds elapse &gt;</code></pre>
-<p>It then cleaned up the challenges and ran the cleanup hook (which also failed, as expected, due to no Kerberos credentials):</p>
-<pre><code>Cleaning up challenges   
-Cleaning up challenges                                                                                            
-Running manual-cleanup-hook command: /home/ftweedal/certbot-dns-ipa.py
-manual-cleanup-hook command &quot;/home/ftweedal/certbot-dns-ipa.py&quot; returned error code 1                             
-Error output from manual-cleanup-hook command certbot-dns-ipa.py:                                                 
-Traceback (most recent call last):   
-  ...</code></pre>
-<p>Finally it output the error from the ACME service:</p>
-<pre><code>An unexpected error occurred:                                                                                     
-There was a problem with a DNS query during identifier validation ::
-  Unable to validate DNS-01 challenge at _acme-challenge.f31-0.ipa.local                                                                                         
-Error: DNS name not found [response code 3]                                                                       
-Please see the logfiles in /home/ftweedal/certbot/log for more details. </code></pre>
-<p>Responding to a challenge after an abnormal exit of the authorisation hook seems to infringe RFC 8555 §8.2 which states:</p>
-<blockquote>
-<p>Clients SHOULD NOT respond to challenges until they believe that the server’s queries will succeed.</p>
-</blockquote>
-<p>I <a href="https://github.com/certbot/certbot/issues/7990">reported this issue</a> against the Certbot GitHub repository.</p>
-<h2 id="discussion">Discussion</h2>
-<p>The <code>certbot-dns-ipa.py</code> script is <a href="https://gist.github.com/frasertweedale/ca42ff31d5f5b8d3c6d4d3a94f9fbd0e">available in a Gist</a>. It is trivial so consider it public domain.</p>
-<p>The script is an artifact of work that is partly an exploration of ACME use cases, and partly for verifying the PKI and FreeIPA ACME services. I encountered no issues on the ACME server side which was pleasing.</p>
-<p>From the client point of view it was good to confirm that what <em>sounded</em> like a valid use case was indeed valid. Not only that, it was straightforward thanks to the FreeIPA Python API and the design of the DNS plugin. The success of this use case exploration leads to to a couple of related questions:</p>
-<ul>
-<li>Should we build a “proper” Certbot plugin for FreeIPA DNS?</li>
-<li>Should we distribute and support the manual hook script?</li>
-</ul>
-<p>These questions don’t need answers today. But it is good to outline and compare the options.</p>
-<p>From a technical standpoint these are not mutually exclusive; you could do both. But from a usage standpoint you only really need one or the other. A proper plugin might have better UX and discoverability but it would be additional work (how much more I’m not sure yet). On the other hand the hook script is pretty much already “done”. We would just need to distribute it, e.g. install it under <code>/usr/libexec/ipa/</code>.</p>
-<p>This post concludes my “trilogy” of ACME client use case demos. In the future I will probably explore the intersection of ACME, OpenShift and FreeIPA. If so, expect the “sequel trilogy”. But my immediate focus must be to finish the FreeIPA ACME service and get it merged upstream.</p>]]></summary>
 </entry>
 
 </feed>
