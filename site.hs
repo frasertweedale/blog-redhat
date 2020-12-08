@@ -3,7 +3,9 @@
 import Data.Monoid (mappend)
 import Data.Semigroup ((<>))
 
-import Text.Pandoc.Definition (Pandoc(..), Block(Header, Plain))
+import Text.Pandoc.Definition
+  ( Pandoc(..), Block(Header, Plain), Inline(Link, Space, Str), nullAttr )
+import Text.Pandoc.Walk (walk)
 import Hakyll
 
 
@@ -90,7 +92,10 @@ main = hakyll $ do
             `mappend` context
 
       getResourceBody >>= saveSnapshot "source"
-      pandocCompiler
+      pandocCompilerWithTransform
+              defaultHakyllReaderOptions
+              defaultHakyllWriterOptions
+              addSectionLinks
         >>= saveSnapshot "content"
         >>= loadAndApplyTemplate "templates/post.html" postContext
         >>= loadAndApplyTemplate "templates/default.html" postContext
@@ -157,3 +162,11 @@ feedConfiguration = FeedConfiguration
   , feedAuthorEmail = blogAuthorEmail
   , feedRoot = blogRoot
   }
+
+
+addSectionLinks :: Pandoc -> Pandoc
+addSectionLinks = walk f where
+  f (Header n attr@(idAttr, _, _) inlines) | n > 1 =
+      let link = Link nullAttr [Str "§"] ("#" <> idAttr, "")
+      in Header n attr (inlines <> [Space, link])
+  f x = x

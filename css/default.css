@@ -103,6 +103,16 @@ h1, h2, h3, h4, h5, h6 {
     font-family: serif;
 }
 
+h2 a, h3 a, h4 a, h5 a, h6 a {
+    text-decoration: none;
+    color: grey;
+    visibility: hidden;
+}
+
+h2:hover a, h3:hover a, h4:hover a, h5:hover a, h6:hover a {
+    visibility: visible;
+}
+
 div.info {
     color: #555;
     font-size: 14px;
