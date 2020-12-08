@@ -1,6 +1,3 @@
-- openshift service SRV record issue (cannot have both tcp and udp
-  with same serv name)
-
 - ACME SRVName support?
   - Using Caddy with FreeIPA ACME service
 
