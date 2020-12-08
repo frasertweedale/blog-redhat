@@ -27,7 +27,7 @@
 <div id="postContent">
     <h1 id="dogtag-number-ranges-and-vlv-indices">Dogtag, number ranges and VLV indices</h1>
 <p>In a <a href="2019-07-26-dogtag-replica-ranges.html">previous post</a> I explained Dogtag’s identifier range management. This is how a Dogtag replica knows what range it should use to assign serial numbers, request IDs, etc. What that article did not cover is how Dogtag at startup works out <em>where it is up to</em> in the range. In this post I explain how uses LDAP <em>Virtual List View</em> to do that, how it can break, and how to fix it.</p>
-<h2 id="ldap-virtual-list-view">LDAP Virtual List View</h2>
+<h2 id="ldap-virtual-list-view">LDAP Virtual List View <a href="#ldap-virtual-list-view">§</a></h2>
 <p>The LDAP protocol has an optional extension called <em>Virtual List View (VLV)</em>, which is specified in an <a href="https://datatracker.ietf.org/doc/draft-ietf-ldapext-ldapv3-vlv/">expired Internet-Draft</a>. VLV supports result <em>paging</em> and is an extension of the <em>Server Side Sort (SSS)</em> control (<a href="https://tools.ietf.org/html/rfc2891">RFC 2891</a>). For a search that is covered by a VLV index, a client can specify a page size and offset and get just that portion of the result. It can also seek a specified attribute value and return nearby results.</p>
 <p>In 389DS / RHDS, a VLV index is defined by two objects under <code>cn=config</code>. One of the VLV indices used in Dogtag is the search of all certificates sorted by serial number:</p>
 <pre class="ldif"><code>dn: cn=allCerts-pki-tomcat,
@@ -48,7 +48,7 @@ vlvSort: serialno
 vlvEnabled: 0
 vlvUses: 0</code></pre>
 <p>The first object defines the search base and filter. When performing a VLV search, these <strong>must match</strong>. The second object declares which attribute is the sort key. To perform a VLV search the client must use both the SSS control (which chooses the sort key) and the VLV control (which selects the page or the value of interest).</p>
-<h2 id="dogtag-range-initialisation">Dogtag range initialisation</h2>
+<h2 id="dogtag-range-initialisation">Dogtag range initialisation <a href="#dogtag-range-initialisation">§</a></h2>
 <p>When Dogtag is starting up, for each active identifier range it has to determine the first unused number. It uses VLV searches to do this. For serial numbers, it uses the VLV index shown above. For request IDs and other ranges, there are other indices. The VLV search targets the upper limit of the range, and requests the preceding values. It then looks for the highest value in the result that is also within the active range. This is the last number that was used; we increment it to get the next available number.</p>
 <p>To make it a bit more concrete, we can perform a VLV search ourselves using <code>ldapsearch</code>:</p>
 <pre><code># ldapsearch -LLL -D &quot;cn=Directory Manager&quot; -w $DM_PASS \
@@ -64,10 +64,10 @@ dn: cn=267911185,ou=certificateRepository,ou=ca,o=ipaca
 <p>In this search the target value (end of the active range) is <code>09267911168</code>. This is the integer <code>267911168</code> preceded by a two-digit length value. This is needed because the <code>serialno</code> attribute has <code>Directory String</code> syntax, which is sorted lexicographically. The <code>1/0</code> part of the control is asking for one value preceding the target value, and zero values following it.</p>
 <p>The result contains two objects: <code>397</code> (which precedes the target) and <code>267911185</code> (which follows it). Why did we get a number following the target value? The target entry is the first entry whose sort attribute value is <em>greater than or equal</em> the target value. In this way, results greater than the target can appear in the result, as happened here.</p>
 <p>The search above relates to the range <code>1..267911168</code>. The result shows us to initialise the repository with <code>397</code> as the “last used” number. The next certificate issued by this replica will have serial number <code>398</code>.</p>
-<h2 id="vlv-index-corruption">VLV index corruption</h2>
+<h2 id="vlv-index-corruption">VLV index corruption <a href="#vlv-index-corruption">§</a></h2>
 <p>If a VLV index is corrupt or incomplete, Dogtag could initialise a repository with a too-low “last used” number. This could happen for serial numbers, request IDs or any other kind of managed range. When that happens, CA operations including certificate issuance or CSR submission could fail.</p>
 <p>In fact, the <code>ldapsearch</code> above is from a customer case. A full search of the <code>ou=certificateRepository</code> showed thousands of certificates that were not included in the VLV index. If CA operations are failing due to LDAP “Object already exists” errors, you can perform this check to confirm or rule out VLV index corruption as the source of the problem. Keep in mind that VLV indices are maintained separately on each replica. Checks have to be performed on the replica where the problem is occurring.</p>
-<h2 id="rebuilding-vlv-indices">Rebuilding VLV indices</h2>
+<h2 id="rebuilding-vlv-indices">Rebuilding VLV indices <a href="#rebuilding-vlv-indices">§</a></h2>
 <p>389DS makes it easy to rebuild a VLV index. You create a <em>task</em> object and the DS takes care of it. For Dogtag, we even provide a template LDIF file for a task that reindexes <em>all</em> the VLV indices that Dogtag creates and uses.</p>
 <p>First, copy and fill the template:</p>
 <pre><code>$ /bin/cp /usr/share/pki/ca/conf/vlvtasks.ldif .
@@ -105,7 +105,7 @@ nsTaskLog:: aXBhY2E6IEluZGV4aW #... (base64-encoded log)
 nsTaskStatus: ipaca: Finished indexing.
 nsTaskExitCode: 0</code></pre>
 <p>We can see that the task finished successfully, and there is some (truncated) log output if we want more details. After a few more seconds, 389DS will delete the object. You can increase the <code>ttl</code> if you want to keep the objects for longer.</p>
-<h2 id="discussion">Discussion</h2>
+<h2 id="discussion">Discussion <a href="#discussion">§</a></h2>
 <p>This year I have encountered variations of this problem on several occasions. I don’t know what the cause(s) are, i.e. why VLV indices get corrupted or stop updating. Hopefully DS experts will be able to shed more light on the issue.</p>
 <p>We are considering adding an automated check to the FreeIPA <em>Health Check</em> system, specifically for the range management VLVs. The <a href>GitHub ticket</a> already contains some discussion and high level steps of how the check would work.</p>
 <p>The proper fix for this issue is to move to UUIDs for all object identifiers. Serial numbers might need something different but it is the same idea. This work is on the roadmap. <em>So many problems</em> will go away when we make this change.</p>

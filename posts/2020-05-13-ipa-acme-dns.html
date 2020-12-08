@@ -20,7 +20,7 @@
         <div id="content">
             <div class="info">
     
-    Tags: <a title="All pages tagged 'acme'." href="../tags/acme.html">acme</a>, <a title="All pages tagged 'freeipa'." href="../tags/freeipa.html">freeipa</a>, <a title="All pages tagged 'certificates'." href="../tags/certificates.html">certificates</a>
+    Tags: <a title="All pages tagged 'acme'." href="../tags/acme.html">acme</a>, <a title="All pages tagged 'freeipa'." href="../tags/freeipa.html">freeipa</a>, <a title="All pages tagged 'certificates'." href="../tags/certificates.html">certificates</a>, <a title="All pages tagged 'dns'." href="../tags/dns.html">dns</a>
     
 </div>
 
@@ -28,7 +28,7 @@
     <h1 id="acme-dns-challenges-and-freeipa">ACME DNS challenges and FreeIPA</h1>
 <p><em>This post is part of a series of ACME client demonstrations. See also the posts about</em> <a href="2020-05-06-ipa-acme-intro.html">Certbot standalone HTTP</a> <em>and</em> <a href="2020-05-07-ipa-acme-mod_md.html">mod_md for Apache</a></p>
 <p>The ACME protocol defined in <a href="https://tools.ietf.org/html/rfc8555">RFC 8555</a> defines a <a href="https://tools.ietf.org/html/rfc8555#section-8.4">DNS challenge</a> for proving control of a domain name. In this post I’ll explain how the DNS challenge works and demonstrate how to use the <a href="https://certbot.eff.org/">Certbot</a> ACME client with the FreeIPA integrated DNS service.</p>
-<h2 id="the-dns-challenge">The DNS challenge</h2>
+<h2 id="the-dns-challenge">The DNS challenge <a href="#the-dns-challenge">§</a></h2>
 <p>To prove control of a domain name (the <code>dns</code> identifier type) ACME defines the <code>dns-01</code> challenge type. It is up to ACME servers which challenges to create for a given identifier. If a server offers multiple challenges (e.g. <code>http-01</code> and <code>dns-01</code>) the client can choose which one to attempt.</p>
 <p>A DNS challenge object looks like:</p>
 <pre><code>{
@@ -57,15 +57,15 @@ Content-Type: application/jose+json
 }</code></pre>
 <p>The ACME server will query the DNS. When it sees that the expected TXT record, the challenge (and corresponding identifier authorisation) are completed.</p>
 <p>Because DNSSEC is not widely deployed, ACME servers can mitigate against DNS-based attacks by querying DNS from mutiple vantage points. This increases attack cost and complexity.</p>
-<h2 id="dns-and-certbot">DNS and Certbot</h2>
+<h2 id="dns-and-certbot">DNS and Certbot <a href="#dns-and-certbot">§</a></h2>
 <p>Certbot provides the <code>--preferred-challenges={dns,http}</code> CLI option to specify which challenge type to prefer if the server offers multiple challenges.</p>
 <p>There are several <a href="https://certbot.eff.org/docs/using.html#dns-plugins">DNS plugins</a> available for using Certbot with particular DNS services. For example there are plugins for Cloudflare, Route53 and many other services. At a glance, many of them are packaged for Fedora. Each DNS plugin has different options to activate and configure it. Because we are not using any of these services I won’t go into further details here.</p>
 <p>Certbot also provides <a href="https://certbot.eff.org/docs/using.html#pre-and-post-validation-hooks">pre and post validation hooks</a> for the <code>--manual</code> strategy. These let the user specify scripts to carry out challenge provisioning and cleanup steps. The command line options are <code>--manual-auth-hook</code> and <code>--manual-cleanup-hook</code>.</p>
-<h2 id="certbot-and-freeipa-dns">Certbot and FreeIPA DNS</h2>
+<h2 id="certbot-and-freeipa-dns">Certbot and FreeIPA DNS <a href="#certbot-and-freeipa-dns">§</a></h2>
 <p>You can use the CLI options described above to implement arbitrary means of responding to ACME challenges. And I have done just that for responding to the <code>dns-01</code> challenge using the FreeIPA integrated DNS service.</p>
 <p>The FreeIPA integrated DNS is an optional component of FreeIPA. It is implmented using the BIND DNS server and a database plugin causing BIND to read from the FreeIPA replicated LDAP database. The DNS service can be installed at server install time, or afterwards via the <code>ipa-dns-install</code> command. The <code>freeipa-server-dns</code> (Fedora) or <code>ipa-server-dns</code> (RHEL) package provides this feature. The rest of this section assumes that the FreeIPA integrated DNS server is installed and FreeIPA-enrolled client machines are configured to use it.</p>
 <p>The <code>ipa dnsrecord-add &lt;zone&gt; &lt;name&gt; ...</code> command adds record(s) to the zone. The resource types and values are given in options like <code>--aaaa-rec=&lt;ip6addr&gt;</code> or <code>--txt-rec=&lt;string&gt;</code>. The corresponding command <code>dnsrecord-del</code> command has the same format. Knowing that we can also interact with the FreeIPA server via the <code>ipalib</code> Python library, we have everything we need to implement the Certbot hook script(s) that will use FreeIPA’s DNS to satisfy the ACME <code>dns-01</code> challenge.</p>
-<h3 id="hook-script">Hook script</h3>
+<h3 id="hook-script">Hook script <a href="#hook-script">§</a></h3>
 <p>The script is so short I will just include the whole thing here. I have broken it into chunks with commentary.</p>
 <div class="sourceCode" id="cb4"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1"></a><span class="co">#!/usr/bin/python3</span></span>
 <span id="cb4-2"><a href="#cb4-2"></a><span class="im">import</span> os</span>
@@ -96,7 +96,7 @@ Content-Type: application/jose+json
 <span id="cb7-9"><a href="#cb7-9"></a>  dnsttl<span class="op">=</span><span class="dv">60</span>)</span></code></pre></div>
 <p>Initialise the API and execute the command. Note that names of the keyword arguments are different from the corresponding CLI options.</p>
 <p>There are some important <strong>caveats</strong>. There must be latent, non-expired Kerberos credentials in the execution environment. These can be in the default credential cache or specified via the <code>KRB5CCNAME</code> environment variable (e.g. to point to a keytab file). The principal must also have permissions to add and remove DNS records.</p>
-<h2 id="demo">Demo</h2>
+<h2 id="demo">Demo <a href="#demo">§</a></h2>
 <p>As in previous ACME demos the client machine is enrolled as a FreeIPA client and trusts the FreeIPA CA. For this demo Certbot does not need to run as <code>root</code>. But by default Certbot tries to read and write files under <code>/etc/letsencrypt</code>. I had to override this behaviour with the following command line options:</p>
 <dl>
 <dt><code>--config-dir DIR</code></dt>
@@ -170,7 +170,7 @@ IMPORTANT NOTES:
 
 [f31-0:~] ftweedal% dig +short TXT _acme-challenge.f31-0.ipa.local
 &lt;&lt; no output; record is gone &gt;&gt;</code></pre>
-<h2 id="error-handling">Error handling</h2>
+<h2 id="error-handling">Error handling <a href="#error-handling">§</a></h2>
 <p>To my surprise, a failure (non-zero exit status) of the authorisation hook script <em>does not</em> cause Certbot to halt. For example, after deleting my credential cache with <code>kdestroy</code> and running <code>certbot</code> with the same options as above, Certbot output an error message and the standard error output from the hook script:</p>
 <pre><code>...
 Running manual-auth-hook command: /home/ftweedal/certbot-dns-ipa.py                                               
@@ -204,7 +204,7 @@ Please see the logfiles in /home/ftweedal/certbot/log for more details. </code><
 <p>Clients SHOULD NOT respond to challenges until they believe that the server’s queries will succeed.</p>
 </blockquote>
 <p>I <a href="https://github.com/certbot/certbot/issues/7990">reported this issue</a> against the Certbot GitHub repository.</p>
-<h2 id="discussion">Discussion</h2>
+<h2 id="discussion">Discussion <a href="#discussion">§</a></h2>
 <p>The <code>certbot-dns-ipa.py</code> script is <a href="https://gist.github.com/frasertweedale/ca42ff31d5f5b8d3c6d4d3a94f9fbd0e">available in a Gist</a>. It is trivial so consider it public domain.</p>
 <p>The script is an artifact of work that is partly an exploration of ACME use cases, and partly for verifying the PKI and FreeIPA ACME services. I encountered no issues on the ACME server side which was pleasing.</p>
 <p>From the client point of view it was good to confirm that what <em>sounded</em> like a valid use case was indeed valid. Not only that, it was straightforward thanks to the FreeIPA Python API and the design of the DNS plugin. The success of this use case exploration leads to to a couple of related questions:</p>

@@ -31,7 +31,7 @@
 <p>ACME’s original use case is HTTPS on the public Internet. The public CA <a href="https://letsencrypt.org/">*Let's Encrypt*</a> is already one of the biggest CAs. Clients use ACME to talk to <em>Let’s Encrypt</em>, automating DNS name validation, certificate issuance and in most cases, certificate installation and renewal.</p>
 <p>But ACME is not limited to Let’s Encrypt. Other CAs implement it and enterprise (private) CAs can implement it too. And after a few years of talking about it, we are finally implementing an ACME service in FreeIPA.</p>
 <p>In this post I will give a high-level overview of the ACME protocol, and the ACME service architecture in FreeIPA. If that doesn’t interest you, scroll down to the demo where I show the Certbot ACME client acquiring a certificate from the FreeIPA CA.</p>
-<h2 id="acme-protocol-in-brief">ACME protocol, in brief</h2>
+<h2 id="acme-protocol-in-brief">ACME protocol, in brief <a href="#acme-protocol-in-brief">§</a></h2>
 <ol type="1">
 <li><p>ACME client registers with ACME server. ACME accounts <em>may</em> be bound to some external accounts but more commonly clients register <em>ad hoc</em> with no binding to any other service. This is the case for the FreeIPA ACME service.</p></li>
 <li><p>ACME client creates an <em>order</em> for a certificate with one or more <em>identifiers</em> (e.g. DNS names). The FreeIPA ACME service initially supports only DNS identifiers, but the IETF ACME working has defined challenges for other identifier types including IP addresses and email addresses.</p></li>
@@ -54,18 +54,18 @@
 <li><p>The client retrieves the issued certificate and (commonly) configures an application to use it.</p></li>
 </ol>
 <p>There are many ACME client implementations. Some, such as <a href="https://certbot.eff.org/">Certbot</a>, are general purpose and can be used standalone or integrated with many kinds of applications. Others are application specific, like <a href="https://httpd.apache.org/docs/current/mod/mod_md.html">mod_md</a> for Apache httpd.</p>
-<h2 id="freeipa-acme-service-architecture">FreeIPA ACME service architecture</h2>
+<h2 id="freeipa-acme-service-architecture">FreeIPA ACME service architecture <a href="#freeipa-acme-service-architecture">§</a></h2>
 <p>The FreeIPA ACME service uses <a href="https://www.dogtagpki.org/wiki/PKI_ACME_Responder">Dogtag PKI ACME responder</a>. This is an optional component of Dogtag, separate from the CA or other subsystems. Like other Dogtag subsystems it run in the same process and is accessed via Tomcat.</p>
 <p>The Dogtag ACME subsystem will automatically be deployed on every CA server in a FreeIPA deployment. But <strong>it will not service requests</strong> until the administrator enables it. There are two reasons for this approach.</p>
 <p>For ease of client configuration it is desired to have a single, permanent name for the ACME service across the whole topology. The topology should be able to evolve without having the reconfigure ACME clients. There is already a candidate DNS name that is either managed by FreeIPA (when using internal DNS) or required to managed by administrators (when not using internal DNS). That is <code>ipa-ca.$DOMAIN</code>. This points to all CA replicas in the topology. If we let administrators choose the FreeIPA servers upon which to configure the ACME service, we would have to introduce a new DNS name to manage. It will complicate code, and impose a new burden on administrators if the internal DNS is not used. By automatically deploying the ACME service on all CA replicas, the <code>ipa-ca.$DOMAIN</code> name is always a valid name for ACME clients to use.</p>
 <p>The second reason is that there is just less for adminstrators to worry about. How do I install the ACME service? Don’t worry about it, it’s already there, just turn it on.</p>
 <p>Turning the ACME service on or off, or other configuration changes, will be effected deployment-wide. At least, that is the goal. Early releases <em>might</em> require per-server configuration steps. But eventually configuration will be contained in the replicated LDAP database and administrators will just use regular <code>ipa</code> subcommands to control the ACME service deployment-wide.</p>
 <p>The ACME database, too, will be replicated deployment wide. It is possible that some data, such as <em>nonces</em>, might have to be kept server-local for performance reasons (this is not the case now, but load testing is coming).</p>
-<h2 id="demo-certbot-client-running-standalone-http-server">Demo: Certbot client running standalone HTTP server</h2>
+<h2 id="demo-certbot-client-running-standalone-http-server">Demo: Certbot client running standalone HTTP server <a href="#demo-certbot-client-running-standalone-http-server">§</a></h2>
 <p>The following demo scenario was carried out on a FreeIPA-enrolled host. The ACME protocol requires the use of TLS between client and server. The FreeIPA ACME service certificate is (usually) signed by the FreeIPA CA, so the client needs to trust it. On machines that are not FreeIPA clients CA trust would have to be established by other means so that the ACME client will trust the ACME server.</p>
 <p>The general purpose ACME client <a href="https://certbot.eff.org/">Certbot</a> integrates with many different server program and can also be used “standalone”. That is what I will do in this demo. It is not representative of real-world use but is a straightforward way to demonstrate that an ACME server is operating correctly.</p>
 <p>The two steps, registration and issuance, can be rolled into a single command. For clarity I will keep these as two separate steps.</p>
-<h3 id="registration">Registration</h3>
+<h3 id="registration">Registration <a href="#registration">§</a></h3>
 <p>First, the registration step creates an account with the ACME service:</p>
 <pre><code>[root@f31-0 ~]# certbot \
     --server https://ipa-ca.ipa.local/acme/directory \
@@ -88,7 +88,7 @@ IMPORTANT NOTES:
    making regular backups of this folder is ideal.</code></pre>
 <p>By default Certbot will contact <em>Let’s Encrypt</em>, the public CA. The <code>--server</code> option is given to point Certbot to the FreeIPA ACME service instead.</p>
 <p><code>-m</code> gives a contact email address (this is optional). <code>--agree-tos</code> agrees to the terms of service of the ACME server. The “share email with EFF” prompt is only relevant when using Let’s Encrypt and can be ignored.</p>
-<h3 id="identifier-validation-and-certificate-issuance">Identifier validation and certificate issuance</h3>
+<h3 id="identifier-validation-and-certificate-issuance">Identifier validation and certificate issuance <a href="#identifier-validation-and-certificate-issuance">§</a></h3>
 <p>and ACME account then request a certificate for the machine’s hostname from the FreeIPA CA.</p>
 <p>The next step is to issue the certificate. The <code>certonly</code> command means: just write the issued certificate to disk; don’t configure any programs to use it. The <code>--domain</code> option can be given multiple times to request a certificate with multiple subject alternative names.</p>
 <p>The <code>--standalone</code> option tells Certbot to start its own HTTP server to fulfil the <code>http-01</code> challenge. This server will listen on <code>tcp/80</code> therefore it must run as <code>root</code>. In typical production scenarios Certbot will instead integrate with existing HTTP servers and avoid running it with <code>root</code> privileges. Or you would use an alternative client implementation suited to your use case.</p>
@@ -160,7 +160,7 @@ Certificate:
 
   Signature Algorithm: sha256WithRSAEncryption
        &lt;snip&gt;</code></pre>
-<h2 id="discussion">Discussion</h2>
+<h2 id="discussion">Discussion <a href="#discussion">§</a></h2>
 <p>In this post I demonstrated just one basic client scenario. In upcoming posts I will explore some more advanced and more realistic client scenarios including use of the DNS-based challenges and the <a href="https://httpd.apache.org/docs/current/mod/mod_md.html">mod_md</a> client module for Apache httpd.</p>
 <p>The Dogtag ACME responder and FreeIPA ACME service are still undergoing rapid development and are <strong>not production ready</strong>. Some parts of the Dogtag implementation have made their way into releases, but should be considered a “preview”. That said, if you would like to play with the ACME service or perform integration testing, we are happy to collaborate and you should reach out on <code>pki-devel@redhat.com</code>.</p>
 <p>The fact that ACME accounts have no “binding” to any existing FreeIPA may surprise some people. In the initial release we want to implement the “baseline” use case also addressed by the public ACME CAs (Let’s Encrypt). That is: <em>an essentially anonymous client proves control of an identifier and gets a certificate.</em> We recognise that organisiations <em>may</em> want ACME accounts to be associated with (or views of) existing identities, and implement authorisation policies based on those accounts and their groups. But we don’t <em>know</em> whether this is required, or exactly what it would look like. So we are going to “wait and see” if customers tell us what “enterprise ACME” should be. In the mean time we are focused on the core use case.</p>
@@ -172,7 +172,7 @@ Certificate:
 <li>block/allow lists or other mechanisms to decide whether a particular identifier (DNS name) can be issued via ACME</li>
 </ul>
 <p>All of these are on the roadmap, but they are likely to be deferred beyond the initial release.</p>
-<h2 id="conclusion">Conclusion</h2>
+<h2 id="conclusion">Conclusion <a href="#conclusion">§</a></h2>
 <p>That’s all for this post. I’ll be following up soon with a post about using Apache <a href="https://httpd.apache.org/docs/current/mod/mod_md.html">mod_md</a> with the FreeIPA ACME service.</p>
 </div>
 <div id="postFooter">

@@ -27,17 +27,17 @@
 <div id="postContent">
     <h1 id="smart-card-login-with-yubikey-neo">Smart card login with YubiKey NEO</h1>
 <p>In this post I give an overview of smart cards and their potential advantages, and share my adventures in using a Yubico <a href="https://www.yubico.com/products/yubikey-hardware/yubikey-neo/">YubiKey NEO</a> device for smart card authentication with <a href="https://www.freeipa.org/page/Main_Page">FreeIPA</a> and <a href="https://fedorahosted.org/sssd/">SSSD</a>.</p>
-<h2 id="smart-card-overview">Smart card overview</h2>
+<h2 id="smart-card-overview">Smart card overview <a href="#smart-card-overview">§</a></h2>
 <p><a href="https://en.wikipedia.org/wiki/Smart_card">Smart cards</a> with cryptographic processors and secure key storage (private key generated on-device and cannot be extracted) are an increasingly popular technology for secure system and service login, as well as for signing and encryption applications (e.g. code signing, OpenPGP). They may offer a security advantage over traditional passwords because private key operations typically require the user to enter a PIN. Therefore the smart card is two factors in one: both <em>something I have</em> and <em>something I know</em>.</p>
 <p>The inability to extract the private key from a smart card also provides an advantage over software HOTP/TOTP tokens which, in the absense of other security measures such as encrypted filesystem on the mobile device, allow an attacker to extract the OTP seed. And because public key cryptography is used, there is no OTP seed or password hash sitting on a server, waiting to be exfiltrated and subjected to offline attacks.</p>
 <p>For authentication applications, a smart card carries an X.509 certificate alongside a private key. A login application would read the certificate from the card and validate it against trusted CAs (e.g. a company’s CA for issuing smart cards). Typically an OCSP or CRL check would also be performed. The login application then challenges the card to sign a nonce, and validates the signature with the public key from the certificate. A valid signature attests that the bearer of the smart card is indeed the subject of the certificate. Finally, the certificate is then mapped to a user either by looking for an exact certificate match or by extracting information about the user from the certificate.</p>
-<h2 id="test-environment">Test environment</h2>
+<h2 id="test-environment">Test environment <a href="#test-environment">§</a></h2>
 <p>In my smart card investigations I had a FreeIPA server with a single Fedora 24 desktop host enrolled. <code>alice</code> was the user I tested with. To begin with, she had no certificates and used her password to log in.</p>
 <p>I was doing all of my testing on virtual machines, so I had to enable USB passthrough for the YubiKey device. This is straightforward but you have to ensure the IOMMU is enabled in both BIOS and kernel (for Intel CPUs add <code>intel_iommu=on</code> to the kernel command line in GRUB).</p>
 <p>In <code>virt-manager</code>, after you have created the VM (it doesn’t need to be running) you can <em>Add Hardware</em> in the <em>Details</em> view, then choose the YubiKey NEO device. There are no doubt <code>virsh</code> incantations or other ways to establish the passthrough.</p>
 <p>Finally, on the <em>host</em> I stopped the <code>pcscd</code> smart card daemon to prevent it from interfering with passthrough:</p>
 <pre><code># systemctl stop pcscd.service pcscd.socket</code></pre>
-<h2 id="provisioning-the-yubikey">Provisioning the YubiKey</h2>
+<h2 id="provisioning-the-yubikey">Provisioning the YubiKey <a href="#provisioning-the-yubikey">§</a></h2>
 <p>For general smart card provisioning steps, I recommend <a href="https://blog-nkinder.rhcloud.com/?p=179">Nathan Kinder's post</a> on the topic. But the YubiKey NEO is <em>special</em> with its own steps to follow! First install the <code>ykpers</code> and <code>yubico-piv-tool</code> packages:</p>
 <pre><code>sudo dnf install -y ykpers yubico-piv-tool</code></pre>
 <p>If we run <code>yubico-piv-tool</code> to find out the version of the PIV applet, we run into a problem because a new YubiKey comes configured in OTP mode:</p>
@@ -129,7 +129,7 @@ l0Xmf53DC7jceF/XgZ0LUzbGzTDcr3o=
 <pre><code>% yubico-piv-tool -k $KEY -a import-certificate -s 9e -i alice.pem
 Enter management key: CC044321D49AC1FC40146AD049830DB09C5AFF05CD843766
 Successfully imported a new certificate.</code></pre>
-<h2 id="configuring-smart-card-login">Configuring smart card login</h2>
+<h2 id="configuring-smart-card-login">Configuring smart card login <a href="#configuring-smart-card-login">§</a></h2>
 <p>OpenSC provides a PKCS #11 module for interfacing with PIV smart cards, among other things:</p>
 <pre><code># dnf install -y opensc</code></pre>
 <p>Enable smart card authentication in <code>/etc/sssd.conf</code>:</p>
@@ -149,7 +149,7 @@ pam_cert_auth = True</code></pre>
 certificate_verification = no_ocsp</code></pre>
 <p>That’s pretty much all there is to it. After this, I was able to log in as <code>alice</code> using the YubiKey NEO. When logging in with the card inserted, instead of being prompted for a password, GDM prompts for the PIN. Enter the pin, and it lets you in!</p>
 <p><img src="../images/smartcard-login.png" style="width:100.0%" alt="Screenshot of login PIN prompt" /></p>
-<h2 id="conclusion">Conclusion</h2>
+<h2 id="conclusion">Conclusion <a href="#conclusion">§</a></h2>
 <p>I mentioned (or didn’t mention) a few standards related to smart card authentication. A quick review of them is warranted:</p>
 <ul>
 <li>CCID is a USB smart card interface standard.</li>

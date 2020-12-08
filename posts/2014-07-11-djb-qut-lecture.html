@@ -32,31 +32,31 @@
 </blockquote>
 <p>Of course, Prof. Bernstein was not the “we” of the abstract. Rather, the lecture, in its early part, took the form of a thought experiment suggesting how this manipulation could be taking place. In the latter part of the lecture, Prof. Bernstein justified and discussed some security primitives he feels are missing from today’s software.</p>
 <p>I will now briefly recount the lecture and the Q&amp;A that followed (a reconstitution of my handwritten notes; some paraphrase and omissions have occurred), then wrap up with my thoughts about the lecture.</p>
-<h2 id="lecture-notes">Lecture notes</h2>
-<h3 id="introduction">Introduction</h3>
+<h2 id="lecture-notes">Lecture notes <a href="#lecture-notes">§</a></h2>
+<h3 id="introduction">Introduction <a href="#introduction">§</a></h3>
 <ul>
 <li>Smartphones; almost everyone has one. Pretty much anyone in the world can turn on the microphone or camera and find out what’s happening.</li>
 <li>It is terrifying that people (authoritarian governments, or, even if you trust your goverment now, can you trust the next one?) have access to such capabilities.</li>
 <li>Watching everyone, all the time, is not an effective way to catch bad guys. Yes, they are bad, but total surveillance is ineffective and violates rights.</li>
 <li>Prof. Bernstein has no evidence of <em>deliberate</em> manipulation of software ecosystems to this end, but now embarks on a though experiment: what if they did try?</li>
 </ul>
-<h3 id="distract-users">Distract users</h3>
+<h3 id="distract-users">Distract users <a href="#distract-users">§</a></h3>
 <ul>
 <li>Things labelled as “security” but are actually not, e.g. anti-virus.</li>
 <li>People are told to do these things, and indeed are happy to follow along. They feel good about doing <em>something</em>,</li>
 <li>Money gets spent on e.g. virus scanners or 2014 NIST framework compliance, instead of <em>building secure systems</em>. 2014 NIST definition of “protect” has 98 subcategories, none of which are about making secure software.</li>
 </ul>
-<h3 id="distract-programmers">Distract programmers</h3>
+<h3 id="distract-programmers">Distract programmers <a href="#distract-programmers">§</a></h3>
 <ul>
 <li>Automatic low-latency security updates are viewed as a security method.</li>
 <li>“Security” is defined by <em>public security vulnerabilities</em>. This is <em>not</em> security. The reality is that there are other holes that attackers are actively exploiting.</li>
 </ul>
-<h3 id="distract-researchers">Distract researchers</h3>
+<h3 id="distract-researchers">Distract researchers <a href="#distract-researchers">§</a></h3>
 <ul>
 <li>Attack papers and competitions are prominent, and research funding is often predicated on their outcomes.</li>
 <li>Research into <em>building</em> secure systems takes a back seat.</li>
 </ul>
-<h3 id="discourage-security">Discourage security</h3>
+<h3 id="discourage-security">Discourage security <a href="#discourage-security">§</a></h3>
 <ul>
 <li>Tell people that “there’s no such thing as 100% security, so why even try?”</li>
 <li>Tell people that “it is impossible to even define security, so give up.”</li>
@@ -64,7 +64,7 @@
 <li>Hide, dismiss or mismeasure <em>security metric #1</em> (defined later).</li>
 <li>Prioritise compatibility, “standards”, speed, e.g. “an HTTP server in the kernel is critical for performance”.</li>
 </ul>
-<h3 id="definition-of-security">Definition of security</h3>
+<h3 id="definition-of-security">Definition of security <a href="#definition-of-security">§</a></h3>
 <ul>
 <li><em>Integrity policy #1</em>: Whenever a computer shows a file, it also tells me the <em>source</em> of the file.</li>
 <li>Example: UNIX file ownership and permissions. Multi-user system, no file sharing. If users are not sharing files, the UNIX model if implemented correctly can enforce integrity policy #1. How can we check?
@@ -75,35 +75,35 @@
 </ol></li>
 <li>The code to check is the <em>trusted computing base</em> (TCB). The size of the TCB is <em>security metric #1</em>. It is unnecessary to check or limit anything else.</li>
 </ul>
-<h3 id="example-file-sharing">Example: file sharing</h3>
+<h3 id="example-file-sharing">Example: file sharing <a href="#example-file-sharing">§</a></h3>
 <ul>
 <li>Eve and Frank need to share files. Eve can own the file but give Frank write permissions.</li>
 <li>By integrity policy #1, the operating system <em>must</em> record Frank as the source of the file.</li>
 <li>If a process reads data from multiple sources, files written by the process must be marked with <em>all</em> those sources.</li>
 </ul>
-<h3 id="example-web-browsing">Example: web browsing</h3>
+<h3 id="example-web-browsing">Example: web browsing <a href="#example-web-browsing">§</a></h3>
 <ul>
 <li>If you visit Frank’s site, browser may <em>try</em> to verify and show Frank as source of the file(s) being viewed. But browser TCB is <em>huge</em>.</li>
 <li>What if instead of current model, you gave Frank a file upload account on your system. Files uploaded could be marked with Frank as source. Browser could then read these files.</li>
 <li>Assuming the OS has this capability, it needn’t be manual. Web browsing <em>could</em> work this way.</li>
 </ul>
-<h3 id="conclusion">Conclusion</h3>
+<h3 id="conclusion">Conclusion <a href="#conclusion">§</a></h3>
 <ul>
 <li>Is the community even <em>trying</em> to build a software system with a small TCB that enforces integrity policy #1?</li>
 </ul>
-<h3 id="qa-identification-of-sources">Q&amp;A: Identification of sources</h3>
+<h3 id="qa-identification-of-sources">Q&amp;A: Identification of sources <a href="#qa-identification-of-sources">§</a></h3>
 <ul>
 <li>Cryptography is good for this in networked world, but current CA system is “pathetic”.</li>
 <li><a href="https://en.wikipedia.org/wiki/Certificate_transparency">Certificate transparency</a> is a PKI consistency-check mechamism that may improve current infrastructure.</li>
 <li>A revised infrastructure for obtaining public keys is preferable. Prof. Bernstein thinks <a href="https://en.wikipedia.org/wiki/GNUnet">GNUnet</a> is interesting.</li>
 <li>Smaller (i.e. actually auditable) crypto implementations are needed. <a href="https://twitter.com/TweetNaCl">TweetNaCl</a> (pronounced “tweet salt”) is a full implementation of the <a href="http://nacl.cr.yp.to/">NaCl</a> cryptography API in 100 tweets.</li>
 </ul>
-<h3 id="qa-marking-regions-of-file-with-different-sources">Q&amp;A: Marking regions of file with different sources</h3>
+<h3 id="qa-marking-regions-of-file-with-different-sources">Q&amp;A: Marking regions of file with different sources <a href="#qa-marking-regions-of-file-with-different-sources">§</a></h3>
 <ul>
 <li>I asked a question about whether there was scope within the definition of <em>integrity policy #1</em> for marking <em>regions</em> of files with different sources, rather than marking a contiguous file with all sources.</li>
 <li>Prof. Bernstein suggested that there is, but it would be better to change how we are representing that data and decompose it into separate files, rather than adding complexity to the TCB. A salient point.</li>
 </ul>
-<h2 id="discussion">Discussion</h2>
+<h2 id="discussion">Discussion <a href="#discussion">§</a></h2>
 <p>This was a thought-provoking and thoroughly enjoyable lecture. It was quite narrow in scope, defining and justifying <em>one</em> class of security primitives that Prof. Bernstein believes are essential. The question of how to <em>identify</em> a source did not come up until the Q&amp;A. Primitives to enable privacy or anonymity did not come up at all. I suppose that by not mentioning them, Prof. Bernstein was making the point that they are orthogonal problem spaces (a sentiment I would agree with).</p>
 <p>I should also note that there was no mention of any <em>integrity policy #2</em>, <em>security metric #2</em>, or so on. My interpretation of this is that Prof. Bernstein believes that the <em>#1</em> definitions are <em>sufficient</em> in the domain of data provenance, but there are other reasonable interpretations.</p>
 <p>The point about keeping the trusted computing base as simple and as small as possible was one of the big take-aways for me. His response to my question implies that he feels it is preferable to incur costs in complexity and implementation time outside the TCB, perhaps many times over, in pursuit of the goal of TCB auditability.</p>

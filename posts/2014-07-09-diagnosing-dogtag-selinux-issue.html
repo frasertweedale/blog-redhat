@@ -27,7 +27,7 @@
 <div id="postContent">
     <h1 id="diagnosing-a-dogtag-selinux-issue">Diagnosing a Dogtag SELinux Issue</h1>
 <p>In this post, I explain an issue I had with Dogtag failing to start due to some recently added behaviour that was prohibited by Fedora’s SELinux security policy, and detail the steps that were taken to resolve it.</p>
-<h2 id="the-problem">The Problem</h2>
+<h2 id="the-problem">The Problem <a href="#the-problem">§</a></h2>
 <p>A recent commit to Dogtag added the ability to archive each subsystem’s configuration file on startup. This feature is turned on by default. On each startup, each subsystem’s <code>CS.cfg</code> is copied to <code>/etc/pki/&lt;instance&gt;/&lt;subsystem&gt;/archives/CS.cfg.bak.&lt;timestamp&gt;</code>. A symbolic link pointing to the archived file named <code>CS.cfg.bak</code> is then created in the parent directory of <code>archives/</code>, alongside <code>CS.cfg</code>.</p>
 <p>Having built and installed a development version of Dogtag that contained this new feature, I attempted to start Dogtag, but the service failed to start.</p>
 <pre><code>% sudo systemctl start pki-tomcatd@pki-tomcat.service
@@ -53,13 +53,13 @@ Jul 08 21:22:42 ipa-1.ipa.local systemd[1]: Unit pki-tomcatd@pki-tomcat.service 
 <p><code>journalctl -xn</code> gave essentially the same information as above. We can see that creation of the symbolic link failed, which led to a subsequent warning and failure to start the service. Interestingly, we can also see that creation of <code>archives/CS.cfg.bak.20140708212242</code> (the target of the symbolic link) was reported to have succeeded.</p>
 <p>The user that runs the Dogtag server is <code>pkiuser</code>, and everything seemed fine with the permissions in <code>/etc/pki/pki-tomcat/ca/</code>. The archived configuration file that was reported to have been created successfully was indeed there.</p>
 <p>Next I looked at the Dogtag startup routines, which live in <code>/usr/share/pki/script/operations</code>. I located the offending <code>ln -s</code> and replaced it with a <code>cp</code>, that is, instead of creating a symbolic link, the startup script would now simply create <code>CS.cfg.bak</code> as a copy of the archived configuration file. Having made this change, I tried to start Dogtag again, and it succeeded. Something was prohibiting the creation of the symbolic link.</p>
-<h2 id="the-culprit">The Culprit</h2>
+<h2 id="the-culprit">The Culprit <a href="#the-culprit">§</a></h2>
 <p>That something was <em>SELinux</em>.</p>
 <p><a href="http://selinuxproject.org/page/Main_Page">SELinux</a> (Security-Enhanced Linux) is <a href="http://en.wikipedia.org/wiki/Mandatory_access_control">mandatory access control</a> system for Linux that can be used to express and enforce detailed security policies. It is enabled by default in recent version of Fedora, which ships with a reasonable default set of security policies.</p>
-<h2 id="the-workaround">The Workaround</h2>
+<h2 id="the-workaround">The Workaround <a href="#the-workaround">§</a></h2>
 <p>To continue the diagnosis of this problem, I restored the original behaviour of the startup script, i.e. creating a symbolic link, and confirmed that Dogtag was once again failing to start.</p>
 <p>The next step was to look for a way to get SELinux to permit the operation. I soon discovered <code>setenforce(8)</code>, which is used to put SELinux into <em>enforcing mode</em> (<code>setenforce 1</code>; the default behaviour) or <em>permissive mode</em> (<code>setenforce 0</code>). As expected, running <code>sudo setenforce 0</code> allowed Dogtag startup to succeed again, but obviously this was not a solution - merely a temporary workaround, acceptable in a development environment, but unacceptable for our customers and users.</p>
-<h2 id="the-plumbing">The Plumbing</h2>
+<h2 id="the-plumbing">The Plumbing <a href="#the-plumbing">§</a></h2>
 <p>Having little prior experience with SELinux, and since it had reached the end of the day, I emailed the other developers for advice on how to proceed. Credit goes to Ade Lee for most of the information that follows.</p>
 <p>SELinux logs to <code>/var/log/audit/audit.log</code> (on Fedora, at least). This log contains details about operations that SELinux denied (or would have denied, if it was enforcing). This log can be read by the <code>audit2allow(1)</code> tool, to construct SELinux rules that would allow the operations that were denied. First, the log was truncated, so it will include only the relevant failures:</p>
 <pre><code>% sudo sh -c ':&gt;/var/log/audit/audit.log'</code></pre>
@@ -102,7 +102,7 @@ allow pki_tomcat_t self:process setfscreate;</code></pre>
 <p>Allow processes with the <code>pki_tomcat_t</code> attribute to create and read symbolic links in in areas (of the filesystem) with the <code>pki_tomcat_etc_rw_t</code> attribute.</p>
 </blockquote>
 <p>Admittedly, I have inferred <em>processes</em> and <em>filesystem</em> above, in no small part due to the names <code>pki_tomcat_t</code> and <code>pki_tomcat_etc_rw_t</code>, which were probably chosen by the Dogtag developers. Nevertheless, the rule format seems to do a satisfactory job of communicating the meaning of a rule, especially when descriptive labels are used.</p>
-<h2 id="the-fix">The Fix</h2>
+<h2 id="the-fix">The Fix <a href="#the-fix">§</a></h2>
 <p>The SELinux policies that permit Dogtag to manage its affairs (configuration, logging, etc.) on a Fedora system are not shipped in the <code>pki-*</code> packages, but rather in the <code>selinux-policy-targeted</code> package, which provides policies for Dogtag and many other network servers and programs.</p>
 <p>For an issue in this package to be corrected, one has to file a bug against the <code>selinux-policy-targeted</code> component of the <em>Fedora</em> product on the Red Hat Bugzilla. A <em>reference policy</em> should be attached to the bug report; <code>audit2allow</code> will generate one when invoked with the <code>-R</code> or <code>-reference</code> argument.</p>
 <pre><code>% sudo audit2allow -R -i /var/log/audit/audit.log &gt; pki-lnk_file.te
@@ -133,7 +133,7 @@ allow pki_tomcat_t pki_tomcat_etc_rw_t:file { relabelfrom relabelto };
 allow pki_tomcat_t pki_tomcat_etc_rw_t:lnk_file { read create };
 allow pki_tomcat_t self:process setfscreate;</code></pre>
 <p>With <code>pki-link_file.te</code> in hand, I <a href="https://bugzilla.redhat.com/show_bug.cgi?id=1117673">filed a bug</a>. Hopefully the package will be updated soon.</p>
-<h2 id="conclusion">Conclusion</h2>
+<h2 id="conclusion">Conclusion <a href="#conclusion">§</a></h2>
 <p>When I first ran into this issue, I had very little experience with SELinux. I now know a fair bit more than I used to - how to quickly determine whether SELinux is responsible for a given failure, and what the operations were that failed - but there is much more to learn about the workings of SELinux and the definition and organisation of policies.</p>
 <p>As to the occurrence of the problem itself, whilst from a security standpoint it makes sense to separate the granting of privileges to software from the provision of that software, as a developer, it frustrated me that I had to submit a request to another team responsible for a different aspect of Fedora just for Dogtag to be able to create a symbolic link in its own configuration directory!</p>
 <p>This arrangement of having the policies for myriad common servers and programs provided centrally by one or two packages is new to me. There are obvious merits to this approach - and obvious drawbacks. Perhaps there is another approach that represents the best of both worlds - security for the user, and convenience or lack of roadblocks for the developer. Perhaps I am talking about <a href="http://en.wikipedia.org/wiki/Operating_system-level_virtualization">containers</a>, à la <a href="https://www.docker.com/">Docker</a>.</p>

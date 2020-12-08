@@ -27,7 +27,7 @@
 <div id="postContent">
     <h1 id="supporting-large-key-sizes-in-freeipa-certificates">Supporting large key sizes in FreeIPA certificates</h1>
 <p>A couple of issues around key sizes in FreeIPA certificates have come to my attention this week: how to issue certificates for large key sizes, and how to deploy FreeIPA with a 4096-bit key. In this post I’ll discuss the situation with each of these issues. Though related, they are different issues so I’ll address each separately.</p>
-<h2 id="issuing-certificates-with-large-key-sizes">Issuing certificates with large key sizes</h2>
+<h2 id="issuing-certificates-with-large-key-sizes">Issuing certificates with large key sizes <a href="#issuing-certificates-with-large-key-sizes">§</a></h2>
 <p>While researching the second issue I stumbled across issue <a href="https://pagure.io/freeipa/issue/6319">#6319: ipa cert-request limits key size to 1024,2048,3072,4096 bits</a>. To wit:</p>
 <pre><code>ftweedal% ipa cert-request alice-8192.csr --principal alice
 ipa: ERROR: Certificate operation cannot be completed:
@@ -35,7 +35,7 @@ ipa: ERROR: Certificate operation cannot be completed:
 <p>The solution is straightforward. Each certificate profile configures the key types and sizes that will be accepted by that profile. The default profile is configured to allow up to 4096-bit keys, so the certificate request containing an 8192-bit key fails. The profile configuration parameter involved is:</p>
 <pre><code>policyset.&lt;name&gt;.&lt;n&gt;.constraint.params.keyParameters=1024,2048,3072,4096</code></pre>
 <p>If you append <code>8192</code> to that list and update the profile configuration via <code>ipa certprofile-mod</code> (or create a new profile via <code>ipa certprofile-import</code>), then everything will work!</p>
-<h2 id="deploying-freeipa-with-ipa-ca-signing-key-2048-bits">Deploying FreeIPA with IPA CA signing key &gt; 2048-bits</h2>
+<h2 id="deploying-freeipa-with-ipa-ca-signing-key-2048-bits">Deploying FreeIPA with IPA CA signing key &gt; 2048-bits <a href="#deploying-freeipa-with-ipa-ca-signing-key-2048-bits">§</a></h2>
 <p>When you deploy FreeIPA today, the IPA CA has a 2048-bit RSA key. There is currently no way to change this, but Dogtag does support configuring the key size when spawning a CA instance, so it should not be hard to support this in FreeIPA. I created issue <a href="https://pagure.io/freeipa/issue/6790">#6790</a> to track this.</p>
 <p>Looking beyond RSA, there is also issue <a href="https://pagure.io/freeipa/issue/3951">#3951: ECC Support for the CA</a> which concerns supporting a elliptic curve signing key in the FreeIPA CA. Once again, Dogtag supports EC signing algorithms, so supporting this in FreeIPA should be a matter of deciding the <code>ipa-server-install(1)</code> options and mechanically adjusting the <code>pkispawn</code> configuration.</p>
 <p>If you have use cases for large signing keys and/or NIST ECC keys or other algorithms, please do not hesitate to leave comments in the issues linked above, or get in touch with the FreeIPA team on the <code>freeipa-users@lists.fedorahosted.org</code> mailing list or <code>#freeipa</code> on Freenode.</p>

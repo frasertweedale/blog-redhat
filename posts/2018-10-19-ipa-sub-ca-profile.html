@@ -28,7 +28,7 @@
     <h1 id="should-freeipa-ship-a-subordinate-ca-profile">Should FreeIPA ship a subordinate CA profile?</h1>
 <p>In my <a href="2018-08-21-ipa-subordinate-ca.html">previous post</a> I discussed how to issue subordinate CA (sub-CA) certificates from FreeIPA. In brief, the administrator must create and import a profile configuration for issuing certificates with the needed characteristics. The profile must add a <em>Basic Constraints</em> extension asserting that the subject is a CA.</p>
 <p>After publishing that post, it formed the basis of an official <a href="https://access.redhat.com/solutions/3572691">Red Hat solution</a> (Red Hat subscription required to view). Subsequently, an <a href="https://bugzilla.redhat.com/show_bug.cgi?id=1639441">RFE was filed</a> requesting a sub-CA profile to be included by default in FreeIPA. In this short post I’ll outline the reasons why this might not be a good idea, and what the profile might look like if we did ship one.</p>
-<h2 id="the-case-against">The case against</h2>
+<h2 id="the-case-against">The case against <a href="#the-case-against">§</a></h2>
 <p>The most important reason not to include a sub-CA profile is that it will not be appropriate for many use cases. Important attributes of a sub-CA certificate include:</p>
 <ul>
 <li>validity period (how long will the certificate be valid for?)</li>
@@ -38,7 +38,7 @@
 </ul>
 <p>If we ship a default sub-CA profile in FreeIPA, all of these attributes will be determined ahead of time and fixed. There is a good chance the values will not be appropriate, and the administrator must create a custom profile configuration anyway. Worse, there is a risk that the profile will be used without due consideration of its appropriateness.</p>
 <p>If we do nothing, we still have the blog post and official solution to guide administrators through the process. The administrator has the opportunity to alter the profile configuration according to their security or operational requirements.</p>
-<h2 id="the-case-for">The case for</h2>
+<h2 id="the-case-for">The case for <a href="#the-case-for">§</a></h2>
 <p>The RFE description states:</p>
 <blockquote>
 <p>Signing a subordinate CA’s CSR in IdM is difficult and requires tinkering. This functionality should be built in and present with the product. Please bundle a subordinate CA profile like the one described in the [blog post].</p>
@@ -50,7 +50,7 @@
 <li>a validity period of two years</li>
 </ul>
 <p>In terms of security these are conservative attributes but they still admit the most common use case. Two years may or may not be a reasonable lifetime for the subordinate CA, but we have to choose <em>some</em> fixed value. The downside is that customers could use this profile without being aware of its limitations (path length, name constraints). The resulting issues will frustrate the customer and probably result in some support cases too.</p>
-<h2 id="alternatives-and-conclusion">Alternatives and conclusion</h2>
+<h2 id="alternatives-and-conclusion">Alternatives and conclusion <a href="#alternatives-and-conclusion">§</a></h2>
 <p>There is a middle road: instead of shipping the profile, we ship a “profile assistant” tool that asks some questions and builds the profile configuration. Questions would include the desired validity period, whether it’s for a CA (and if so the path length constraint), name constraints (if any), and so on. Then it imports the configuration.</p>
 <p>There may be merit to this option, but none of the machinery exists. The effort and lead time are high. The other options: <em>do-nothing</em> (really <em>improve and maintain documentation</em>), or shipping a default sub-CA profile—are low effort and lead time.</p>
 <p>In conclusion, I am open to either leaving sub-CA profiles as a documentation concern, or including a conservative default profile. But because there is no <em>one size fits all</em>, I prefer to leave sub-CA profile creation as a documented process that administrators can perform themselves—and tweak as they see fit.</p>

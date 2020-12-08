@@ -28,7 +28,7 @@
     <h1 id="customising-dogtag-system-certificate-lifetimes">Customising Dogtag system certificate lifetimes</h1>
 <p>Default certificate lifetimes in Dogtag are 20 years for the CA certificate (when self-signed) and about 2 years for other system certificates. These defaults also apply to FreeIPA. It can be desirable to have shorter certificate lifetimes. And although I wouldn’t recommend to use <em>longer</em> lifetimes, people sometimes want that.</p>
 <p>There is no <em>supported</em> mechanism for customising system certificate validity duration during Dogtag or FreeIPA installation. But it can be done. In this post I’ll explain how.</p>
-<h2 id="profile-configuration-files">Profile configuration files</h2>
+<h2 id="profile-configuration-files">Profile configuration files <a href="#profile-configuration-files">§</a></h2>
 <p>During installation, profile configurations are copied from the RPM install locations under <code>/usr/share</code> to the new Dogtag instance’s configuration directory. If the LDAP profile subsystem is used (FreeIPA uses it) they are further copied from the instance configuration directory into the LDAP database.</p>
 <p>There is no facility or opportunity to modify the profiles during installation. So if you want to customise the certificate lifetimes, you have to modify the files under <code>/usr/share</code>.</p>
 <p>There are two directories that contain profile configurations:</p>
@@ -44,7 +44,7 @@
 </dd>
 </dl>
 <p>I’ll explain which configuration file is used for which certificate later on in this post.</p>
-<h2 id="specifying-the-validity-period">Specifying the validity period</h2>
+<h2 id="specifying-the-validity-period">Specifying the validity period <a href="#specifying-the-validity-period">§</a></h2>
 <p>The configuration field for setting the validity period are:</p>
 <pre><code>&lt;component&gt;.default.params.range=720
 &lt;component&gt;.constraint.params.range=720</code></pre>
@@ -55,7 +55,7 @@
 &lt;component&gt;.default.params.rangeUnit=month
 &lt;component&gt;.constraint.params.range=3
 &lt;component&gt;.constraint.params.rangeUnit=month</code></pre>
-<h2 id="which-configuration-for-which-certificate">Which configuration for which certificate?</h2>
+<h2 id="which-configuration-for-which-certificate">Which configuration for which certificate? <a href="#which-configuration-for-which-certificate">§</a></h2>
 <dl>
 <dt>CA certificate (when self-signed)</dt>
 <dd><p><code>/usr/share/pki/ca/conf/caCert.profile</code></p>
@@ -82,7 +82,7 @@
 <dd><p><code>/usr/share/ipa/profiles/KDCs_PKINIT_Certs.cfg</code></p>
 </dd>
 </dl>
-<h2 id="testing">Testing</h2>
+<h2 id="testing">Testing <a href="#testing">§</a></h2>
 <p>I made changes to the files mentioned above, so that certificates would be issued with the following validity periods:</p>
 <table>
 <tbody>
@@ -154,7 +154,7 @@ Request ID '20190304044234':
   certificate: type=FILE,location='/var/kerberos/krb5kdc/kdc.crt'
   expires: 2020-09-04 15:42:34 AEST</code></pre>
 <p>Observe that the certificate have the intended periods.</p>
-<h2 id="discussion">Discussion</h2>
+<h2 id="discussion">Discussion <a href="#discussion">§</a></h2>
 <p>The procedure outlined in this post is not officially supported, and not recommended. But the desire to choose different validity periods is sometimes justified, especially for the CA certificate. So should FreeIPA allow customisation of the system certificate validity periods? To what extent?</p>
 <p>We need to reduce the default CA validity from 20 years, given the 2048-bit key size. (There is a separate issue to support generating a larger CA signing key, too). Whether the CA validity period should be configurable is another question. My personal opinion is that it makes sense to allow the customer to choose the CA lifetime.</p>
 <p>For system certificates, I think that customers should just accept the defaults. PKI systems are trending to shorter lifetimes for end-entity certificates, which is a good thing. For FreeIPA, unfortunately we are still dealing with a lot of certificate renewal issues that arise from the complex architecture. Until we are confident in the robustness of the renewal system, and have observed a reduction in customer issues, it would be a mistake to substantially reduce the validity period for system certificates. Likewise, it is not yet a good idea to let customers choose the certificate validity periods.</p>

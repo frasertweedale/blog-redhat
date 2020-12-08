@@ -28,7 +28,7 @@
     <h1 id="user-namespaces-in-openshift-via-cri-o-annotations">User namespaces in OpenShift via CRI-O annotations</h1>
 <p>In a recent post I covered the lack of user namespace support in OpenShift, and discussed the <a href="https://github.com/cri-o/cri-o/pull/3944">upcoming CRI-O feature</a> for user namespacing of containers, controlled by annotations.</p>
 <p>I now have an OpenShift nightly cluster deployed. It uses a prerelease version of CRI-O v1.20, which includes this new feature. So it’s time to experiment! This post records my investigation of this feature.</p>
-<h2 id="preliminaries">Preliminaries</h2>
+<h2 id="preliminaries">Preliminaries <a href="#preliminaries">§</a></h2>
 <p>I’ll skip the details of deploying the nightly (4.7) cluster (because they are not important). What <em>is</em> important is that I created a <code>MachineConfig</code> to enable the CRI-O user namespace annotation feature, <a href="2020-11-30-openshift-machine-config-operator.html">as described in my previous post</a>.</p>
 <p>As in the initial investigation, I created a new user account and project namespace for the experiments:</p>
 <pre><code>% oc new-project test
@@ -39,7 +39,7 @@ user.user.openshift.io/test created
 
 % oc adm policy add-role-to-user admin test
 clusterrole.rbac.authorization.k8s.io/admin added: &quot;test&quot;</code></pre>
-<h2 id="creating-a-user-namespaced-pod---attempt-1">Creating a user namespaced pod - Attempt 1</h2>
+<h2 id="creating-a-user-namespaced-pod---attempt-1">Creating a user namespaced pod - Attempt 1 <a href="#creating-a-user-namespaced-pod---attempt-1">§</a></h2>
 <p>I defined a pod that just runs <code>sleep</code>, but uses the new annotation to run it in a user namespace. The <code>map-to-root=true</code> directive says that the “beginning” of the host uid range assigned to the container should maps to uid 0 (i.e. <code>root</code>) in the container.</p>
 <pre><code>$ cat userns-test.yaml
 apiVersion: v1
@@ -85,7 +85,7 @@ desc = error creating pod sandbox with name
 &quot;k8s_userns-test_test_e4f69d50-e061-46ca-b933-000bcea3363a_0&quot;:
 could not find enough available IDs</code></pre>
 <p>My initial reaction to this error is: <strong>this is good!</strong> It <em>seems</em> that CRI-O is attempting to create a user namespace for the container, but cannot. Another problem to solve, but we seem to be on the right track.</p>
-<h2 id="etcsubuid"><code>/etc/subuid</code></h2>
+<h2 id="etcsubuid"><code>/etc/subuid</code> <a href="#etcsubuid">§</a></h2>
 <p>I had not yet done any host configuration related to user namespace mappings. But I had a feeling that the <code>/etc/subuid</code> and <code>/etc/subgid</code> files would come into play. According to <code>subuid(5)</code>:</p>
 <blockquote>
 <p>Each line in /etc/subuid contains a user name and a range of subordinate user ids that user is allowed to use.</p>
@@ -103,7 +103,7 @@ core:100000:65536</code></pre>
 USER         PID CMD
 root        1791 /usr/bin/crio --enable-metrics=true --metrics-port=9537</code></pre>
 <p><code>crio</code> is running as the <code>root</code> user, which is not surprising. So we will need to add mappings for the <code>root</code> user to the mapping files.</p>
-<h3 id="machineconfig-for-modifying-etcsubugid"><code>MachineConfig</code> for modifying <code>/etc/sub[ug]id</code></h3>
+<h3 id="machineconfig-for-modifying-etcsubugid"><code>MachineConfig</code> for modifying <code>/etc/sub[ug]id</code> <a href="#machineconfig-for-modifying-etcsubugid">§</a></h3>
 <p>I will create a <code>MachineConfig</code> to append the mappings <code>/etc/subuid</code> and <code>/etc/subgid</code>. First we need the base64 encoding of the line we want to add:</p>
 <pre><code>$ echo &quot;root:200000:268435456&quot; | base64
 cm9vdDoyMDAwMDA6MjY4NDM1NDU2Cg==</code></pre>
@@ -200,7 +200,7 @@ sh-4.4# cat /etc/subgid
 core:100000:65536
 root:200000:268435456</code></pre>
 <p>Looks good!</p>
-<h2 id="creating-a-user-namespaced-pod---attempt-2">Creating a user namespaced pod - Attempt 2</h2>
+<h2 id="creating-a-user-namespaced-pod---attempt-2">Creating a user namespaced pod - Attempt 2 <a href="#creating-a-user-namespaced-pod---attempt-2">§</a></h2>
 <p>It’s time to create the user namespaced pod again, and see if it succeeds this time.</p>
 <pre><code>$ oc --as test create -f userns-test.yaml
 pod/userns-test created</code></pre>
@@ -211,7 +211,7 @@ ranges found for user \&quot;containers\&quot; in /etc/subuid&quot;</code></pre>
 <pre><code>core:100000:65536
 containers:200000:268435456</code></pre>
 <p>Then I replaced the <code>subuid-subgid</code> object and again waited for Machine Config Operator to update the worker nodes.</p>
-<h2 id="creating-a-user-namespaced-pod---attempt-3">Creating a user namespaced pod - Attempt 3</h2>
+<h2 id="creating-a-user-namespaced-pod---attempt-3">Creating a user namespaced pod - Attempt 3 <a href="#creating-a-user-namespaced-pod---attempt-3">§</a></h2>
 <p>Once again, the container remained at <code>ContainerCreating</code>. But the error was different (lines wrapped for readability):</p>
 <pre><code>Failed to create pod sandbox: rpc error:
 code = Unknown
@@ -228,7 +228,7 @@ msg=&quot;container_linux.go:366: starting container process caused:
     write sysctl key net.ipv4.ping_group_range:
       write /proc/sys/net/ipv4/ping_group_range: invalid argument&quot;</code></pre>
 <p>After a bit of research, here is my understanding of the situation: CRI-O successfully created the pod sandbox (which includes the user namespace) and is now initialising it. One of the initialisation steps is to set the <code>net.ipv4.ping_group_range</code> sysctl (the subroutine is part of <code>runc</code>), and this is failing. This step is performed for all pods, but it is only failing when the pod is using a user namespace.</p>
-<h2 id="net.ipv4.ping_group_range-and-user-namespaces"><code>net.ipv4.ping_group_range</code> and user namespaces</h2>
+<h2 id="net.ipv4.ping_group_range-and-user-namespaces"><code>net.ipv4.ping_group_range</code> and user namespaces <a href="#net.ipv4.ping_group_range-and-user-namespaces">§</a></h2>
 <p>The <code>net.ipv4.ping_group_range</code> sysctl defines the range of group IDs that are allowed to send ICMP Echo packets. Setting it to the full gid range allows <code>ping</code> to be used in rootless containers, without setuid or the <code>CAP_NET_ADMIN</code> and <code>CAP_NET_RAW</code> capabilities.</p>
 <p>The CRI-O config key <code>crio.runtime.default_sysctls</code> declares the default sysctls that will be set in all containers. The default OpenShift CRI-O configuration sets it to the full gid range:</p>
 <pre><code>sh-4.4# cat /etc/crio/crio.conf.d/00-default \
@@ -238,13 +238,13 @@ default_sysctls = [
 ]</code></pre>
 <p>My working hypothesis is that setting the sysctl in the user-namespaced container fails because the gid range in the sandbox is not <code>0–2147483647</code> but much smaller. This could explain the <code>invalid argument</code> part of the error message.</p>
 <p>How to overcome this? I first thought to update the pod spec to specify a different value for the sysctl that reflects the actual gid range in the sandbox. And to do that, I have to calculate what that gid range is.</p>
-<h3 id="computing-the-gid-range">Computing the gid range</h3>
+<h3 id="computing-the-gid-range">Computing the gid range <a href="#computing-the-gid-range">§</a></h3>
 <p>I will work on the assumption that I must refer to the range as it appears <em>in the namespace</em>. That assumption could be wrong, but that’s where I’m starting.</p>
 <p>Because I am using <code>map-to-root=true</code>, the start value of the range should be <code>0</code>. The second number in the <code>ping_group_range</code> sysctl value is not the range size but the end gid (inclusive). CRI-O currently hard-codes a default user namespace size of <code>65536</code>.</p>
 <p>Because the size of the uid range is a critical parameter, I shall from now on explicitly declare the desired size in the <code>userns-mode</code> annotation. This will protect the solution from change to the default range size. I probably won’t need 65536 uids/gids but I’ll stick with the default for now.</p>
 <pre><code>io.kubernetes.cri-o.userns-mode: &quot;auto:size=65536;map-to-root=true&quot;</code></pre>
 <p>With a range of <code>65536</code> starting at <code>0</code>, the desired sysctl setting is <code>net.ipv4.ping_group_range=0 65535</code>.</p>
-<h3 id="configuring-the-sysctl">Configuring the sysctl</h3>
+<h3 id="configuring-the-sysctl">Configuring the sysctl <a href="#configuring-the-sysctl">§</a></h3>
 <p>We need <code>ping</code> to continue working in containers that are not namespaced. Therefore, overriding or clearing the CRI-O <code>default_sysctls</code> config is not an option. Instead I need a way to optionally set the <code>net.ipv4.ping_group_range</code> sysctl to a specified value on a per-pod basis.</p>
 <p>You can specify sysctls to be set in a pod via the <code>spec.securityContext.sysctls</code> array (see Kubernetes <a href="https://v1-18.docs.kubernetes.io/docs/reference/generated/kubernetes-api/v1.18/#podsecuritycontext-v1-core">PodSecurityContext documentation</a>). I updated the pod definition to include the sysctl:</p>
 <pre><code>$ cat userns-test.yaml 
@@ -266,7 +266,7 @@ spec:
       value: &quot;0 65535&quot;</code></pre>
 <p>As I write this, I don’t know yet how CRI-O behaves when both <code>default_sysctls</code> and the pod spec define the same sysctl. It might just set the value from the pod spec, which is the behaviour I need. Or it might first attempt to set the value from <code>default_sysctls</code>, and afterwards set it again to the value from the pod spec (this will fail as before).</p>
 <p>Time to find out!</p>
-<h2 id="creating-a-user-namespaced-pod---attempt-4">Creating a user namespaced pod - Attempt 4</h2>
+<h2 id="creating-a-user-namespaced-pod---attempt-4">Creating a user namespaced pod - Attempt 4 <a href="#creating-a-user-namespaced-pod---attempt-4">§</a></h2>
 <pre><code>$ oc --as test create -f userns-test.yaml
 pod/userns-test created
 
@@ -307,7 +307,7 @@ uid=1000610000(1000610000) gid=0(root) groups=0(root),1000610000</code></pre>
         NS TYPE  NPROCS    PID USER   COMMAND
 4026531837 user     282      1 root   /usr/lib/systemd/systemd --switched-root --system --deserialize 16
 4026532599 user       1 684279 200000 /usr/bin/pod</code></pre>
-<h2 id="creating-a-user-namespaced-pod---attempt-5">Creating a user namespaced pod - Attempt 5</h2>
+<h2 id="creating-a-user-namespaced-pod---attempt-5">Creating a user namespaced pod - Attempt 5 <a href="#creating-a-user-namespaced-pod---attempt-5">§</a></h2>
 <p>I once again deleted the <code>userns-test</code> pod. As proposed above, I modified the pod security context to specify that the entry point should be run as uid <code>0</code> and gid <code>0</code>:</p>
 <pre><code>$ cat userns-test.yaml
 apiVersion: v1

@@ -28,7 +28,7 @@
     <h1 id="a-distinguished-name-is-not-a-string">A Distinguished Name is not a string</h1>
 <p><em>Distinguished Names (DNs)</em> are used to identify entities in LDAP databases and X.509 certificates. Although DNs are often presented as strings, they have a complex structure. Because of the numerous formal and ad-hoc serialisations have been devised, and the prevalence of ad-hoc or buggy parsers, treating DNs as string in the interals of a program inevitably leads to errors. In fact, dangerous security issues can arise!</p>
 <p>In this post I will explain the structure of DNs, review the common serialisation regimes, and review some DN-related bugs in projects I worked on. I’ll conclude with my <em>best practices</em> recommendations for working with DNs.</p>
-<h2 id="dn-structure">DN structure</h2>
+<h2 id="dn-structure">DN structure <a href="#dn-structure">§</a></h2>
 <p>DNs are defined by the ITU-T <strong>X.501</strong> standard a ASN.1 objects:</p>
 <pre><code>Name ::= CHOICE {
   -- only one possibility for now --
@@ -52,7 +52,7 @@ AttributeTypeAndValue ::= SEQUENCE {
 <p>Each initial sub-sequence of the name of an object is also the name of an object. The sequence of objects so identified, starting with the root and ending with the object being named, is such that each is the immediate superior of that which follows it in the sequence.</p>
 </blockquote>
 <p>This also means that the empty DN is a valid DN.</p>
-<h2 id="comparing-dns">Comparing DNs</h2>
+<h2 id="comparing-dns">Comparing DNs <a href="#comparing-dns">§</a></h2>
 <p>Testing DNs for equality is an important operation. For example, when constructing an X.509 certification path, we have to find a trusted CA certificate based on the certificate chain presented by an entity (e.g. a TLS server), then verify that the chain is complete by ensuring that each <em>Issuer DN</em>, starting from the end entity certificate, matches the <em>Subject DN</em> of the certificate “above” it, all the way up to a trusted CA certificate. (Then the signatures must be verified, and several more checks performed).</p>
 <p>Continuing with this example, if an implementation falsely determines that two equal DNs (under X.500) are inequal, then it will fail to construct the certification path and reject the certificate. This is not good. But even worse would be if it decides that two unequal DNs are in fact equal! Similarly, if you are issuing certificates or creating LDAP objects or anything else, a user could exploit bugs in your DN handling code to cause you to issue certificates, or create objects, that you did not intend.</p>
 <p>Having motivated the importance of correct DN comparison, well, how <em>do</em> you compare DNs correctly?</p>
@@ -68,7 +68,7 @@ AttributeTypeAndValue ::= SEQUENCE {
 <p><code>DirectoryString</code> supports a choice of string encodings. Values of use <code>PrintableString</code> orr <code>UTF8String</code> encoding must be preprocessed using the LDAP <em>Internationalized String Preparation</em> rules (<a href="https://tools.ietf.org/html/rfc4518">RFC 4518</a>), including case folding and insignificant whitespace compression.</p>
 <p>Taking the DN as a whole, two DNs are equal if they have the same RDNs in the same order, and two RDNs are equal if they have the same AVAs in <em>any</em> order (i.e. sets of equal size, with each AVA in one set having a matching AVA in the other set).</p>
 <p>Ultimately this means that, despite X.509 certificates using <em>Distinguised Encoding Rules (DER)</em> for serialisation, there can still be multiple ways to represent equivalent data (by using different string encodings). Therefore, binary matching of serialised DNs, or even binary matching of individual attribute values, is incorrect behaviour and may lead to failures.</p>
-<h2 id="string-representations">String representations</h2>
+<h2 id="string-representations">String representations <a href="#string-representations">§</a></h2>
 <p>Several string representations of DNs, both formally-specified and ad-hoc, are in widespread use. In this section I’ll list some of the more important ones.</p>
 <p>Because DNs are ordered, one of the most obvious characteristics of a string representation is whether it lists the RDNs in <em>forward</em> or <em>reverse</em> order, i.e. with the root at the left or right. Some popular libraries and programs differ in this regard.</p>
 <p>As we look at some of these common implementations, we’ll use the following DN as an example:</p>
@@ -88,34 +88,34 @@ AttributeTypeAndValue ::= SEQUENCE {
     SEQUENCE (2 elem)
       OBJECT IDENTIFIER 2.5.4.3 commonName
       PrintableString CA</code></pre>
-<h3 id="rfc-4514">RFC 4514</h3>
+<h3 id="rfc-4514">RFC 4514 <a href="#rfc-4514">§</a></h3>
 <pre><code>CN=CA,O=Acme\, Inc.,C=AU+ST=Queensland
 CN=CA,O=Acme\2C Inc.,C=AU+ST=Queensland</code></pre>
 <p><a href="https://tools.ietf.org/html/rfc4514">RFC 4514</a> defines the string representation of distinguished names used in LDAP. As such, there is widespread library support for parsing and printing DNs in this format. The RDNs are in reverse order, separated by <code>,</code>. Special characters are escaped using backslash (<code>\</code>), and can be represented using the escaped character itself (e.g. <code>\,</code>) or two hex nibbles (<code>\2C</code>). The AVAs within a multi-valued RDN are separated by <code>+</code>, in any order.</p>
 <p>Due to the multiple ways of escaping special characters, this is not a distinguished encoding.</p>
 <p>This format is used by GnuTLS, OpenLDAP and FreeIPA, among other projects.</p>
-<h3 id="rfc-1485">RFC 1485</h3>
+<h3 id="rfc-1485">RFC 1485 <a href="#rfc-1485">§</a></h3>
 <pre><code>CN=CA,O=&quot;Acme, Inc.&quot;,C=AU+ST=Queensland</code></pre>
 <p><a href="https://tools.ietf.org/html/rfc1485">RFC 1485</a> is a predecessor of a predecessor (RFC 1779) of a predecessor (RFC 2253) of RFC 4514. There are some differences from RFC 4514. For example, special character escapes are not supported; quotes must be used. This format is still relevant today because NSS uses it for pretty-printing and parsing DNs.</p>
-<h3 id="openssl">OpenSSL</h3>
+<h3 id="openssl">OpenSSL <a href="#openssl">§</a></h3>
 <p>OpenSSL prints DNs in its own special way. Unlike most other implementations, it works with DNs in <em>forward</em> order (root at left). The pretty-print looks like:</p>
 <pre><code>C = AU + ST = Queensland, O = &quot;Acme, Inc.&quot;, CN = CA</code></pre>
 <p>The format when parsing is different again. Some commands need a flag to enable support for multi-valued RDNs; e.g. <code>openssl req -multivalue-rdn ...</code>.</p>
 <pre><code>/C=AU+ST=Queensland/O=Acme, Inc./CN=CA</code></pre>
 <p>OpenSSL can also read DNs from a config file where AVAs are given line by line (see <code>config</code> and <code>x509v3_config(5)</code>). But this is not a DN string representation <em>per se</em> so I won’t cover it here.</p>
-<h2 id="bugs-bugs-bugs">Bugs, bugs, bugs</h2>
+<h2 id="bugs-bugs-bugs">Bugs, bugs, bugs <a href="#bugs-bugs-bugs">§</a></h2>
 <p>Here are three interesting bugs I discovered, related to DN string encoding.</p>
-<h3 id="ds-49543-certmap-fails-when-issuer-dn-has-comma-in-name">389 DS <a href="https://pagure.io/389-ds-base/issue/49543">#49543</a>: certmap fails when Issuer DN has comma in name</h3>
+<h3 id="ds-49543-certmap-fails-when-issuer-dn-has-comma-in-name">389 DS <a href="https://pagure.io/389-ds-base/issue/49543">#49543</a>: certmap fails when Issuer DN has comma in name <a href="#ds-49543-certmap-fails-when-issuer-dn-has-comma-in-name">§</a></h3>
 <p>389 DS supports TLS certificate authentication for binding to LDAP. Different certificate mapping (<em>certmap</em>) policies can be defined for different CAs. The issuer DN in the client certificate is used to look up a certmap configuration. Unfortunately, a string comparison was used to perform this lookup. 389 uses NSS, which serialised the DN using RFC 1485 syntax. If this disagreed with how the DN in the certmap configuration appeared (after normalisation), the lookup—hence the LDAP bind—would fail. The normalisation function was also buggy.</p>
 <p>The <a href="https://pagure.io/389-ds-base/pull-request/49611#request_diff">fix</a> was to parse the certmap DN string into an a NSS <code>CertNAME</code> using the <code>CERT_AsciiToName</code> routine, then compare the Issuer DN from the certificate against it using the NSS DN comparison routine (<code>CERT_CompareName</code>). The buggy normalisation routine was deleted.</p>
-<h3 id="certmonger-90-incorrect-dn-in-csr">Certmonger <a href="https://pagure.io/certmonger/issue/90">#90</a>: incorrect DN in CSR</h3>
+<h3 id="certmonger-90-incorrect-dn-in-csr">Certmonger <a href="https://pagure.io/certmonger/issue/90">#90</a>: incorrect DN in CSR <a href="#certmonger-90-incorrect-dn-in-csr">§</a></h3>
 <p>Certmonger stores tracking request configuration in a flat text file. This configuration includes the string representation of the DN, ostensibly in RFC 4514 syntax. When constructing a CSR for the tracking request, it parsed the DN then used the result to construct an OpenSSL <code>X509_NAME</code>, which would be used in OpenSSL routines to create the CSR.</p>
 <p>Unfortunately, the DN parsing implementation—a custom routine in Certmonger itself—was busted. A DN string like:</p>
 <pre><code>CN=IPA RA,O=Acme\, Inc.,ST=Massachusetts,C=US</code></pre>
 <p>Resulted in a CSR with the following DN:</p>
 <pre><code>CN=IPA RA,CN=Inc.,O=Acme\\,ST=Massachusetts,C=US</code></pre>
 <p>The <a href="https://pagure.io/certmonger/pull-request/108#request_diff">fix</a> was to remove the buggy parser and use the OpenLDAP <code>ldap_str2dn</code> routine instead. This was a joint effort between Rob Crittenden and myself.</p>
-<h3 id="freeipa-7750-invalid-modlist-when-attribute-encoding-can-vary">FreeIPA <a href="https://pagure.io/freeipa/issue/7750">#7750</a>: invalid modlist when attribute encoding can vary</h3>
+<h3 id="freeipa-7750-invalid-modlist-when-attribute-encoding-can-vary">FreeIPA <a href="https://pagure.io/freeipa/issue/7750">#7750</a>: invalid modlist when attribute encoding can vary <a href="#freeipa-7750-invalid-modlist-when-attribute-encoding-can-vary">§</a></h3>
 <p>FreeIPA’s LDAP library, <em>ipaldap</em>, uses <em>python-ldap</em> for handling low-level stuff and provides a lot of useful stuff on top. One useful thing it does is keeps track of the original attribute values for an object, so that we can perform changes locally and efficiently produce a list of modifications (<em>modlist</em>) for when we want to update the object at the server.</p>
 <p><em>ipaldap</em> did not take into account the possibility of the attribute encoding returned by <em>python-ldap</em> differing from the attribute encoding produced by FreeIPA. A disagreement could arise when DN attribute values contained special characters requiring escaping. For example, <em>python-ldap</em> escaped characters using hex encoding:</p>
 <pre><code>CN=CA,O=Red Hat\2C Inc.,L=Brisbane,C=AU</code></pre>
@@ -129,7 +129,7 @@ CN=CA,O=Acme\2C Inc.,C=AU+ST=Queensland</code></pre>
 ]</code></pre>
 <p>Though encoded differently, <em>these are the same value</em> but that in itself is not a problem. The problem is that the server also has the same value, and processing the <code>MOD_ADD</code> first results in an <code>attributeOrValueExists</code> error. You can’t add a value that’s already there!</p>
 <p>The ideal fix for this would be to update <em>ipaldap</em> to record all values as ASN.1 data or DER, rather than strings. But that would be a large and risky change. Instead, we <a href="https://github.com/freeipa/freeipa/pull/2511">work around</a> the issue by always putting deletes before adds in the modlist. LDAP servers process changes in the order they are presented (389 DS does so atomically). So deleting an attribute value then adding it straight back is a safe, albeit inefficient, workaround.</p>
-<h2 id="discussion">Discussion</h2>
+<h2 id="discussion">Discussion <a href="#discussion">§</a></h2>
 <p>So you have to compare or handle some DNs. What do you do? My recommendations are:</p>
 <ul>
 <li>If you need to print/parse DNs as strings, if possible use RFC 4514 because it has the most widespread library support.</li>

@@ -18,7 +18,7 @@
     <summary type="html"><![CDATA[<h1 id="kubernetes-dns-service-discovery-limitations">Kubernetes DNS Service Discovery limitations</h1>
 <p>Kubernetes <em>Service</em> objects expose applications running in Pods as network services. For each combination of service name, port and associated Pod, the Kubernetes DNS system creates a DNS <code>SRV</code> record that can be used for service discovery.</p>
 <p>In this post I demonstrate a deficiency in this system that obstructs important, real-world use cases, and sketch potential solutions.</p>
-<h2 id="overview-of-kubernetes-services-and-dns">Overview of Kubernetes Services and DNS</h2>
+<h2 id="overview-of-kubernetes-services-and-dns">Overview of Kubernetes Services and DNS <a href="#overview-of-kubernetes-services-and-dns">§</a></h2>
 <p>The following Service definition defines an LDAP service:</p>
 <pre><code>$ oc create -f service-test.yaml 
 apiVersion: v1
@@ -99,7 +99,7 @@ sh-5.0# dig +short A \
     10-129-2-13.service-test.test.svc.cluster.local
 10.129.2.13</code></pre>
 <p>For more information above DNS <code>SRV</code> records, see <a href="https://tools.ietf.org/html/rfc2782">RFC 2782</a>.</p>
-<h2 id="kubernetes-srv-limitation">Kubernetes SRV limitation</h2>
+<h2 id="kubernetes-srv-limitation">Kubernetes SRV limitation <a href="#kubernetes-srv-limitation">§</a></h2>
 <p>Some services operate over TCP, some over UDP. And some operate over <em>both</em> TCP and UDP. Two examples are DNS and Kerberos. <code>SRV</code> records are of particular importance for Kerberos; they are used (<a href="https://web.mit.edu/kerberos/krb5-devel/doc/admin/realm_config.html#hostnames-for-kdcs">widely</a>, by <a href="https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-adts/7fcdce70-5205-44d6-9c3a-260e616a2f04">multiple</a> <a href="https://www.freeipa.org/page/V4/DNS_Location_Mechanism">implementations</a>) for KDC discovery.</p>
 <p>So to host a Kerberos KDC in Kubernetes and enable service discovery, we need two sets of SRV records: <code>_kerberos._tcp</code> and <code>_kerberos._udp</code>. And likewise for the <code>kpasswd</code> and <code>kerberos-master</code> service names. There could be (probably are) other protocols where a similar arrangement is required.</p>
 <p>So, let’s update the Service object and add the <code>kerberos</code> ServicePort specs:</p>
@@ -129,7 +129,7 @@ $ oc replace -f service-test.yaml
 The Service &quot;service-test&quot; is invalid:
 spec.ports[2].name: Duplicate value: &quot;kerberos&quot;</code></pre>
 <p>Well, that’s a shame. Kerberos does not admit this important use case.</p>
-<h2 id="possible-resolutions">Possible resolutions</h2>
+<h2 id="possible-resolutions">Possible resolutions <a href="#possible-resolutions">§</a></h2>
 <p>I am not aware of any workarounds, but I see two possible approaches to resolving this issue.</p>
 <p>One approach is to relax the uniqueness check. Instead of checking for uniqueness of ServicePort <code>name</code>, check for the uniqueness of the <code>name</code>/<code>protocol</code> pair. This is conceptually simple but I am not familiar enough with Kubernetes internals to judge the feasibility or technical tradeoffs of this approach. For users, nothing changes (except the example above would work!)</p>
 <p>Another approach is to add a new ServicePort field to specify the actual DNS service label to use. For the sake of discussion I’ll call it <code>serviceName</code>. It would be optional, defaulting to the value of <code>name</code>. This means <code>name</code> can still be the “primary key”, but the approach requires <em>another</em> uniqueness check on the <code>serviceName</code>/<code>protocol</code> pair. In our use case the configuration would look like:</p>
@@ -147,7 +147,7 @@ ports:
   protocol: UDP
   port: 88</code></pre>
 <p>From a UX perspective I prefer the first approach, because there are no changes or additions to the ServicePort configuration schema. But to maintain compatibility with programs that assume that <code>name</code> is unique (as is currently enforced), it might be necessary to introduce a new field.</p>
-<h2 id="next-steps">Next steps</h2>
+<h2 id="next-steps">Next steps <a href="#next-steps">§</a></h2>
 <p>I will file a bug report and solicit feedback about this post from Kubernetes and OpenShift DNS experts. It might be necessary to submit a <a href="https://github.com/kubernetes/enhancements/blob/master/keps/README.md">Kubernetes Enhancement Proposal</a> (KEP), but that seems (as a Kubernetes outsider) a long and windy road to landing what is a conceptually small change.</p>]]></summary>
 </entry>
 <entry>
@@ -160,7 +160,7 @@ ports:
 <p>Some complex or legacy applications make strict and pervasive assumptions about their execution environment. Relying on the host having a <em>fully qualified domain name (FQDN)</em> is an example of this kind of assumption. Indeed this is a particularly thorny kind of assumption because there are several ways an application can query the hostname, and they don’t always agree!</p>
 <p>It is not surprising that we have hit this particular issue during our effort to containerise FreeIPA and operationalise it for OpenShift. Whereas container runtimes like Podman and Docker offer full control of a container’s FQDN, Kubernetes (and by extension OpenShift) is more strongly opinionated. By default, a Kubernetes pod has only a short name, not a fully qualified domain name. There are limited ways to configure a pod’s hostname and FQDN. Furthermore, there is currently no way to use a pod’s FQDN as the (Kernel) hostname.</p>
 <p>In this post I will outline the challenges and document the attempted workarounds as we try to make FreeIPA run in OpenShift in spite of the Kubernetes hostname restriction.</p>
-<h2 id="querying-the-fqdn">Querying the FQDN</h2>
+<h2 id="querying-the-fqdn">Querying the FQDN <a href="#querying-the-fqdn">§</a></h2>
 <p>There are several ways an a program can query the host’s hostname.</p>
 <ul>
 <li>Read <code>/etc/hostname</code>. The name in this file may or may not be fully qualified.</li>
@@ -170,9 +170,9 @@ ports:
 <li>The <code>getaddrinfo(3)</code> routine when invoked with the <code>AI_CANONNAME</code> flag can return a FQDN for a given hostname (e.g. the name return by <code>gethostname(2)</code>. This allows any <em>Name Service Switch (NSS)</em> plugin to provide a canonical FQDN for a short name. NSS is usually configured to map hostnames using the data from <code>/etc/hosts</code>, but there are other plugins including for <em>systemd-resolved</em>, <em>dns</em> and <em>sss</em> (SSSD). From the command line, <code>hostname --fqdn</code> or <code>hostname --all-fqdns</code> will return result(s) from <code>getaddrinfo(3)</code>.</li>
 </ul>
 <p>Side-note: the “UTS” in <code>utsname</code> stands for <em>Unix Timesharing System</em>. Container runtimes can set a unique UTS hostname in each container because each container (or pod) has a unique <a href="https://www.man7.org/linux/man-pages/man7/uts_namespaces.7.html">UTS namespace</a>.</p>
-<h2 id="auditing-freeipas-fqdn-query-behaviour">Auditing FreeIPA’s FQDN query behaviour</h2>
+<h2 id="auditing-freeipas-fqdn-query-behaviour">Auditing FreeIPA’s FQDN query behaviour <a href="#auditing-freeipas-fqdn-query-behaviour">§</a></h2>
 <p>In order to decide how to proceed, we first needed to audit both FreeIPA and its dependencies to see how they query the hostname and host FQDN. I have published <a href="https://docs.google.com/document/d/e/2PACX-1vQzxjMw3eqkpuPfqaLbCW-GN8gwS1QvFjrs9TnPM02DMfNqBVSGapqITvAyZyxc2TN9jJShJrbqGayC/pub">the results of this audit</a>. It is perhaps not exhaustive, but hopefully fairly thorough.</p>
-<h2 id="pod-hostname-configuration">Pod hostname configuration</h2>
+<h2 id="pod-hostname-configuration">Pod hostname configuration <a href="#pod-hostname-configuration">§</a></h2>
 <p>We assume that the operator (human or machine) will create pods with deterministic FQDN. That is, it knows what the pod’s FQDN should be. Or to be more precise, the operator knows what it wants the application(s) running in the pod to recognise as the host FQDN. These are not necessarily the same thing (more on that in the next section).</p>
 <p>First, let’s investigate how OpenShift configures pod hostnames. I created a standalone pod with no associated services and shelled into it to query the FQDN in various ways. The pod configuration:</p>
 <pre><code>apiVersion: v1
@@ -236,14 +236,14 @@ test.subdomain.test.svc.cluster.local</code></pre>
 <pre><code>sh-5.0# grep subdomain /etc/hosts
 10.129.3.84     test.subdomain.test.svc.cluster.local   test</code></pre>
 <p>The preceding examples involve pods that I created directly. The configurations of pods that are created indirectly are under the (partial) control of the corresponding controllers. For example, pods created by the <code>StatefulSet</code> controller have their <code>subdomain</code> field set to the <code>name</code> of the <code>StatefulSet</code>.</p>
-<h3 id="upcoming-changes">Upcoming changes</h3>
+<h3 id="upcoming-changes">Upcoming changes <a href="#upcoming-changes">§</a></h3>
 <p>An <a href="https://github.com/kubernetes/enhancements/issues/1797">upcoming Kubernetes enhancement</a> will allow pods to specify that its UTS hostname should be set to the pod FQDN (if the pod has an FQDN). This enhancement will introduces a new <code>setHostnameAsFQDN</code> field to the <code>PodSpec</code>. It is currently scheduled to land as <em>alpha</em> in Kubernetes v1.19, move to <em>beta</em> in v1.20 and become <em>stable</em> in v1.22.</p>
-<h2 id="freeipa-changes">FreeIPA changes</h2>
+<h2 id="freeipa-changes">FreeIPA changes <a href="#freeipa-changes">§</a></h2>
 <p>With sufficient craftiness, or code changes, or network configuration changes, or some combination thereof, it is possible to convince a program that it’s FQDN is a particular value. Although Kubernetes and OpenShift currently offer few ways to configure the pod (UTS) hostname, the operator could use some mechanism (e.g. pod environment variables or a <code>ConfigMap</code>, along with changes to application code) to ensure that each application instance “knows” its correct FQDN.</p>
 <p>The hostname query audit revealed that FreeIPA asks for the host FQDN or the system hostname (in order to check that it is a FQDN) in lots of places and uses different query mechanisms. If we find all those places we can abstract away the check. In practice this means one common interface for FreeIPA’s C code and one for the Python code.</p>
 <p>With hostname query logic abstracted behind these interfaces, we can perform the lookup in whatever way is appropriate for the deployment environment. For a traditional deployment, we use <code>gethostname(3)</code> and <code>getaddrinfo(3)</code> with <code>AI_CANONNAME</code>. But in an OpenShift deployment we can instead return a value supplied via a <code>ConfigMap</code> or other appropriate mechanism.</p>
 <p>Upstream pull request <a href="https://github.com/freeipa/freeipa/pull/5107">#5107</a> implemented this change. It consolidated the hostname query behaviour into new C and Python routines. It did not implement alternative behaviour for other environments such as OpenShift, but abstracting the query behind a single interface (for each language) makes it easy to do this later. Whether we would use an environment variable, <code>ConfigMap</code>, or some other mechanism does not need to be decided at this time.</p>
-<h2 id="next-steps">Next steps</h2>
+<h2 id="next-steps">Next steps <a href="#next-steps">§</a></h2>
 <p>The investigation into hostname/FQDN query behaviour of FreeIPA’s dependencies continues. In particular, we have not yet undertaken a thorough investigation of Samba, which is used for Active Directory trust support. Also, there are open questions about some other dependencies including Dogtag and Certmonger. It is possible that configuration or code changes will be required to make these programs work in environments</p>]]></summary>
 </entry>
 <entry>
@@ -255,7 +255,7 @@ test.subdomain.test.svc.cluster.local</code></pre>
     <summary type="html"><![CDATA[<h1 id="user-namespaces-in-openshift-via-cri-o-annotations">User namespaces in OpenShift via CRI-O annotations</h1>
 <p>In a recent post I covered the lack of user namespace support in OpenShift, and discussed the <a href="https://github.com/cri-o/cri-o/pull/3944">upcoming CRI-O feature</a> for user namespacing of containers, controlled by annotations.</p>
 <p>I now have an OpenShift nightly cluster deployed. It uses a prerelease version of CRI-O v1.20, which includes this new feature. So it’s time to experiment! This post records my investigation of this feature.</p>
-<h2 id="preliminaries">Preliminaries</h2>
+<h2 id="preliminaries">Preliminaries <a href="#preliminaries">§</a></h2>
 <p>I’ll skip the details of deploying the nightly (4.7) cluster (because they are not important). What <em>is</em> important is that I created a <code>MachineConfig</code> to enable the CRI-O user namespace annotation feature, <a href="2020-11-30-openshift-machine-config-operator.html">as described in my previous post</a>.</p>
 <p>As in the initial investigation, I created a new user account and project namespace for the experiments:</p>
 <pre><code>% oc new-project test
@@ -266,7 +266,7 @@ user.user.openshift.io/test created
 
 % oc adm policy add-role-to-user admin test
 clusterrole.rbac.authorization.k8s.io/admin added: &quot;test&quot;</code></pre>
-<h2 id="creating-a-user-namespaced-pod---attempt-1">Creating a user namespaced pod - Attempt 1</h2>
+<h2 id="creating-a-user-namespaced-pod---attempt-1">Creating a user namespaced pod - Attempt 1 <a href="#creating-a-user-namespaced-pod---attempt-1">§</a></h2>
 <p>I defined a pod that just runs <code>sleep</code>, but uses the new annotation to run it in a user namespace. The <code>map-to-root=true</code> directive says that the “beginning” of the host uid range assigned to the container should maps to uid 0 (i.e. <code>root</code>) in the container.</p>
 <pre><code>$ cat userns-test.yaml
 apiVersion: v1
@@ -312,7 +312,7 @@ desc = error creating pod sandbox with name
 &quot;k8s_userns-test_test_e4f69d50-e061-46ca-b933-000bcea3363a_0&quot;:
 could not find enough available IDs</code></pre>
 <p>My initial reaction to this error is: <strong>this is good!</strong> It <em>seems</em> that CRI-O is attempting to create a user namespace for the container, but cannot. Another problem to solve, but we seem to be on the right track.</p>
-<h2 id="etcsubuid"><code>/etc/subuid</code></h2>
+<h2 id="etcsubuid"><code>/etc/subuid</code> <a href="#etcsubuid">§</a></h2>
 <p>I had not yet done any host configuration related to user namespace mappings. But I had a feeling that the <code>/etc/subuid</code> and <code>/etc/subgid</code> files would come into play. According to <code>subuid(5)</code>:</p>
 <blockquote>
 <p>Each line in /etc/subuid contains a user name and a range of subordinate user ids that user is allowed to use.</p>
@@ -330,7 +330,7 @@ core:100000:65536</code></pre>
 USER         PID CMD
 root        1791 /usr/bin/crio --enable-metrics=true --metrics-port=9537</code></pre>
 <p><code>crio</code> is running as the <code>root</code> user, which is not surprising. So we will need to add mappings for the <code>root</code> user to the mapping files.</p>
-<h3 id="machineconfig-for-modifying-etcsubugid"><code>MachineConfig</code> for modifying <code>/etc/sub[ug]id</code></h3>
+<h3 id="machineconfig-for-modifying-etcsubugid"><code>MachineConfig</code> for modifying <code>/etc/sub[ug]id</code> <a href="#machineconfig-for-modifying-etcsubugid">§</a></h3>
 <p>I will create a <code>MachineConfig</code> to append the mappings <code>/etc/subuid</code> and <code>/etc/subgid</code>. First we need the base64 encoding of the line we want to add:</p>
 <pre><code>$ echo &quot;root:200000:268435456&quot; | base64
 cm9vdDoyMDAwMDA6MjY4NDM1NDU2Cg==</code></pre>
@@ -427,7 +427,7 @@ sh-4.4# cat /etc/subgid
 core:100000:65536
 root:200000:268435456</code></pre>
 <p>Looks good!</p>
-<h2 id="creating-a-user-namespaced-pod---attempt-2">Creating a user namespaced pod - Attempt 2</h2>
+<h2 id="creating-a-user-namespaced-pod---attempt-2">Creating a user namespaced pod - Attempt 2 <a href="#creating-a-user-namespaced-pod---attempt-2">§</a></h2>
 <p>It’s time to create the user namespaced pod again, and see if it succeeds this time.</p>
 <pre><code>$ oc --as test create -f userns-test.yaml
 pod/userns-test created</code></pre>
@@ -438,7 +438,7 @@ ranges found for user \&quot;containers\&quot; in /etc/subuid&quot;</code></pre>
 <pre><code>core:100000:65536
 containers:200000:268435456</code></pre>
 <p>Then I replaced the <code>subuid-subgid</code> object and again waited for Machine Config Operator to update the worker nodes.</p>
-<h2 id="creating-a-user-namespaced-pod---attempt-3">Creating a user namespaced pod - Attempt 3</h2>
+<h2 id="creating-a-user-namespaced-pod---attempt-3">Creating a user namespaced pod - Attempt 3 <a href="#creating-a-user-namespaced-pod---attempt-3">§</a></h2>
 <p>Once again, the container remained at <code>ContainerCreating</code>. But the error was different (lines wrapped for readability):</p>
 <pre><code>Failed to create pod sandbox: rpc error:
 code = Unknown
@@ -455,7 +455,7 @@ msg=&quot;container_linux.go:366: starting container process caused:
     write sysctl key net.ipv4.ping_group_range:
       write /proc/sys/net/ipv4/ping_group_range: invalid argument&quot;</code></pre>
 <p>After a bit of research, here is my understanding of the situation: CRI-O successfully created the pod sandbox (which includes the user namespace) and is now initialising it. One of the initialisation steps is to set the <code>net.ipv4.ping_group_range</code> sysctl (the subroutine is part of <code>runc</code>), and this is failing. This step is performed for all pods, but it is only failing when the pod is using a user namespace.</p>
-<h2 id="net.ipv4.ping_group_range-and-user-namespaces"><code>net.ipv4.ping_group_range</code> and user namespaces</h2>
+<h2 id="net.ipv4.ping_group_range-and-user-namespaces"><code>net.ipv4.ping_group_range</code> and user namespaces <a href="#net.ipv4.ping_group_range-and-user-namespaces">§</a></h2>
 <p>The <code>net.ipv4.ping_group_range</code> sysctl defines the range of group IDs that are allowed to send ICMP Echo packets. Setting it to the full gid range allows <code>ping</code> to be used in rootless containers, without setuid or the <code>CAP_NET_ADMIN</code> and <code>CAP_NET_RAW</code> capabilities.</p>
 <p>The CRI-O config key <code>crio.runtime.default_sysctls</code> declares the default sysctls that will be set in all containers. The default OpenShift CRI-O configuration sets it to the full gid range:</p>
 <pre><code>sh-4.4# cat /etc/crio/crio.conf.d/00-default \
@@ -465,13 +465,13 @@ default_sysctls = [
 ]</code></pre>
 <p>My working hypothesis is that setting the sysctl in the user-namespaced container fails because the gid range in the sandbox is not <code>0–2147483647</code> but much smaller. This could explain the <code>invalid argument</code> part of the error message.</p>
 <p>How to overcome this? I first thought to update the pod spec to specify a different value for the sysctl that reflects the actual gid range in the sandbox. And to do that, I have to calculate what that gid range is.</p>
-<h3 id="computing-the-gid-range">Computing the gid range</h3>
+<h3 id="computing-the-gid-range">Computing the gid range <a href="#computing-the-gid-range">§</a></h3>
 <p>I will work on the assumption that I must refer to the range as it appears <em>in the namespace</em>. That assumption could be wrong, but that’s where I’m starting.</p>
 <p>Because I am using <code>map-to-root=true</code>, the start value of the range should be <code>0</code>. The second number in the <code>ping_group_range</code> sysctl value is not the range size but the end gid (inclusive). CRI-O currently hard-codes a default user namespace size of <code>65536</code>.</p>
 <p>Because the size of the uid range is a critical parameter, I shall from now on explicitly declare the desired size in the <code>userns-mode</code> annotation. This will protect the solution from change to the default range size. I probably won’t need 65536 uids/gids but I’ll stick with the default for now.</p>
 <pre><code>io.kubernetes.cri-o.userns-mode: &quot;auto:size=65536;map-to-root=true&quot;</code></pre>
 <p>With a range of <code>65536</code> starting at <code>0</code>, the desired sysctl setting is <code>net.ipv4.ping_group_range=0 65535</code>.</p>
-<h3 id="configuring-the-sysctl">Configuring the sysctl</h3>
+<h3 id="configuring-the-sysctl">Configuring the sysctl <a href="#configuring-the-sysctl">§</a></h3>
 <p>We need <code>ping</code> to continue working in containers that are not namespaced. Therefore, overriding or clearing the CRI-O <code>default_sysctls</code> config is not an option. Instead I need a way to optionally set the <code>net.ipv4.ping_group_range</code> sysctl to a specified value on a per-pod basis.</p>
 <p>You can specify sysctls to be set in a pod via the <code>spec.securityContext.sysctls</code> array (see Kubernetes <a href="https://v1-18.docs.kubernetes.io/docs/reference/generated/kubernetes-api/v1.18/#podsecuritycontext-v1-core">PodSecurityContext documentation</a>). I updated the pod definition to include the sysctl:</p>
 <pre><code>$ cat userns-test.yaml 
@@ -493,7 +493,7 @@ spec:
       value: &quot;0 65535&quot;</code></pre>
 <p>As I write this, I don’t know yet how CRI-O behaves when both <code>default_sysctls</code> and the pod spec define the same sysctl. It might just set the value from the pod spec, which is the behaviour I need. Or it might first attempt to set the value from <code>default_sysctls</code>, and afterwards set it again to the value from the pod spec (this will fail as before).</p>
 <p>Time to find out!</p>
-<h2 id="creating-a-user-namespaced-pod---attempt-4">Creating a user namespaced pod - Attempt 4</h2>
+<h2 id="creating-a-user-namespaced-pod---attempt-4">Creating a user namespaced pod - Attempt 4 <a href="#creating-a-user-namespaced-pod---attempt-4">§</a></h2>
 <pre><code>$ oc --as test create -f userns-test.yaml
 pod/userns-test created
 
@@ -534,7 +534,7 @@ uid=1000610000(1000610000) gid=0(root) groups=0(root),1000610000</code></pre>
         NS TYPE  NPROCS    PID USER   COMMAND
 4026531837 user     282      1 root   /usr/lib/systemd/systemd --switched-root --system --deserialize 16
 4026532599 user       1 684279 200000 /usr/bin/pod</code></pre>
-<h2 id="creating-a-user-namespaced-pod---attempt-5">Creating a user namespaced pod - Attempt 5</h2>
+<h2 id="creating-a-user-namespaced-pod---attempt-5">Creating a user namespaced pod - Attempt 5 <a href="#creating-a-user-namespaced-pod---attempt-5">§</a></h2>
 <p>I once again deleted the <code>userns-test</code> pod. As proposed above, I modified the pod security context to specify that the entry point should be run as uid <code>0</code> and gid <code>0</code>:</p>
 <pre><code>$ cat userns-test.yaml
 apiVersion: v1
@@ -577,7 +577,7 @@ must be in the ranges: [1000610000, 1000619999]]</code></pre>
 <p>In a <a href="2020-11-05-openshift-user-namespace.html">recent post</a> I discussed how OpenShift and Kubernetes do not have user namespace isolation. An <a href="https://github.com/cri-o/cri-o/pull/3944">upcoming CRI-O enhancement</a> should allow pods to be run in separate user namespaces. This feature is controlled via <em>annotations</em>; no explicit Kubernetes support is required.</p>
 <p>To experiment with this feature I deployed an OpenShift nightly (4.7) cluster, which uses a CRI-O v1.20 prerelease build. But having CRI-O v1.20 is not enough. The feature must be explicitly enabled in the CRI-O configuration. This leads to the question, <em>what is the proper way to manage machine configuration in an OpenShift cluster?</em> The answer is the <em>Machine Config Operator (MCO)</em>.</p>
 <p>The <a href="https://access.redhat.com/documentation/en-us/openshift_container_platform/4.6/html/post-installation_configuration/post-install-machine-configuration-tasks">official OpenShift documentation</a> does a good job of introducing and explaining the MCO, so there’s no need to regurgitate it all here. Instead I’ll review the configuration, object definitions and procedure from my CRI-O use case.</p>
-<h2 id="configuring-cri-o-via-the-machine-config-operator">Configuring CRI-O via the Machine Config Operator</h2>
+<h2 id="configuring-cri-o-via-the-machine-config-operator">Configuring CRI-O via the Machine Config Operator <a href="#configuring-cri-o-via-the-machine-config-operator">§</a></h2>
 <p>CRI-O is configured via <code>/etc/crio/crio.conf</code> and additional files in the <code>/etc/crio/crio.conf.d/</code> directory. Directives from <code>crio.conf.d</code> files have higher precedence and files are processed in lexicographic order.</p>
 <p>The follow configuration enables the user namespaces feature:</p>
 <pre><code>[crio.runtime.runtimes.runc]
@@ -616,7 +616,7 @@ spec:
 <pre><code>$ oc create -f machineconfig-crio-userns.yaml
 machineconfig.machineconfiguration.openshift.io/crio-userns created</code></pre>
 <p>Over the next several minutes, the Machine Config Operator applied the configuration change to all the worker nodes and restarted them.</p>
-<h2 id="closing-thoughts">Closing thoughts</h2>
+<h2 id="closing-thoughts">Closing thoughts <a href="#closing-thoughts">§</a></h2>
 <p>Everything went smoothly and my impressions of MCO, from this first “hands on” experience, are very positive. It was a simple use case, I admit. But I am still very pleased that it was so easy and everything Just Worked. Hopefully other people have as good an experience with MCO as I did, even for more complex configuration changes.</p>]]></summary>
 </entry>
 <entry>
@@ -631,7 +631,7 @@ machineconfig.machineconfiguration.openshift.io/crio-userns created</code></pre>
 <p>Having proved itself good for DNS certificates, <a href="https://tools.ietf.org/html/rfc8738">RFC 8738</a> introduced supported for IP addresses. Work to support email addresses (for S/MIME), <code>.onion</code> addresses (Tor services), and other identifer types is underway in the IETF <a href="https://datatracker.ietf.org/wg/acme/documents/">acme Working Group</a>. (ACME itself is defined in <a href="https://tools.ietf.org/html/rfc8555">RFC 8555</a>).</p>
 <p>The outcome of all of this is that already today, and increasingly into the future, network environments will often have access to multiple ACME servers. These servers may differ in the kinds of certificates they issue and the validation methods (also called “challenge types”) they support. Also, it is desirable that a client (e.g. a printer or an IoT “thing”) would be able to opportunistically and automatically locate a suitable ACME server to acquire certificates without any operator (human or otherwise) intervention (and Let’s Encrypt or other public ACME servers may not be accessible in some environments).</p>
 <p>So, what’s an ACME client to do?</p>
-<h2 id="internet-draft">Internet-Draft</h2>
+<h2 id="internet-draft">Internet-Draft <a href="#internet-draft">§</a></h2>
 <p>I have <a href="https://datatracker.ietf.org/doc/draft-tweedale-acme-discovery/">published an Internet-Draft</a> defining a service discovery protocol for ACME. <em>Internet-Draft</em> is <a href="https://www.ietf.org/">IETF</a> jargon for a work-in-progress document that might one day become an <a href="https://www.ietf.org/standards/rfcs/">RFC</a>. An outline of how ACME Service Discovery works follows.</p>
 <p>ACME Service Discovery is a profile of <em>DNS-based Service Discovery (DNS-SD)</em> (<a href="https://tools.ietf.org/html/rfc6763">RFC 6763</a>). Given a <em>parent domain</em>, <em>Service Instance Names</em> are listed by the PTR records of <code>_acme-server._tcp.$PARENT</code>. For example, the <code>corp.example.</code> parent domain advertises two service instances called <code>CorpCA</code> and <code>C4A</code>:</p>
 <pre><code>$ORIGIN corp.example.
@@ -648,7 +648,7 @@ C4A._acme-server._tcp    SRV 20 0 443 certs4all.example.
 C4A._acme-server._tcp    TXT &quot;path=/acme/v2&quot; &quot;i=dns&quot;</code></pre>
 <p>ACME clients are assumed to know (or deduce) one or more candidate parent domains. Possible sources for the candidate parent domain(s) are the DNS search domains, host FQDN or Kerberos realm. The client performs ACME Service Discovery on each parent domain, selecting and probing eligible service instances, until they find one that works. The probe step involves constructing a URL from the SRV target and port and TXT <code>path</code> attribute, performing an HTTP GET request for that resource, and checking that the response is a valid ACME directory object. In the example above, the directory URL for <code>CorpCA</code> is <code>https://ca.corp.example/acme</code>.</p>
 <p>And that’s the main idea! There’s a fair bit more detail in the Internet-Draft but I won’t belabour it all here.</p>
-<h2 id="enabling-acme-service-discovery-in-freeipa">Enabling ACME Service Discovery in FreeIPA</h2>
+<h2 id="enabling-acme-service-discovery-in-freeipa">Enabling ACME Service Discovery in FreeIPA <a href="#enabling-acme-service-discovery-in-freeipa">§</a></h2>
 <p>To enable ACME Service Discovery in a FreeIPA environment using the integrated DNS service, add the PTR, SRV and TXT records for each service instance. This requires a <a href="https://github.com/freeipa/freeipa/pull/5239">recently merged patch</a> to allow PTR records to be created in arbitrary zones (PTR records were previously limited to <code>.arpa</code> reverse zones). The fix should be included in FreeIPA 4.9 and will also be backported to the 4.8.x branch.</p>
 <p>The following DNS records advertise the FreeIPA CA itself:</p>
 <pre><code>% ipa dnsrecord-add ipa.local ipa._acme-server._tcp \
@@ -665,7 +665,7 @@ C4A._acme-server._tcp    TXT &quot;path=/acme/v2&quot; &quot;i=dns&quot;</code><
   PTR record: ipa._acme-server._tcp.ipa.local.</code></pre>
 <p>The procedure to advertise additional ACME servers is similar.</p>
 <p>If the ACME Service Discovery proposal gets traction we would ideally create these records to advertise the FreeIPA CA automatically (when it is enabled).</p>
-<h2 id="certbot-plugin">Certbot plugin</h2>
+<h2 id="certbot-plugin">Certbot plugin <a href="#certbot-plugin">§</a></h2>
 <p>I wrote a <a href="https://certbot.eff.org/">Certbot</a> plugin to experiment with service discovery. It lives in a private branch at <a href="https://github.com/frasertweedale/certbot/tree/feature/discovery">https://github.com/frasertweedale/certbot/tree/feature/discovery</a>. I will probably submit a pull request soon, to invite feedback about the implementation and the service disovery proposal itself.</p>
 <p>To install Certbot and the plugin under <code>~/.local/</code> (command output omitted):</p>
 <pre><code># git clone https://github.com/certbot/certbot -b feature/discovery
@@ -756,7 +756,7 @@ certbot: error: service discovery failed (see /tmp/tmp6qq8pnks for info)</code><
 [WARNING] failed to reach server: &lt;Response [503]&gt;</code></pre>
 <p>We can see that the plugin found the service instance and requested the directory resource, but got a 503 response (as expected). So, when service discovery fails the plugin gives you some useful log output to debug the issue.</p>
 <p>The log file is only persisted when service discovery fails, otherwise it is deleted. In the current implementation we cannot write to the “normal” Certbot log file because we don’t know where that is. The discovery plugin is actually doing all its work <em>inside the argument parsing</em>. It feels like a brutal hack but it’s the only way I found (in the limited time I had) to override the <code>--server</code> option whilst keeping the implementation as a plugin, fully separate from Certbot core. A nicer implementation is possible if service discovery were to be implemented in Certbot core (this would introduce a dependency on <em>dnspython</em>).</p>
-<h2 id="next-steps">Next steps</h2>
+<h2 id="next-steps">Next steps <a href="#next-steps">§</a></h2>
 <p>I will present and demo this proposal during the <code>acme</code> Working Group meeting at IETF 109 (November 2020). From there I hope that it will be adopted, developed, and shepherded through to become an RFC. I will also seek feedback from Certbot developers about the proposal and my experimental implementation.</p>
 <p>I also intend to submit another Internet-Draft proposing a mechanism for servers to advertise their capabilities in the ACME directory object. This could be useful to help clients choose from multiple servers (regardless of how they find out about the servers). And I think it’s good practice. When a protocol has many possible features that a server may or may not implement, servers should declare their capabilities for the benefit of clients.</p>
 <p>Beyond that, I am starting to think about SRVName support in ACME. This would be useful in enterprise environments and on the open internet for protocols where SRV records are used to locate servers. Such protocols include Kerberos, LDAP, SIP and XMPP.</p>]]></summary>
@@ -771,7 +771,7 @@ certbot: error: service discovery failed (see /tmp/tmp6qq8pnks for info)</code><
 <p>FreeIPA in its current form is very much not a “cloud native” application. Likewise the current FreeIPA container, which runs all the required services under systemd. My current team is working on operationalising FreeIPA for the OpenShift container platform. Our initial efforts are focused around this “monolithic” container, trying to get it to run in OpenShift, securely. Although we recognise we may eventually need to split up the container, it will be a major engineering effort to do so. We want to have a working proof of concept as early as possible, so that we (and others) can start the important integration work (e.g. with Keycloak / RHSSO).</p>
 <p>This “lift and shift” of a complex traditional application to OpenShift results in a container that needs to run several processes as a variety of users, including <code>root</code>. OpenShift isolates containers (actually pods, which consist of one or more containers) in their own PID namespace. This is good, but if we are to run container processes as <code>root</code> (in the container), we do not want them to also be <code>root</code> on the host. Rather, they should map to an unprivileged account. If we want secure multitenancy of multiple IDM servers on a single worker node, we want the user accounts in different IDM pods to map to disjoint sets of unprivileged users on the host.</p>
 <p>Linux <code>user_namespaces(7)</code> provide this kind of isolation. To what extent are user namespaces supported in OpenShift? We needed to find out, in order to decide how to proceed with the FreeIPA OpenShift effort. In this blog post I discuss my investigation and findings.</p>
-<h2 id="investigating-current-openshift-behaviour">Investigating current OpenShift behaviour</h2>
+<h2 id="investigating-current-openshift-behaviour">Investigating current OpenShift behaviour <a href="#investigating-current-openshift-behaviour">§</a></h2>
 <p>To investigate the use (or not) of user namespaces I deployed pods on our team’s OpenShift cluster, running a simple command, and observed the effects on the worker node.</p>
 <p>As cluster admin, I created a new project:</p>
 <pre><code>% oc new-project test
@@ -837,16 +837,16 @@ pod/test created</code></pre>
 <p>Following the same procedure as earlier, find the PID (it was <code>1381728</code>) and observe that it is running as <code>root</code> (UID <code>0</code>) on the host:</p>
 <pre><code>sh-4.4# ls -l -d /proc/1381728
 dr-xr-xr-x. 9 root root 0 Nov  5 05:55 /proc/1381728</code></pre>
-<h2 id="consequences-for-freeipa">Consequences for FreeIPA</h2>
+<h2 id="consequences-for-freeipa">Consequences for FreeIPA <a href="#consequences-for-freeipa">§</a></h2>
 <p>Traditional applications sometimes assume they will run as <code>root</code> or some other “reserved” user. FreeIPA is such a case. Likewise, running systemd in a container means running as UID 0 (from the container’s point of view).</p>
 <p>The lack of user namespace use in OpenShift means that for a process to run under a particular UID in the container, it must run as that user on the host too. If you application needs to be <code>root</code>, it will be <code>root</code> on the host. Other kinds of namespaces (e.g. <code>pid</code>, <code>mnt</code>, <code>uts</code> among others) do mitigate the security risk. But if a rogue process can escalate privileges and escape the other sandbox(es) the result could be catastrophic.</p>
 <p>FreeIPA, being composed of many components, some of which are large complex projects in their own right, and several of which are implemented in C or leverage C libraries, has a large attack surface. In the absense of user namespaces the risk of container host or co-tenant compromise—even by accident—seems high.</p>
 <p>This all assumes that containers do not have user namespace isolation and that FreeIPA continues to require running processes in the FreeIPA container as fixed UIDs (probably including <code>root</code>). I will now discuss possible ways to eliminate these assumptions.</p>
-<h2 id="user-namespace-support-in-kubernetes">User namespace support in Kubernetes</h2>
+<h2 id="user-namespace-support-in-kubernetes">User namespace support in Kubernetes <a href="#user-namespace-support-in-kubernetes">§</a></h2>
 <p>OpenShift is built on the Kubernetes container platform. <em>Kubernetes Enhancement Proposal</em> <a href="https://github.com/kubernetes/enhancements/issues/127">KEP-127</a> proposes user namespace support. The ticket has been open for 4 years and has since seen several efforts to formalise the proposal, the most recent of which is <a href="https://github.com/kubernetes/enhancements/pull/2101">kubernetes/enhancements#2101</a> (<a href="https://github.com/kubernetes/enhancements/blob/9726c1a4cc5051d8be7eaf4cb64313df60ae8751/keps/sig-node/127-usernamespaces-support/README.md">rendered</a>). There have also been several experimental implementations (e.g. <a href="https://github.com/kubernetes/kubernetes/pull/55707">#55707</a>, <a href="https://github.com/kubernetes/kubernetes/pull/64005">#64005</a>), none of which was accepted (yet).</p>
 <p>There has been a recent resurgence of activity on this KEP, and related discussions and pull requests. But that has happened before. I believe that every new (or resurrected) discussion or experiment can move you closer to the goal, and that there can be several false starts before things happen. Maybe this time it will happen… or maybe not.</p>
 <p>Right now there is no final proposal and no implementation plan. As a team we cannot proceed on the assumption that Kubernetes will support user namespaces. We will certainly present our case to OpenShift engineering internally at Red Hat, but we have to look at other options.</p>
-<h2 id="user-namespace-support-in-cri-o">User namespace support in CRI-O</h2>
+<h2 id="user-namespace-support-in-cri-o">User namespace support in CRI-O <a href="#user-namespace-support-in-cri-o">§</a></h2>
 <p>The <a href="https://cri-o.io/">CRI-O</a> container runtime <a href="https://github.com/cri-o/cri-o/pull/3944">recently implemented</a> support for running each pod in a separate user namespace, via <em>annotations</em> on the pod, e.g.:</p>
 <div class="sourceCode" id="cb11"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb11-1"><a href="#cb11-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
 <span id="cb11-2"><a href="#cb11-2"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Pod</span></span>
@@ -858,11 +858,11 @@ dr-xr-xr-x. 9 root root 0 Nov  5 05:55 /proc/1381728</code></pre>
 <p>Using annotations means that no explicit support in Kubernetes is required. All that is required is that Kubernetes is using the CRI-O container runtime, and that CRI-O is configured to enable this feature. OpenShift 4.x does use CRI-O, so we’re halfway there. The remaining step is to enable the feature in <code>crio.conf</code>:</p>
 <pre><code>allow_userns_annotation = true</code></pre>
 <p>The developer Giuseppe Scrivano kindly published a <a href="https://asciinema.org/a/351396">screencast showing the feature in action</a> (2 minutes). This feature is not yet in a supported release but is available on the v1.20 branch and is included in OpenShift <a href="">nightly builds</a>.</p>
-<h2 id="splitting-the-freeipa-container">Splitting the FreeIPA container</h2>
+<h2 id="splitting-the-freeipa-container">Splitting the FreeIPA container <a href="#splitting-the-freeipa-container">§</a></h2>
 <p>If Kubernetes or CRI-O user namespace support to does not solve our problem (in our desired timeframe) then there is more pressure to abandon the monolithic container and devote our efforts to a “split-service” FreeIPA/IDM application. In this scenario, the various services that make up FreeIPA (LDAP, KDC, HTTP, CA and others) would each run as an unprivileged process in its own container.</p>
 <p>This would be a big engineering effort. Apart from FreeIPA as a whole, most of the constituent services are also “traditional” applications that make assumptions about their environment and execution context—assumptions that do not hold in the OpenShift container paradigm.</p>
 <p>There is a general (albeit unevenly distributed) feeling in the team that in the long run this effort is inevitable. I do hold this view myself, but also recognise that the sooner we can have a working proof of concept, the better. That is the main reason we are initially pursuing the monolithic container approach.</p>
-<h2 id="next-steps">Next steps</h2>
+<h2 id="next-steps">Next steps <a href="#next-steps">§</a></h2>
 <p>My next step will be to install an OpenShift cluster based on the nightly builds (which include CRI-O v1.20) and experiment with the annotation-based user namespace support. It seems to be what we want, or a big step in the right direction, but we need to confirm it. Expect a follow-up to this article with my findings, hopefully in the next week!</p>]]></summary>
 </entry>
 <entry>
@@ -879,7 +879,7 @@ ub-common-name-length INTEGER ::= 64</code></pre>
 <p>As a consequence of this restriction, when a host or service has a DNS name longer than 64 characters, that name cannot be used as the CN. But it can still be included in the <em>Subject Alternative Name</em> extension, as a <em>dNSName</em> value.</p>
 <p>How do we issue such a certificate in FreeIPA? The trick is to add a <em>principal alias</em> whose hostname is 64 characters or shorter. This shorter hostname will be the Common Name attribute value. The full hostname will appear in the Subject Alternative Name extension.</p>
 <p>The following sections demonstrate the method. I conclude with an outline of what needs to be done to support certificates with empty Subject DN, which would avoid the problem and this workaround.</p>
-<h2 id="creating-a-principal-with-a-long-hostname">Creating a principal with a long hostname</h2>
+<h2 id="creating-a-principal-with-a-long-hostname">Creating a principal with a long hostname <a href="#creating-a-principal-with-a-long-hostname">§</a></h2>
 <p>To experiment and verify the workaround, I needed a principal with a hostname longer than 64 characters. The initial attempt failed:</p>
 <pre><code>% ipa host-add --force \
     verylongverylongverylongverylongverylongverylonghostname.ipa.local
@@ -899,7 +899,7 @@ Added host &quot;verylongverylongverylongverylongverylongverylonghostname.ipa.lo
   Principal name: host/verylongverylongverylongverylongverylongverylonghostname.ipa.local@IPA.LOCAL
   Principal alias: host/verylongverylongverylongverylongverylongverylonghostname.ipa.local@IPA.LOCAL
   ...</code></pre>
-<h2 id="adding-the-principal-alias">Adding the principal alias</h2>
+<h2 id="adding-the-principal-alias">Adding the principal alias <a href="#adding-the-principal-alias">§</a></h2>
 <p>For a host principal, use the <code>ipa host-add-principal</code> command to add a principal alias. The alias must also be a host principal, i.e. must have the form <code>host/$hostname</code>:</p>
 <pre><code>% ipa host-add-principal \
     verylongverylongverylongverylongverylongverylonghostname.ipa.local \
@@ -912,7 +912,7 @@ Principal alias: host/verylongverylongverylongverylongverylongverylonghostname.i
                  host/longhostname.ipa.local@IPA.LOCAL</code></pre>
 <p>For a service principal, use the <code>ipa service-add-principal</code> command. Ensure the principal alias has the same service type as the subject principal’s <em>canonical name</em> (i.e. the value its <code>krbcanonicalname</code> attribute). For example, if the canonical principal name is <code>HTTP/$LONGHOSTNAME</code>, then the principal alias should be <code>HTTP/$SHORTHOSTNAME</code>.</p>
 <p>I omitted the realm parts of principal names (the default realm will be added automatically). For the avoidance of doubt, the princpial alias must have the same realm as the canonical principal.</p>
-<h2 id="creating-a-csr">Creating a CSR</h2>
+<h2 id="creating-a-csr">Creating a CSR <a href="#creating-a-csr">§</a></h2>
 <p>There are many different ways to create a CSR. I will give a single example using OpenSSL. The private key already exists (file <code>key.pem</code>).</p>
 <p>The configuration file:</p>
 <pre><code>% cat longhostname.conf
@@ -932,7 +932,7 @@ subjectAltName=DNS:verylongverylongverylongverylongverylongverylonghostname.ipa.
 <pre><code>% openssl req -new -key key.pem \
     -config longhostname.conf -extensions exts \
     &gt; longhostname.csr</code></pre>
-<h2 id="issuing-the-certificate">Issuing the certificate</h2>
+<h2 id="issuing-the-certificate">Issuing the certificate <a href="#issuing-the-certificate">§</a></h2>
 <p>Now we can issue the certificate:</p>
 <pre><code>% ipa cert-request longhostname.csr \
     --principal host/verylongverylongverylongverylongverylongverylonghostname.ipa.local
@@ -947,7 +947,7 @@ subjectAltName=DNS:verylongverylongverylongverylongverylongverylonghostname.ipa.
   Serial number: 11
   Serial number (hex): 0xB</code></pre>
 <p>The CN attribute contains the shorter host name, and the SAN extension contains both the long and shorter hostnames. (We did not include the short hostname in the CSR SAN extension, but the <code>CommonNameToSANDefault</code> profile component copied it there).</p>
-<h2 id="supporting-san-only-certificates">Supporting SAN-only certificates</h2>
+<h2 id="supporting-san-only-certificates">Supporting SAN-only certificates <a href="#supporting-san-only-certificates">§</a></h2>
 <p>This workaround is straightforward but it is not the ideal solution. A better approach is to enhance FreeIPA and Dogtag to support issuing certificates with an empty Subject DN, using only the Subject Alternative Name extension to carry subject information.</p>
 <p>RFC 5280 allows an empty Subject DN in a certificate, in which case the certificate must include the SAN extension, which must be marked as <em>critical</em>. <a href="https://tools.ietf.org/html/rfc6125#section-2.3">RFC 6125</a> further clarifies that such a certificate is acceptable for use with TLS.</p>
 <p><a href="https://pagure.io/freeipa/issue/5706">Upstream ticket #5706</a> requests support for SAN-only certificates. The work will involve:</p>
@@ -966,7 +966,7 @@ subjectAltName=DNS:verylongverylongverylongverylongverylongverylonghostname.ipa.
     <updated>2020-09-17T00:00:00Z</updated>
     <summary type="html"><![CDATA[<h1 id="dogtag-number-ranges-and-vlv-indices">Dogtag, number ranges and VLV indices</h1>
 <p>In a <a href="2019-07-26-dogtag-replica-ranges.html">previous post</a> I explained Dogtag’s identifier range management. This is how a Dogtag replica knows what range it should use to assign serial numbers, request IDs, etc. What that article did not cover is how Dogtag at startup works out <em>where it is up to</em> in the range. In this post I explain how uses LDAP <em>Virtual List View</em> to do that, how it can break, and how to fix it.</p>
-<h2 id="ldap-virtual-list-view">LDAP Virtual List View</h2>
+<h2 id="ldap-virtual-list-view">LDAP Virtual List View <a href="#ldap-virtual-list-view">§</a></h2>
 <p>The LDAP protocol has an optional extension called <em>Virtual List View (VLV)</em>, which is specified in an <a href="https://datatracker.ietf.org/doc/draft-ietf-ldapext-ldapv3-vlv/">expired Internet-Draft</a>. VLV supports result <em>paging</em> and is an extension of the <em>Server Side Sort (SSS)</em> control (<a href="https://tools.ietf.org/html/rfc2891">RFC 2891</a>). For a search that is covered by a VLV index, a client can specify a page size and offset and get just that portion of the result. It can also seek a specified attribute value and return nearby results.</p>
 <p>In 389DS / RHDS, a VLV index is defined by two objects under <code>cn=config</code>. One of the VLV indices used in Dogtag is the search of all certificates sorted by serial number:</p>
 <pre class="ldif"><code>dn: cn=allCerts-pki-tomcat,
@@ -987,7 +987,7 @@ vlvSort: serialno
 vlvEnabled: 0
 vlvUses: 0</code></pre>
 <p>The first object defines the search base and filter. When performing a VLV search, these <strong>must match</strong>. The second object declares which attribute is the sort key. To perform a VLV search the client must use both the SSS control (which chooses the sort key) and the VLV control (which selects the page or the value of interest).</p>
-<h2 id="dogtag-range-initialisation">Dogtag range initialisation</h2>
+<h2 id="dogtag-range-initialisation">Dogtag range initialisation <a href="#dogtag-range-initialisation">§</a></h2>
 <p>When Dogtag is starting up, for each active identifier range it has to determine the first unused number. It uses VLV searches to do this. For serial numbers, it uses the VLV index shown above. For request IDs and other ranges, there are other indices. The VLV search targets the upper limit of the range, and requests the preceding values. It then looks for the highest value in the result that is also within the active range. This is the last number that was used; we increment it to get the next available number.</p>
 <p>To make it a bit more concrete, we can perform a VLV search ourselves using <code>ldapsearch</code>:</p>
 <pre><code># ldapsearch -LLL -D &quot;cn=Directory Manager&quot; -w $DM_PASS \
@@ -1003,10 +1003,10 @@ dn: cn=267911185,ou=certificateRepository,ou=ca,o=ipaca
 <p>In this search the target value (end of the active range) is <code>09267911168</code>. This is the integer <code>267911168</code> preceded by a two-digit length value. This is needed because the <code>serialno</code> attribute has <code>Directory String</code> syntax, which is sorted lexicographically. The <code>1/0</code> part of the control is asking for one value preceding the target value, and zero values following it.</p>
 <p>The result contains two objects: <code>397</code> (which precedes the target) and <code>267911185</code> (which follows it). Why did we get a number following the target value? The target entry is the first entry whose sort attribute value is <em>greater than or equal</em> the target value. In this way, results greater than the target can appear in the result, as happened here.</p>
 <p>The search above relates to the range <code>1..267911168</code>. The result shows us to initialise the repository with <code>397</code> as the “last used” number. The next certificate issued by this replica will have serial number <code>398</code>.</p>
-<h2 id="vlv-index-corruption">VLV index corruption</h2>
+<h2 id="vlv-index-corruption">VLV index corruption <a href="#vlv-index-corruption">§</a></h2>
 <p>If a VLV index is corrupt or incomplete, Dogtag could initialise a repository with a too-low “last used” number. This could happen for serial numbers, request IDs or any other kind of managed range. When that happens, CA operations including certificate issuance or CSR submission could fail.</p>
 <p>In fact, the <code>ldapsearch</code> above is from a customer case. A full search of the <code>ou=certificateRepository</code> showed thousands of certificates that were not included in the VLV index. If CA operations are failing due to LDAP “Object already exists” errors, you can perform this check to confirm or rule out VLV index corruption as the source of the problem. Keep in mind that VLV indices are maintained separately on each replica. Checks have to be performed on the replica where the problem is occurring.</p>
-<h2 id="rebuilding-vlv-indices">Rebuilding VLV indices</h2>
+<h2 id="rebuilding-vlv-indices">Rebuilding VLV indices <a href="#rebuilding-vlv-indices">§</a></h2>
 <p>389DS makes it easy to rebuild a VLV index. You create a <em>task</em> object and the DS takes care of it. For Dogtag, we even provide a template LDIF file for a task that reindexes <em>all</em> the VLV indices that Dogtag creates and uses.</p>
 <p>First, copy and fill the template:</p>
 <pre><code>$ /bin/cp /usr/share/pki/ca/conf/vlvtasks.ldif .
@@ -1044,7 +1044,7 @@ nsTaskLog:: aXBhY2E6IEluZGV4aW #... (base64-encoded log)
 nsTaskStatus: ipaca: Finished indexing.
 nsTaskExitCode: 0</code></pre>
 <p>We can see that the task finished successfully, and there is some (truncated) log output if we want more details. After a few more seconds, 389DS will delete the object. You can increase the <code>ttl</code> if you want to keep the objects for longer.</p>
-<h2 id="discussion">Discussion</h2>
+<h2 id="discussion">Discussion <a href="#discussion">§</a></h2>
 <p>This year I have encountered variations of this problem on several occasions. I don’t know what the cause(s) are, i.e. why VLV indices get corrupted or stop updating. Hopefully DS experts will be able to shed more light on the issue.</p>
 <p>We are considering adding an automated check to the FreeIPA <em>Health Check</em> system, specifically for the range management VLVs. The <a href="">GitHub ticket</a> already contains some discussion and high level steps of how the check would work.</p>
 <p>The proper fix for this issue is to move to UUIDs for all object identifiers. Serial numbers might need something different but it is the same idea. This work is on the roadmap. <em>So many problems</em> will go away when we make this change.</p>
@@ -1060,7 +1060,7 @@ nsTaskExitCode: 0</code></pre>
 <p>For containerised applications that require persistent storage, the Kubernetes <code>PersistentVolumeClaim</code> (PVC) object provides the link between a <code>PersistentVolume</code> (PV) and the pod. When scaling such an application or even deploying it the first time, the operator (human or otherwise) has to create the PVC; the pod specification can then refer to it.</p>
 <p>For example, a <code>StatefulSet</code> object can optionally specify <code>volumeClaimTemplates</code> alongside the pod <code>template</code>. As the application creates pods, so will it create the associated PVCs according to the defined templates.</p>
 <p>But PVCs need PVs to bind to. Can these also be created on the fly? And if so, how can we abstract over the details of the underlying storage provider(s), which may vary from cluster to cluster? In this post I provide an overview of <em>storage classes</em>, which solve these problems.</p>
-<h2 id="creating-volumes">Creating volumes</h2>
+<h2 id="creating-volumes">Creating volumes <a href="#creating-volumes">§</a></h2>
 <p>A cluster can provide a variety of types of volumes: Ceph, NFS, <code>hostPath</code>, iSCSI and several more. Storage types of the infrastructure the cluster is deployed in may also be available, e.g. AWS EBS, Azure Disk, GCE PersistentDisk (PD), Cinder (OpenStack), etc.</p>
 <p>Creating a <code>PersistentVolume</code> requires knowing about what volume types are supported, and possibly additional details about that storage type. For example, to create a PV based on a GCE PD:</p>
 <div class="sourceCode" id="cb1"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb1-1"><a href="#cb1-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
@@ -1090,7 +1090,7 @@ nsTaskExitCode: 0</code></pre>
 <li>knowing the name and region/zones of the PD to use</li>
 </ul>
 <p>Having to know these details and encoding them into an application’s deployment manifests imposes a greater burden on administrators, or necessitates more complex operators, or results in a less portable application. Or some combination of those outcomes.</p>
-<h2 id="storage-classes">Storage classes</h2>
+<h2 id="storage-classes">Storage classes <a href="#storage-classes">§</a></h2>
 <p>What we really want is to abstract over the storage implementations. We want to able to specify some high-level characteristics of the storage (e.g. block or file, fast or slow?). This is what <em>storage classes</em> provide. Then when we create a PVC, we can specify the desired capacity and class, and the cluster should <em>dynamically provision</em> an appropriate volume. As a result, applications are simpler to deploy and more portable.</p>
 <p>To see the storage classes available in a cluster:</p>
 <pre><code>ftweedal% oc get storageclass
@@ -1119,7 +1119,7 @@ standard (default)   kubernetes.io/cinder   Delete          WaitForFirstConsumer
 <span id="cb4-8"><a href="#cb4-8"></a><span class="at">  </span><span class="fu">resources</span><span class="kw">:</span></span>
 <span id="cb4-9"><a href="#cb4-9"></a><span class="at">    </span><span class="fu">requests</span><span class="kw">:</span></span>
 <span id="cb4-10"><a href="#cb4-10"></a><span class="at">      </span><span class="fu">storage</span><span class="kw">:</span><span class="at"> 10Gi</span></span></code></pre></div>
-<h2 id="dynamic-provisioning-in-action">Dynamic provisioning in action</h2>
+<h2 id="dynamic-provisioning-in-action">Dynamic provisioning in action <a href="#dynamic-provisioning-in-action">§</a></h2>
 <p>Let’s see what actually happens when we use dynamic provisioning. We will observe what objects are created and how their status changes as we create, use and delete a PVC that uses the default storage class.</p>
 <p>First let’s see what PVs exist:</p>
 <pre><code>ftweedal% oc get pv
@@ -1195,7 +1195,7 @@ ftweedal% oc get pv
 NAME                                       CAPACITY   ACCESS MODES   RECLAIM POLICY   STATUS    CLAIM                                             STORAGECLASS   REASON    AGE
 pvc-d3bc7c81-8a24-4318-a914-296dbdc5ec3f   100Gi      RWO            Delete           Bound     openshift-image-registry/image-registry-storage   standard                 7d23h</code></pre>
 <p><code>pvc-26d82d50-8e66-4938-bdee-f28ff2bcb49c</code> went away, as expected.</p>
-<h2 id="conclusion">Conclusion</h2>
+<h2 id="conclusion">Conclusion <a href="#conclusion">§</a></h2>
 <p>As we work toward operationalising FreeIPA in OpenShift, I am interested in how we can use storage classes to make for a smooth deployment across different environments and especially those for which OpenShift Dedicated is available.</p>
 <p>I also need to learn more about the best practices or common idioms for representing in storage classes the application suitability (e.g. file versus block storage) or performance characteristics of supported volume types in a cluster. To make it a bit more concrete, consider that for performance reasons we might require low-latency/high-throughput block storage for the 389 DS LDAP database storage. How can we express this abstract requirement such that we get a satisfactory result across a variety of “clouds” with no administrator effort? Hopefully storage classes are the answer. But if they are not the whole solution, from what I have learned so far I have a strong feeling that they will be a bit part of the solution.</p>]]></summary>
 </entry>
@@ -1209,16 +1209,16 @@ pvc-d3bc7c81-8a24-4318-a914-296dbdc5ec3f   100Gi      RWO            Delete     
 <p>A few years ago I implemented <em>lightweight CAs</em> in Dogtag. This feature allows multiple CAs to be hosted in a single Dogtag server instance. For now these are restricted to sub-CAs of the <em>main CA</em> but this is not a fundamental restriction.</p>
 <p>An important aspect of CA operation is <em>revocation</em>: the ability to revoke a certificate because of (suspected) key compromise, cessation of operation, it was superseded, etc. There are currently two main ways of conveying revocation status to clients: <em>Certificate Revocation Lists (CRLs)</em> and <em>Online Certificate Status Protocol (OCSP)</em>. CRLs and OCSP have their respective advantages and drawbacks. Suffice to say, for many security-conscious organisations CRLs are important (as is OCSP).</p>
 <p>There is currently no support for lightweight CA certificates in CRLs produced by Dogtag. The purpose of this post is to discuss the challenges and possible approaches to closing this gap.</p>
-<h2 id="overview-of-ocsp-and-crls">Overview of OCSP and CRLs</h2>
+<h2 id="overview-of-ocsp-and-crls">Overview of OCSP and CRLs <a href="#overview-of-ocsp-and-crls">§</a></h2>
 <p>OCSP (defined in <a href="https://tools.ietf.org/html/rfc6960">RFC 6960</a>) is a network protocol for determining certificate revocation status. Any relying party (e.g. a web browser validating a server certificate) can ask the CA’s <em>OCSP responder</em> for a signed assertion of whether or not the certificate is revoked. For scalability and performance reasons, TLS servers can periodically obtain OCSP responses for their certificate and convey them to clients in the TLS handshake; this feature is called <a href="https://en.wikipedia.org/wiki/OCSP_stapling">OCSP stapling</a>.</p>
 <p>On the other hand, CRLs are a more <em>passive</em> technology. X.509 CRLs are defined alongside X.509 certificates in <a href="https://tools.ietf.org/html/rfc5280">RFC 5280</a>. In the simple case a CRL is a signed, timestamped list of all revoked, non-exired certificates issued by a CA. The CA produces new CRLs on a fixed schedule (e.g. every 4 hours) and publishes them (e.g. on HTTP, in an LDAP directory, etc). Clients <em>somehow</em> obtain and refresh their CRL cache, and consult it when validating certificates. The CRL grows linearly in the number of revoked certificates so on a busy CA the CRL can become <em>huge</em>. Retrieving a large CRL takes time and bandwidth, storing it takes space, and consulting it takes time. The advantage is that validation requires no (additional) network traffic. The assumption is that the clients CRL cache is up to date.</p>
 <p>One further downside of CRLs is that they are only as good as their most recent update. What if your CRL is 3 hours old, the certificate of interest was revoked 1 hour ago, and it is still 1 hour until the next CRL gets published? In practice, every approach to revocation suffers from such a delay. Also in practice, the delay duration is often much greater for CRLs than for OCSP.</p>
-<h2 id="ocsp-support-for-lightweight-cas">OCSP support for Lightweight CAs</h2>
+<h2 id="ocsp-support-for-lightweight-cas">OCSP support for Lightweight CAs <a href="#ocsp-support-for-lightweight-cas">§</a></h2>
 <p>The initial release of the Dogtag lightweight CAs feature had OCSP support for certificates issued by lightweight CAs. It works properly and there is nothing more to be said about it.</p>
-<h2 id="crl-support-for-lightweight-cas">CRL support for lightweight CAs</h2>
+<h2 id="crl-support-for-lightweight-cas">CRL support for lightweight CAs <a href="#crl-support-for-lightweight-cas">§</a></h2>
 <p>As mentioned in the introduction, certificates issued by lightweight CAs are not included in the CRLs produced by Dogtag. <a href="https://pagure.io/dogtagpki/issue/1627">Ticket #1627</a> in the upstream Pagure tracks this issue.</p>
 <p>The reason this was not implemented in the initial release (or since) is that in the baseline case, a CRL can only include certificates from a single CA. Say we have the main CA <code>CN=MainCA</code> and lightweight sub-CA <code>CN=SubCA</code>. The CRL cannot include certificates from both CAs, because a CRL is just a list of serial numbers.</p>
-<h3 id="indirect-crls">Indirect CRLs</h3>
+<h3 id="indirect-crls">Indirect CRLs <a href="#indirect-crls">§</a></h3>
 <p>There is a way around this limitation. The <a href="https://tools.ietf.org/html/rfc5280#section-5.3.3">Certificate Issuer</a> CRL entry extension, if some other extensions on both the certificate and CRL are set up <em>just right</em>, allows a CRL to include certificates from multiple issuers. Such CRLs are called <em>indirect CRLs</em>. Conforming applications are not required to support indirect CRLs, and the extension is <em>critical</em> so there is a risk of compatibility issues if we were to use indirect CRLs for conveying revocation status of certificates issued by lightweight CAs.</p>
 <p>Apart from client support for the Certificate Issuer extension the other requirements for indirect CRLs to work are:</p>
 <ul>
@@ -1227,7 +1227,7 @@ pvc-d3bc7c81-8a24-4318-a914-296dbdc5ec3f   100Gi      RWO            Delete     
 <li>The trust anchor for the CRL must be the same as the trust anchor for the certificate. This means that indirect CRLs cannot work for lightweight CAs that do not chain to the same CA. This is only a potential problem if the lightweight CAs feature is enhanced to support hosting unrelated CAs (rather than sub-CAs).</li>
 </ul>
 <p>So to use indirect CRLs some minor changes to certificate profiles would be required. But the changes would be the same for all profiles and the content of the CRL Distribution Point extension would be the same regardless of which lightweight CA issues the certificate.</p>
-<h3 id="separate-crls">Separate CRLs</h3>
+<h3 id="separate-crls">Separate CRLs <a href="#separate-crls">§</a></h3>
 <p>An alternative approach is to create a separate CRL for each lightweight CA. This would avoid compatibility issues caused by the use of critical extensions that clients are not required to support. It also avoids the trust anchor limitations that would arise when hosting a lightweight CA that does not share a common trust root with the CRL issuer.</p>
 <p>From an implementation point of view there are two major challenges with this approach.</p>
 <ol type="1">
@@ -1235,15 +1235,15 @@ pvc-d3bc7c81-8a24-4318-a914-296dbdc5ec3f   100Gi      RWO            Delete     
 <li>The content of the CRL Distribution Point extension will differ according to the CA that is issuing the certificate. The CRLDP content is currently configured per-profile. New profile components or enhancements to the existing CRLDP profile component will be required.</li>
 </ol>
 <p>In my view it is not acceptable to have to define multiple profiles differing only the CRL Distribution Point extension. The CA issuing the certificate should, by default, set any extensions that relate specifically to itself, including the CRLDP (also <em>Authority Key Identifier</em> and <em>Authority Information Access</em>). For more specialised use cases, the CRLDP content could be <em>overridden</em> or <em>suppressed</em> on a per-profile basis.</p>
-<h3 id="deciding-the-approach">Deciding the approach</h3>
+<h3 id="deciding-the-approach">Deciding the approach <a href="#deciding-the-approach">§</a></h3>
 <p>Indirect CRLs is the lower-effort approach. But before choosing it, we ought to audit certificate verification libraries (especially OpenSSL, NSS and other libraries used in Fedora, RHEL and other Red Hat products) to see if they support indirect CRLs. If support is widespread, the approach is viable. If support is not widespread, it is not a good idea.</p>
 <p>Thinking longer-term, this is a good opportunity to improve the administrator experience. Maybe now is a good time to implement useful features like automatic CRL generation for each CA in a Dogtag instance, and profile components that create a CRL Distribution Point extension that points to the CRL for the CA that is issuing the certificate. The current configuration approach is versatile and can handle all kinds of wild CRL scenarios. But it is <em>hostile</em> to getting things right for the common case.</p>
 <p>This decision will probably not be mine to make because I will soon be leaving the Dogtag team. But I hope this post is useful to whoever is involved in the eventual decision.</p>
-<h3 id="profile-changes">Profile changes</h3>
+<h3 id="profile-changes">Profile changes <a href="#profile-changes">§</a></h3>
 <p>Both of the discussed approaches require some changes to profile configuration. Required profile changes means upgrade steps to update them. This can be tricky especially in mixed-version topologies when new profile components (if any) are present on some servers but not others.</p>
-<h3 id="the-do-nothing-option">The “do nothing” option</h3>
+<h3 id="the-do-nothing-option">The “do nothing” option <a href="#the-do-nothing-option">§</a></h3>
 <p>Lightweight CAs have been available for nearly 4 years. I can only recall one or two queries about lightweight CA CRL support. To be clear, it is a fair ask. But it seems that OCSP is sufficient for most customers. Or perhaps there is a lack of awareness that CRLs do not include certificates issued by lightweight CAs. Whatever the case, the low demand aligns with my own opinion that although CRL support for lightweight CAs is a nice-to-have, it is not of critical importance to many users or customers.</p>
-<h2 id="conclusion">Conclusion</h2>
+<h2 id="conclusion">Conclusion <a href="#conclusion">§</a></h2>
 <p>In this post I identified two possible approaches to CRL support for lightweight CAs. Each approach has advantages, drawbacks and unique challenges. Never implementing it is also an option to be considered because demand, though it does exist, seems low.</p>
 <p>I haven’t often discussed revocation in detail, so it is probably worth mentioning other approaches besides CRLs and OCSP.</p>
 <p><em>Ephemeral PKI</em> avoids the problem by only issuing very short lived certificates, e.g. one week, one day or even less! Assuming keys are rotated just as frequently, when certificate lifetimes approach the “lag” time revocation solutions, the revocation solution is not needed.</p>

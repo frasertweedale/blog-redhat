@@ -28,7 +28,7 @@
     <h1 id="dogtag-replica-range-management">Dogtag replica range management</h1>
 <p>Dogtag supports distributed deployment, with multiple <em>replicas</em> (also called <em>clones</em>) processing requests and issuing certificates. All replicas read and write a replicated LDAP database. A Dogtag server can create many kinds of objects: certificates, requests, archived keys or secrets. These objects need identifiers that are unique across the deployment.</p>
 <p>How does a Dogtag clone choose an identifier for a new object? In this post I will explain Dogtag’s <em>range management</em>—how it works, how it can break, and what to do if it does.</p>
-<h2 id="object-types-with-managed-ranges">Object types with managed ranges</h2>
+<h2 id="object-types-with-managed-ranges">Object types with managed ranges <a href="#object-types-with-managed-ranges">§</a></h2>
 <p>There are several types of objects for which Dogtag manages identifier ranges. For example:</p>
 <ul>
 <li>Certificate serial numbers; it is essential that these be unique. Collisions are a violation of X.509 and can lead to erroneous <strong>denial of service</strong>, or <strong>false positive</strong> validity, when revocation comes into play.</li>
@@ -38,9 +38,9 @@
 <li>Clones themselves are assigned identifiers when they are created; these come from managed ranges.</li>
 </ul>
 <p>The identifiers themselves are unbounded nonzero integers. All of the managed ranges are separate domains. That is, the same numbers exist in each range, and the ranges are managed independently.</p>
-<h2 id="active-and-standby-ranges">Active and standby ranges</h2>
+<h2 id="active-and-standby-ranges">Active and standby ranges <a href="#active-and-standby-ranges">§</a></h2>
 <p>For each kind of range, each replica remembers up to two range assignments. The <em>active</em> range is the range from which identifiers are actively assigned. When the active range is exhausted, the <em>standby</em> range becomes the active range and the clone acquires a new range assignment, which will be the new standby range. A clone doesn’t necessarily have a standby range at all times. It only acquires a new allocation for the standby range when the unused amount of its active range falls below some configured <em>low water mark</em>.</p>
-<h2 id="range-assignments">Range assignments</h2>
+<h2 id="range-assignments">Range assignments <a href="#range-assignments">§</a></h2>
 <p>Range assignments are recorded in LDAP. A clone’s active and standby ranges are also recorded in the clone’s <code>CS.cfg</code> configuration file. A range object looks like:</p>
 <pre><code>dn: cn=10000001,ou=certificateRepository,ou=ranges,o=ipaca
 objectClass: top
@@ -67,12 +67,12 @@ dbs.serialCloneTransferNumber=10000
 dbs.serialIncrement=10000000
 dbs.serialLowWaterMark=2000000</code></pre>
 <p>The active range is <code>fff0001..10000000</code>, and the standby range is <code>10000001..20000000</code>, which corresponds to the LDAP entry shown above.</p>
-<h3 id="range-delegation">Range delegation</h3>
+<h3 id="range-delegation">Range delegation <a href="#range-delegation">§</a></h3>
 <p>Why is <code>f30-1</code>’s active range so much smaller than its standby range? This is the result of how ranges are assigned during cloning. When creating a clone, the server being configured contacts an existing clone and asks it for some configuration values, including serial/request/replica ID ranges. The existing clone <em>delegates</em> to the new clone a small segment of either its active or standby range. It delegates <em>from the end</em> of its active range, but if there are not enough numbers left in the active range, it delegates from the end the standby range instead.</p>
 <p>The size of the range delegation is configured in <code>CS.cfg</code>. For example, for serial numbers it is the <code>dbs.serialCloneTransferNumber</code> setting. I have never heard of anyone changing the default, and I can’t think of a reason to do so.</p>
 <p>Because the delegation is a portion of an already-assigned range (with corresponding LDAP object), new LDAP range objects are not created for delegated ranges, and the existing range object is not modified in any way. Therefore, LDAP only ever shows the <em>original</em> range assignments.</p>
 <p>This range delegation procedure has been a source of bugs. For example, <a href="https://pagure.io/dogtagpki/issue/3055">issue 3055</a> was a cloning failure when creating two clones (call them <em>C</em> and <em>D</em>) from a server that is itself a clone (call it <em>B</em>). Because the delegation size is fixed (the <code>dbs.serialCloneTransferNumber</code> setting), creating <em>C</em> delegates <em>B</em>’s whole active range to <em>C</em>. Unless <em>B</em> had a chance to switch to its standby range (when didn’t happen during cloning), creating the second clone <em>D</em> would fail because <em>B</em>’s active range was exhausted. This issue was fixed, but a more robust solution is to do away with range delegation entirely; the server can create full range assignments for the new clone instead of delegating part of its own range assignment. <a href="https://pagure.io/dogtagpki/issue/3060">Issue 3060</a> tracks this work.</p>
-<h2 id="random-serial-numbers">Random serial numbers</h2>
+<h2 id="random-serial-numbers">Random serial numbers <a href="#random-serial-numbers">§</a></h2>
 <p>Most repositories with range management yield numbers sequentially from the active ranges. For the certificate repository only, you can optionally enable <em>random</em> serial numbers. Numbers are chosen by a uniform random sample from the clone’s assigned range. Dogtag checks to make sure the number was not already used; if it was used, it tries again (and again, up to a limit).</p>
 <p>Some additional configuration values come into play when using random serial numbers:</p>
 <dl>
@@ -90,7 +90,7 @@ dbs.serialLowWaterMark=2000000</code></pre>
 </dd>
 </dl>
 <p>Critically, The <code>dbs.minimumRandomBits</code> does <em>not</em> determine how much entry is in the serial number. If many serial numbers in the range have already been used, the actual number of serials left could be less than <code>dbs.minimumRandomBits</code> of entropy. When issuing random serial numbers, the server keeps a running count of how many serial numbers have been used in the active range. When the range size minus the current count falls below <code>dbs.serialLowWaterMark</code>, the server switches to the standby range. Therefore it is <code>dbs.serialLowWaterMark</code>, not <code>dbs.minimumRandomBits</code>, that actually controls the minimum amount of randomness in the serial number.</p>
-<h2 id="switching-to-the-standby-range">Switching to the standby range</h2>
+<h2 id="switching-to-the-standby-range">Switching to the standby range <a href="#switching-to-the-standby-range">§</a></h2>
 <p>The actions performed by the subroutine that switches to the next range are:</p>
 <dl>
 <dt>1. Set the active range start and end variables to the standby range</dt>
@@ -103,10 +103,10 @@ dbs.serialLowWaterMark=2000000</code></pre>
 <li>Persist these changes to <code>CS.cfg</code>.</li>
 </ol>
 <p>The switchover procedure <strong>does not acquire a new standby range assignment</strong>. Immediately after switching to the standby range, there isn’t a standby range anymore.</p>
-<h2 id="acquiring-a-new-range-assignment">Acquiring a new range assignment</h2>
+<h2 id="acquiring-a-new-range-assignment">Acquiring a new range assignment <a href="#acquiring-a-new-range-assignment">§</a></h2>
 <p>As currently implemented, a new standby range is <strong>only acquired at system startup</strong>. Dogtag checks each repository to see if the amount of unused numbers in the active range has fallen below the <em>low water mark</em>. If it has, and if there is no standby range, it self-allocates a new range assignment in LDAP. The size of the allocation is determined by <code>CS.cfg</code> configurables, and its lower bound is the value of the <code>nextRange</code> attribute in the repository parent LDAP object. It adds a range object to the ranges subtree, and updates the <code>nextRange</code> attribute on the repository parent. See the appendix for a list of which subtree parents and range entries are involved for each repository.</p>
 <p>This procedure is brittle under the possibliity of LDAP replication races or transient failures. Two clones could end up adding the same range, and a replication error will occur. This can lead to identifier collisions resulting in problems later (see earlier discussion).</p>
-<h2 id="internals">Internals</h2>
+<h2 id="internals">Internals <a href="#internals">§</a></h2>
 <p>Most of everything discussed so far lives in the <code>Repository</code> class, with <code>CertificateRepository</code> providing additional behaviour related to random serial numbers. Code for acquiring a new range assignment lives in <code>DBSubsystem</code>. Some methods of interest include:</p>
 <dl>
 <dt><code>Repository.getNextSerialNumber</code></dt>
@@ -125,7 +125,7 @@ dbs.serialLowWaterMark=2000000</code></pre>
 <dd><p>This method creates the LDAP range object and updates the <code>nextRange</code> attribute, returning the range bounds to the caller.</p>
 </dd>
 </dl>
-<h2 id="fixing-range-conflicts">Fixing range conflicts</h2>
+<h2 id="fixing-range-conflicts">Fixing range conflicts <a href="#fixing-range-conflicts">§</a></h2>
 <p>If you have range conflicts, the following high-level steps can be followed to fix them:</p>
 <ol type="1">
 <li>Stop all Dogtag servers.</li>
@@ -137,16 +137,16 @@ dbs.serialLowWaterMark=2000000</code></pre>
 <li>Start Dogtag servers. If some servers do not have a standby range, it is a good idea to stagger their startup. Otherwise there is a high risk of an immediate replication race causing range conflicts as servers acquire new range assignments.</li>
 </ol>
 <p>Note that this procedure will <em>not</em> save your skin if, e.g., multiple certificates with the same serial number were issued. Renewal problems may be unavoidable when collisions have occurred. This is the main reason we are switching to <a href="https://pagure.io/freeipa/issue/7991">profile-based renewal</a> for FreeIPA system certificates. Renewal requests refer to existing certificate and requests by serial / request ID. Thus if there have been range conflicts they are susceptible to failure or issuance of certificates with incorrect attributes. Performing a “fresh enrolment” when renewing system certificates avoids these problems because the profile enrolment request does not refer to any existing certificates or requests.</p>
-<h2 id="discussion">Discussion</h2>
+<h2 id="discussion">Discussion <a href="#discussion">§</a></h2>
 <p>Dogtag is over 20 years old, and I suppose that sequential numbers with range management made sense at the time. Maybe a multi-server deployment with a replicated database was not foreseen, and range management was bolted on later when the requirement emerged. Maybe using random identifiers was seen as difficult to get write; UUIDs were not widespread back then. Or maybe using random numbers was seen as not user-friendly (and that is true, but when you have more than one replica the ranged identifiers aren’t much better).</p>
 <p>On the fact of some ranges using base 16 (hexademical) and others using base 10: I cannot even imagine why this is so. Extra user and operator pain, for what gain? I cannot tell. The reasons are probably, like so many things in old programs, lost in time.</p>
 <p>The random serial number configuration and behaviour is… not state of the art. The program logic is difficult to follow and it is not clear which configuration directives govern the (minimum) amount of entropy in the chosen numbers.</p>
 <p>If I were designing a system like Dogtag today, I would use random UUIDs for everything, except possibly serial numbers. There are <a href="https://en.wikipedia.org/wiki/UUID#Version_4_(random)">122 bits of entropy</a> in a Version 4 UUID. The current CA/Browser Forum <a href="https://cabforum.org/wp-content/uploads/CA-Browser-Forum-BR-1.6.5.pdf">Baseline Requirements</a> (v1.6.5) require serial numbers with 64 bits of high-quality randomness, but if that is ever increased beyond 122 bits a UUID won’t cut it anymore. So I would just use very large random numbers for all serial numbers.</p>
 <p>Can we move Dogtag from what we have now to something more robust? Of course it is possible, but it would be a big effort. So all that is likely to happen is smaller, well understood and bounded efforts with an obvious payoff, like avoiding range delegation (<a href="https://pagure.io/dogtagpki/issue/3060">Issue 3060</a>).</p>
 <p>The new FreeIPA <a href="https://www.freeipa.org/page/V4/Healthcheck">Health Check</a> system provides pluggable checks for system health. There is an open ticket to implement Dogtag range conflict and sanity checking in the Health Check tool, so that problems can be detected before they cause major failures.</p>
-<h2 id="appendix-range-configuration-directives-and-objects">Appendix: range configuration directives and objects</h2>
+<h2 id="appendix-range-configuration-directives-and-objects">Appendix: range configuration directives and objects <a href="#appendix-range-configuration-directives-and-objects">§</a></h2>
 <p>In all LDAP DNs below, substitute <code>o=ipaca</code> with the relevant base DN.</p>
-<h3 id="certificate-serial-numbers">Certificate serial numbers</h3>
+<h3 id="certificate-serial-numbers">Certificate serial numbers <a href="#certificate-serial-numbers">§</a></h3>
 <p>Base: <strong>hexademical</strong></p>
 <p><code>CS.cfg</code> attributes:</p>
 <pre><code>dbs.beginSerialNumber
@@ -158,7 +158,7 @@ dbs.serialIncrement</code></pre>
 <pre><code>dn: ou=certificateRepository,ou=ca,o=ipaca</code></pre>
 <p>LDAP ranges subtree parent:</p>
 <pre><code>dn: ou=certificateRepository,ou=ranges,o=ipaca</code></pre>
-<h3 id="ca-requests">CA requests</h3>
+<h3 id="ca-requests">CA requests <a href="#ca-requests">§</a></h3>
 <p>Base: <strong>demical</strong></p>
 <p><code>CS.cfg</code> attributes:</p>
 <pre><code>dbs.beginRequestNumber
@@ -170,7 +170,7 @@ dbs.requestIncrement</code></pre>
 <pre><code>dn: ou=ca,ou=requests,o=ipaca</code></pre>
 <p>LDAP ranges subtree parent:</p>
 <pre><code>dn: ou=requests,ou=ranges,o=ipaca</code></pre>
-<h3 id="replica-numbers">Replica numbers</h3>
+<h3 id="replica-numbers">Replica numbers <a href="#replica-numbers">§</a></h3>
 <p>Base: <strong>demical</strong></p>
 <p><code>CS.cfg</code> attributes:</p>
 <pre><code>dbs.beginReplicaNumber
@@ -182,7 +182,7 @@ dbs.replicaIncrement</code></pre>
 <pre><code>dn: ou=replica,o=ipaca</code></pre>
 <p>LDAP ranges subtree parent:</p>
 <pre><code>dn: ou=replica,ou=ranges,o=ipaca</code></pre>
-<h3 id="kra-keys">KRA keys</h3>
+<h3 id="kra-keys">KRA keys <a href="#kra-keys">§</a></h3>
 <p>Base: <strong>hexademical</strong></p>
 <p><code>kra/CS.cfg</code> attributes:</p>
 <pre><code>dbs.beginSerialNumber
@@ -194,7 +194,7 @@ dbs.serialIncrement</code></pre>
 <pre><code>dn: ou=keyRepository,ou=kra,o=kra,o=ipaca</code></pre>
 <p>LDAP ranges subtree parent:</p>
 <pre><code>dn: ou=keyRepository,ou=ranges,o=kra,o=ipaca</code></pre>
-<h3 id="kra-requests">KRA requests</h3>
+<h3 id="kra-requests">KRA requests <a href="#kra-requests">§</a></h3>
 <p>Base: <strong>demical</strong></p>
 <p><code>kra/CS.cfg</code> attributes:</p>
 <pre><code>dbs.beginRequestNumber
@@ -206,7 +206,7 @@ dbs.requestIncrement</code></pre>
 <pre><code>dn: ou=kra,ou=requests,o=kra,o=ipaca</code></pre>
 <p>LDAP ranges subtree parent:</p>
 <pre><code>dn: ou=requests,ou=ranges,o=kra,o=ipaca</code></pre>
-<h3 id="kra-replicas-numbers">KRA replicas numbers</h3>
+<h3 id="kra-replicas-numbers">KRA replicas numbers <a href="#kra-replicas-numbers">§</a></h3>
 <p>Base: <strong>demical</strong></p>
 <p><code>CS.cfg</code> attributes:</p>
 <pre><code>dbs.beginReplicaNumber

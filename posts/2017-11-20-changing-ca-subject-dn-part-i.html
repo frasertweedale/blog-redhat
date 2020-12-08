@@ -28,23 +28,23 @@
     <h1 id="changing-a-cas-subject-dn-part-i-dont-do-that">Changing a CA’s Subject DN; Part I: Don’t Do That</h1>
 <p>When you deploy an X.509 certificate authority (CA), you choose a <em>Subject Distinguished Name</em> for that CA. It is sometimes abbreviated as <em>Subject DN</em>, <em>Subject Name</em>, <em>SDN</em> or just <em>Subject</em>.</p>
 <p>The Subject DN cannot be changed; it is “for life”. But sometimes someone wants to change it anyway. In this article I’ll speculate why someone might want to change a CA’s Subject DN, discuss why it is problematic to do so, and propose some alternative approaches.</p>
-<h2 id="what-is-the-subject-dn">What is the Subject DN?</h2>
+<h2 id="what-is-the-subject-dn">What is the Subject DN? <a href="#what-is-the-subject-dn">§</a></h2>
 <p>A distinguished name (DN) is a sequence of sets of name attribute types and values. Common attribute types include <em>Common Name (CN)</em>, <em>Organisation (O)</em>, <em>Organisational Unit (OU)</em>, <em>Country (C)</em> and so on. DNs are encoded in ASN.1, but have a well defined string representation. Here’s an example CA subject DN:</p>
 <pre><code>CN=DigiCert Global Root CA,OU=www.digicert.com,O=DigiCert Inc,C=US</code></pre>
 <p>All X.509 certificates contain an <em>Issuer DN</em> field and a <em>Subject DN</em> field. If the same value is used for both issuer and subject, it is a <em>self-signed certificate</em>. When a CA issues a certificate, the <em>Issuer DN</em> on the issued certificate shall be the <em>Subject DN</em> of the CA certificate. This relationship is a “link” in the chain of signatures from some <em>root CA</em> to <em>end entity</em> (or <em>leaf</em>) certificate.</p>
 <p>The Subject DN uniquely identifies a CA. <strong>It is the CA</strong>. A CA can have multiple concurrent certificates, possibly with different public keys and key types. But if the Subject DN is the same, they are just different certificates for a single CA. Corollary: if the Subject DN differs, it is a different CA <em>even if the key is the same</em>.</p>
-<h2 id="ca-subject-dn-in-freeipa">CA Subject DN in FreeIPA</h2>
+<h2 id="ca-subject-dn-in-freeipa">CA Subject DN in FreeIPA <a href="#ca-subject-dn-in-freeipa">§</a></h2>
 <p>A standard installation of FreeIPA includes a CA. It can be a root CA or it can be signed by some other CA (e.g. the Active Directory CA of the organisation). As of FreeIPA v4.5 you can specify any CA Subject DN. Earlier versions required the subject to start with <code>CN=Certificate Authority</code>.</p>
 <p>If you don’t explicitly specify the subject during installation, it defaults to <code>CN=Certificate Authority, O=EXAMPLE.COM</code> (replace <code>EXAMPLE.COM</code> with the actual realm name).</p>
-<h2 id="why-change-the-ca-subject-dn">Why change the CA Subject DN?</h2>
+<h2 id="why-change-the-ca-subject-dn">Why change the CA Subject DN? <a href="#why-change-the-ca-subject-dn">§</a></h2>
 <p>Why would someone want to change a CA’s Subject DN? Usually it is because there is some organisational or regulatory requirement for the Subject DN to have a particular form. For whatever reason the Subject DN doesn’t comply, and now they want to bring it into compliance. In the FreeIPA case, we often see that the default CA Subject DN was accepted, only to later realise that a different name is needed.</p>
 <p>To be fair, the FreeIPA installer does not prompt for a CA Subject DN but rather uses the default form unless explicitly told otherwise via options. Furthermore, the CA Subject DN is not mentioned in the summary of the installation parameters prior to confirming and proceeding with the installation. And there are the aforementioned restrictions in FreeIPA &lt; v4.5. So in most cases where a FreeIPA administrator wants to change the CA Subject DN, it is not because <em>they chose</em> the wrong one, rather they were <em>not given an opportunity</em> to choose the right one.</p>
-<h2 id="implications-of-changing-the-ca-subject-dn">Implications of changing the CA Subject DN</h2>
+<h2 id="implications-of-changing-the-ca-subject-dn">Implications of changing the CA Subject DN <a href="#implications-of-changing-the-ca-subject-dn">§</a></h2>
 <p>In the X.509 data model the Subject DN is the essence of a CA. So what happens if we do change it? There are several areas of concern, and we will look at each in turn.</p>
-<h3 id="certification-paths">Certification paths</h3>
+<h3 id="certification-paths">Certification paths <a href="#certification-paths">§</a></h3>
 <p>Normally when you renew a CA certificate, you don’t need to keep the old CA certificates around in your trust stores. If the new CA certificate is within its validity period you can just replace the old certificate, and everything will keep working.</p>
 <p>But if you change the Subject DN, you need to keep the old certificate around, because previously issued certificates will bear the <em>old</em> Issuer DN. Conceptually this is not a problem, but many programs and libraries cannot cope with multiple subjects using the same key. In this case the only workaround is to reissue every certificate, with the new Issuer DN. This is a nightmare.</p>
-<h3 id="crls">CRLs</h3>
+<h3 id="crls">CRLs <a href="#crls">§</a></h3>
 <p>A <em>certificate revocation list</em> is a signed list of non-expired certificates that have been revoked. A CRL issuer is either the CA itself, or a trusted delegate. A CRL signing delegate has its own signing key and an X.509 certificate issued by the CA, which asserts that the subject is a CRL issuer. Like certificates, CRLs have an Issuer DN field.</p>
 <p>So if the CA’s Subject DN changes, then CRLs issued by that CA must use the new name in the Issuer field. But recall that certificates are uniquely identified by the Issuer DN and Serial (think of this as a composite primary key). So if the CRL issuer changes (or the issuer of the CRL issuer), all the old revocation information is invalid. Now you must maintain two CRLs:</p>
 <ul>
@@ -53,25 +53,25 @@
 </ul>
 <p>If a CRL signing delegate is used, there is further complexity. You need two separate CRL signing certificates (one with the old Issuer DN, one with the new), and must</p>
 <p>Suffice to say, a lot of CA programs do not handle these scenarios nicely or at all.</p>
-<h3 id="ocsp">OCSP</h3>
+<h3 id="ocsp">OCSP <a href="#ocsp">§</a></h3>
 <p>The <em>Online Certificate Status Protocol</em> is a protocol for checking the revocation status of a single certificate. Like CRLs, OCSP responses may be signed by the issuing CA itself, or a delegate.</p>
 <p>As in the CRL delegation case, different OCSP delegates must be used depending on which DN was the Issuer of the certificate whose status is being checked. If performing direct OCSP signing, if identifying the Responder ID by name, then the old or new name would be included depending on the Issuer of the certificate.</p>
-<h3 id="performing-the-change">Performing the change</h3>
+<h3 id="performing-the-change">Performing the change <a href="#performing-the-change">§</a></h3>
 <p>Most CA programs do not offer a way to change the Subject DN. This is not surprising, given that the operation just doesn’t fit into X.509 at all, to say nothing of the implementation considerations that arise.</p>
 <p>It may be possible to change the CA Subject DN with some manual effort. In a follow-up post I’ll demonstrate how to change the CA Subject DN in a FreeIPA deployment.</p>
-<h2 id="alternative-approaches">Alternative approaches</h2>
+<h2 id="alternative-approaches">Alternative approaches <a href="#alternative-approaches">§</a></h2>
 <p>I have outlined reasons why renaming a CA is a Bad Idea. So what other options are there?</p>
 <p>Whether any of the follow options are viable depends on the use case or requirements. They might not be viable. If you have any other ideas about this I would love to have your feedback! So, let’s look at a couple of options.</p>
-<h3 id="do-nothing">Do nothing</h3>
+<h3 id="do-nothing">Do nothing <a href="#do-nothing">§</a></h3>
 <p>If you only want to change the CA Subject DN for cosmetic reasons, don’t. Unless there is a clear business or organisational imperative, just accept the way things are. Your efforts would be better spent somewhere else, I promise!</p>
-<h3 id="re-chaining-your-ca">Re-chaining your CA</h3>
+<h3 id="re-chaining-your-ca">Re-chaining your CA <a href="#re-chaining-your-ca">§</a></h3>
 <p>If there is a requirement for your <strong>root</strong> CA to have a Subject DN of a particular form, you could create a CA that satisfies the requirement somewhere else (e.g. a separate instance of Dogtag or even a standalone OpenSSL CA). Then you can <em>re-chain</em> your FreeIPA CA up to this new external CA. That is, you renew the CA certificate, but the issuer of the new IPA CA certificate is the new external CA.</p>
 <p>The new external CA becomes a trusted root CA, and your FreeIPA infrastructure and clients continue to function as normal. The FreeIPA CA is now an <em>intermediate</em> CA. No certificates need to be reissued, although some server configurations may need to be updated to include the new FreeIPA CA in their certificate chains.</p>
-<h3 id="subordinate-ca">Subordinate CA</h3>
+<h3 id="subordinate-ca">Subordinate CA <a href="#subordinate-ca">§</a></h3>
 <p>If certain end-entity certificates have to be issued by a CA whose Subject DN meets certain requirements, you could create a <em>subordinate CA</em> (or <em>sub-CA</em> for short) with a compliant name. That is, the FreeIPA CA issues an intermediate CA certificate with the desired Subject DN, and that CA issues the leaf certificates.</p>
 <p>FreeIPA support Dogtag <em>lightweight sub-CAs</em> as of v4.4 and there are no restrictions on the Subject DN (except uniqueness). Dogtag lightweight CAs live within the same Dogtag instance as the main FreeIPA CA. See <code>ipa help ca</code> for plugin documentation. One major caveat is that CRLs are not yet supported for lightweight CAs (there is an <a href="https://pagure.io/dogtagpki/issue/1627">open ticket</a>).</p>
 <p>You could also use the FreeIPA CA to issue a CA certificate for some other CA program (possible another deployment of Dogtag or FreeIPA).</p>
-<h2 id="conclusion">Conclusion</h2>
+<h2 id="conclusion">Conclusion <a href="#conclusion">§</a></h2>
 <p>In this post I explained what a CA’s Subject DN is, and how it is an integral part of how X.509 works. We discussed some of the conceptual and practical issues that arise when you change a CA’s Subject DN. In particular, path validation, CRLs and OCSP are affected, and a lot of software will break when encountering a “same key, different subject” scenario.</p>
 <p>The general recommendation for changing a CA’s subject DN is <strong>don’t</strong>. But if there is a real business reason why the current subject is unsuitable, we looked at a couple of alternative approaches that could help: re-chaining the CA, and creating sub-CAs.</p>
 <p>In my next post we will have an in-depth look how to change a FreeIPA CA’s Subject DN: how to do it, and how to deal with the inevitable breakage.</p>

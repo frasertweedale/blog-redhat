@@ -28,25 +28,25 @@
     <h1 id="certificate-renewal-and-revocation-in-freeipa">Certificate renewal and revocation in FreeIPA</h1>
 <p>A <a href="https://pagure.io/freeipa/issue/7482">recent FreeIPA ticket</a> has prompted a discussion about what revocation behaviour should occur upon certificate renewal. The ticket reported a regression: when renewing a certificate, <code>ipa cert-request</code> was no longer revoking the old certificate. But is revoking the certificate the correct behaviour in the first place?</p>
 <p>This post discusses the motivations and benefits of automatically revoking a principal’s certificates when a new certificate is issued. It is assumed that subjects of certificates are FreeIPA principals. Conclusions do not necessarily apply to other environments or use cases.</p>
-<h2 id="description-of-current-behaviour">Description of current behaviour</h2>
+<h2 id="description-of-current-behaviour">Description of current behaviour <a href="#description-of-current-behaviour">§</a></h2>
 <p>Notwithstanding the purported regression mentioned above, the current behaviour of FreeIPA is:</p>
 <ul>
 <li>for host and service principals: when a new certificate is issued, revoke previous certificate(s)</li>
 <li>for user principals: <em>never</em> automatically revoke certificates</li>
 </ul>
 <p>The revocation behaviour that occurs during <code>ipa cert-request</code> is actually defined in <code>ipa {host,service}-mod</code>. That is, when a <code>userCertificate</code> attribute value is removed, the removed certificates get revoked.</p>
-<h2 id="one-certificate-per-service-a-bad-assumption">One certificate per service: a bad assumption?</h2>
+<h2 id="one-certificate-per-service-a-bad-assumption">One certificate per service: a bad assumption? <a href="#one-certificate-per-service-a-bad-assumption">§</a></h2>
 <p>The automatic revocation regime makes a big assumption. Host or service principals are assumed to need only one certificate. This is usually the case. But it is not inconceivable that a service may need multiple certificates for different purposes. The current (intended) behaviour prevents a service from possessing multiple valid (non-revoked) certificates concurrently.</p>
-<h2 id="certificate-issuance-scenarios">Certificate issuance scenarios</h2>
+<h2 id="certificate-issuance-scenarios">Certificate issuance scenarios <a href="#certificate-issuance-scenarios">§</a></h2>
 <p>Let us abandon the assumption that a host or service only needs one certificate at a time. There are three basic scenarios where <code>cert-request</code> would be revoked to issue a certificate to a particular principal. In each scenario, there are different motivations and consequences related to revocation. We will discuss each scenario in turn.</p>
-<h3 id="certificate-for-new-purpose-non-renewal">Certificate for new purpose (non-renewal)</h3>
+<h3 id="certificate-for-new-purpose-non-renewal">Certificate for new purpose (non-renewal) <a href="#certificate-for-new-purpose-non-renewal">§</a></h3>
 <p>A certificate is being requested for some new purpose. The subject may already have certs issued to it for other purposes. Existing certificates <em>should not be revoked</em>. FreeIPA’s revocation behaviour excludes this use case for host and service certificates.</p>
-<h3 id="renewal-due-to-impending-expiry">Renewal due to impending expiry</h3>
+<h3 id="renewal-due-to-impending-expiry">Renewal due to impending expiry <a href="#renewal-due-to-impending-expiry">§</a></h3>
 <p>A certificate may be requested to renew an existing certificate. After the new certificate is issued, it does no harm to revoke the old certificate. But it is <em>not necessary to revoke</em> it; it will expire soon.</p>
-<h3 id="renewal-for-other-reasons">Renewal for other reasons</h3>
+<h3 id="renewal-for-other-reasons">Renewal for other reasons <a href="#renewal-for-other-reasons">§</a></h3>
 <p>A certificate could be renewed in advance of its expiration time for any reasons (e.g. re-key due to compromise, add a Subject Alternative Name, etc.) Conservatively, we’ll lump all the possible reasons together and say that it is <em>necessary to revoke</em> the certificate that is being replaced.</p>
 <p>What if the subject possesses multiple certificates for different purposes? Right now, for host and service principals we revoke them all.</p>
-<h2 id="proposed-changes">Proposed changes</h2>
+<h2 id="proposed-changes">Proposed changes <a href="#proposed-changes">§</a></h2>
 <p>A common theme is emerging. When we request a certificate, we want to revoke <em>at most one</em> certificate, i.e. the certificate being renewed (if any). This suggestion is applicable to service/host certificates as well as user certificates. It would admit the <em>multiple certificates for different purposes</em> use case for all principal types.</p>
 <p>How do we get there from where we are now?</p>
 <p>Observe that the <code>ipa cert-request</code> currently does not know (a) whether the request is a renewal or (b) what certificate is being renewed. Could we make <code>cert-request</code> smart enough to guess what it should do? Fuzzy heuristics that could be employed to make a guess, e.g. by examining certificate attributes, validity period, the subject public key, the profile and CA that were used, and so on. The guessing logic would be complex, and could not guarantee a correct answer. It is not the right approach.</p>
@@ -58,9 +58,9 @@
     --replace &quot;CN=Certificate Authority,O=EXAMPLE.COM;42&quot;</code></pre>
 <p>The <code>replace</code> option specifies the issuer and serial number of the certificate being replaced. After the new certificate is issued, <code>ipa cert-request</code> would attempt to revoke the specified certificate, and remove it from the principal’s <code>userCertificate</code> attribute. Certmonger would be able to supply the <code>replace</code> option (or whatever we call it).</p>
 <p>For any of the above suggestions it would be necessary to prominently and clearly outline the changes in release notes. The change in revocation behaviour could catch users off guard. It is important not to rush any changes through. We’ll need to engage with our user base to explain the changes, and outline steps to preserve the existing revocation behaviour if so desired.</p>
-<h3 id="ipa-hostservice-mod-changes"><code>ipa {host,service}-mod</code> changes</h3>
+<h3 id="ipa-hostservice-mod-changes"><code>ipa {host,service}-mod</code> changes <a href="#ipa-hostservice-mod-changes">§</a></h3>
 <p>Another (independent) enhancement to consider is an option to suppress the revocation behaviour of <code>ipa {host,service}-mod</code>, so that certificates could be removed from host/service entries without revoking them. A simple <code>--no-revoke</code> flag would suffice.</p>
-<h2 id="conclusion">Conclusion</h2>
+<h2 id="conclusion">Conclusion <a href="#conclusion">§</a></h2>
 <p>In this post I discussed how the current revocation behaviour of FreeIPA prevents hosts and services from using multiple certificates for different purposes. This is not the majority use case but I feel that we should support the use case. And we can, with a refinement of <code>ipa cert-request</code> behaviour.</p>
 <p>We ought to make it possible to revoke <em>only the certificate being renewed</em>. We can do this by preventing <code>ipa cert-request</code> from revoking certs and requiring a separate call to <code>ipa cert-revoke</code>. behaviour of <code>cert-request</code> Alternatively, we can add an option to <code>ipa cert-request</code> for explicitly specifying the certificate(s) to revoke. In either case, the Certmonger renewal helpers can be changed to ensure that renewals via Certmonger revoke the old certificate (while leaving the subject’s other certificates alone!)</p>
 <p>What do you think of the changes I’ve suggested? You can contribute to the <a href="https://lists.fedoraproject.org/archives/list/freeipa-devel@lists.fedorahosted.org/thread/G2BXRJNU5ATVXRNUPGE2Y4V3YJVXR7EC/">discussion</a> on the <em>freeipa-devel</em> mailing list.</p>

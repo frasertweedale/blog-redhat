@@ -27,7 +27,7 @@
 <div id="postContent">
     <h1 id="specifying-a-ca-subject-key-identifier-during-dogtag-installation">Specifying a CA Subject Key Identifier during Dogtag installation</h1>
 <p>When installing Dogtag with an externally-signed CA certificate, it is sometimes necessary to include a specific <em>Subject Key Identifier</em> value in the CSR. In this post I will demonstrate how to do this.</p>
-<h2 id="what-is-a-subject-key-identifier">What is a Subject Key Identifier?</h2>
+<h2 id="what-is-a-subject-key-identifier">What is a Subject Key Identifier? <a href="#what-is-a-subject-key-identifier">§</a></h2>
 <p>The X.509 <em>Subject Key Identifier (SKI)</em> extension declares a unique identifier for the public key in the certificate. It is required on all CA certificates. CAs propagate their own SKI to the <em>Issuer Key Identifier (AKI)</em> extension on issued certificates. Together, these facilitate efficient certification path construction; certificate databases can index certificates by SKI.</p>
 <p>The SKI must be unique for a given key. Most often it is derived from the public key data using a cryptographic digest, usually SHA-1. But any method of generating a unique value is acceptable.</p>
 <p>For example, let’s look at the CA certificate and one of the service certificates in a FreeIPA deployment. The CA is self-signed and therefore contains the same value in both the SKI and AKI extensions:</p>
@@ -95,14 +95,14 @@ Certificate:
               DNS:f29-0.ipa.local, othername:&lt;unsupported&gt;, othername:&lt;unsupported&gt;</code></pre>
 <p>Most CA programs, including Dogtag, automatically compute a SKI for every certificate being issued. Dogtag computes a SHA-1 hash over the <code>subjectPublicKey</code> value, which is the most common method. The value must be unique, but does not have to be derived from the public key.</p>
 <p>It is not required for a self-signed CA certificate to contain an AKI extension. Neither is it necessary to include a SKI in an end entity certificate. But it does not hurt to include them. Indeed it is common (as we see above).</p>
-<h2 id="use-case-for-specifying-a-ski">Use case for specifying a SKI</h2>
+<h2 id="use-case-for-specifying-a-ski">Use case for specifying a SKI <a href="#use-case-for-specifying-a-ski">§</a></h2>
 <p>If CAs can automatically compute a SKI, why would you need to specify one?</p>
 <p>The use case arises when you’re changing external CAs or switching from self-signed to externally-signed, or vice versa. The new CA might compute SKIs differently from the current CA. But it is important to keep using the same SKI. So it is desirable to include the SKI in the CSR to indicate to the CA the value that should be used.</p>
 <p>Not every CA program will follow the suggestion. Or the behaviour may be configurable, system-wide or per-profile. If you’re using Dogtag / RHCS to sign CA certificates, it is straightforward to define a profile that uses an SKI supplied in the CSR (but that is beyond the scope of this article).</p>
-<h2 id="including-an-ski-in-a-dogtag-csr">Including an SKI in a Dogtag CSR</h2>
+<h2 id="including-an-ski-in-a-dogtag-csr">Including an SKI in a Dogtag CSR <a href="#including-an-ski-in-a-dogtag-csr">§</a></h2>
 <p>At time of writing, this procedure is supported in Dogtag 10.6.9 and later, which is available in Fedora 28 and Fedora 29. It will be supported in a future version of RHEL. The behaviour depends on a recent enhancement to the <code>certutil</code> program, which is part of NSS. That enhancement is not in RHEL 7 yet, hence this Dogtag feature is not yet available on RHEL 7.</p>
 <p>When installing Dogtag using the two-step external signing procedure, by default no SKI is included the CSR. You can change this via the <code>pki_req_ski</code> option. The option is described in the <code>pki_default.cfg(5)</code> man page. There are two ways to use the option, and we will look at each in turn.</p>
-<h3 id="default-method">Default method</h3>
+<h3 id="default-method">Default method <a href="#default-method">§</a></h3>
 <pre><code>[CA]
 pki_req_ski=DEFAULT</code></pre>
 <p>This special value will cause the CSR to contain a SKI value computed using the same method Dogtag itself uses (SHA-1 digest). Adding this value resulted in the following CSR data:</p>
@@ -121,7 +121,7 @@ pki_req_ski=DEFAULT</code></pre>
             X509v3 Key Usage: critical
                 Digital Signature, Non Repudiation, Certificate Sign, CRL Sign</code></pre>
 <p>The SKI value is the SHA-1 digest of the public key. Of course, it will be different every time, because a different key will be generated.</p>
-<h3 id="explicit-ski">Explicit SKI</h3>
+<h3 id="explicit-ski">Explicit SKI <a href="#explicit-ski">§</a></h3>
 <pre><code>[CA]
 pki_req_ski=&lt;hex data&gt;</code></pre>
 <p>An exact SKI value can be specified as a hex-encode byte string. The datum <strong>must not</strong> have a leading <code>0x</code>. I used the following configuration:</p>
@@ -142,10 +142,10 @@ pki_req_ski=00D06F00D4D06746</code></pre>
                 CA:TRUE
             X509v3 Key Usage: critical
                 Digital Signature, Non Repudiation, Certificate Sign, CRL Sign</code></pre>
-<h2 id="renewal">Renewal</h2>
+<h2 id="renewal">Renewal <a href="#renewal">§</a></h2>
 <p>We don’t have direct support for including the SKI in the CSR generated for renewing an externally signed CA. But you can use <code>certutil</code> to create a CSR that includes the desired SKI.</p>
 <p>It could be worthwhile to enhance Certmonger to automatically include the SKI of the current certificate when it creates a CSR for renewing a tracked certificate.</p>
-<h2 id="freeipa-support">FreeIPA support</h2>
+<h2 id="freeipa-support">FreeIPA support <a href="#freeipa-support">§</a></h2>
 <p>We don’t expose this feature in FreeIPA directly. It can be hacked in pretty easily by modifying the Python code that builds the <code>pkispawn</code> configuration during installation. Alternatively, set the option in the <code>pkispawn</code> default configuration file: <code>/usr/share/pki/server/etc/default.cfg</code> (this is what I did to test the feature).</p>
 <p>Changes to be made as part of the <a href="https://github.com/freeipa/freeipa/pull/2307">upcoming HSM support</a> will, as a pleasant side effect, make it easy to specify or override <code>pkispawn</code> configuration values including <code>pki_req_ski</code>.</p>
 </div>
