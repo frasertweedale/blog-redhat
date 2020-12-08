@@ -1,5 +1,5 @@
 ---
-tags: acme, certificates
+tags: acme, certificates, dns
 ---
 
 ACME Service Discovery

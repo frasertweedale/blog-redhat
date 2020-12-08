@@ -1,5 +1,5 @@
 ---
-tags: openshift
+tags: openshift, dns
 ---
 
 Pod hostnames and FQDNs

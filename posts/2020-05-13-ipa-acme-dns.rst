@@ -1,5 +1,5 @@
 ---
-tags: acme, freeipa, certificates
+tags: acme, freeipa, certificates, dns
 ---
 
 ACME DNS challenges and FreeIPA
