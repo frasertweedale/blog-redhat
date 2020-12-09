@@ -35,7 +35,7 @@ The following Service definition defines an LDAP service::
       protocol: TCP
       port: 389
 
-  $ oc create -f service-test.yaml                                                                                                                
+  $ oc create -f service-test.yaml
   service/service-test created
 
 The Service controller creates *Endpoint* objects to associating
@@ -178,12 +178,76 @@ ServicePort specs::
       protocol: UDP
       port: 88
 
-  $ oc replace -f service-test.yaml 
+  $ oc replace -f service-test.yaml
   The Service "service-test" is invalid:
   spec.ports[2].name: Duplicate value: "kerberos"
 
 Well, that's a shame.  Kerberos does not admit this important use
 case.
+
+Endpoints do not have the limitation
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Interestingly, the Endpoints type does have this limitation.  The
+Service controller automatically creates Endpoints objects for
+Services.  The ServicePorts are (as far as I can tell) copied across
+to the Endpoints object.
+
+I can manually replace the ``endpoints/service-test`` object (see
+above) with the following spec that includes the "duplicate"
+``kerberos`` port::
+
+  $ cat endpoints.yaml
+  apiVersion: v1
+  kind: Endpoints
+  metadata:
+    creationTimestamp: "2020-12-07T03:51:30Z"
+    labels:
+      app: service-test
+      service.kubernetes.io/headless: ""
+    name: service-test
+  subsets:
+  - addresses:
+    - ip: 10.129.2.13
+      nodeName: ft-47dev-2-27h8r-worker-0-f8bnl
+      targetRef:
+        kind: Pod
+        name: service-test
+        namespace: test
+        resourceVersion: "5522680"
+        uid: 296030f5-8dff-4f69-be96-ce6f0aa12653
+    ports:
+    - name: ldap
+      port: 389
+      protocol: TCP
+    - name: kerberos
+      port: 88
+      protocol: TCP
+    - name: kerberos
+      port: 88
+      protocol: UDP
+
+  $ oc replace -f endpoints.yaml
+  endpoints/service-test replaced
+
+The object was accepted!  Observe that the DNS system responds and
+creates *both* the ``_kerberos._tcp`` and ``_kerberos._udp`` ``SRV``
+records::
+
+  $ oc rsh service-test
+
+  sh-5.0# dig +short SRV \
+      _kerberos._tcp.service-test.test.svc.cluster.local
+  0 100 88 10-129-2-13.service-test.test.svc.cluster.local.
+
+  sh-5.0# dig +short SRV \
+      _kerberos._udp.service-test.test.svc.cluster.local
+  0 100 88 10-129-2-13.service-test.test.svc.cluster.local.
+
+Therefore it seems the scope of this problem is limited to
+validation and processing of the ``Service`` object.  Other
+components of Kubernetes (Endpoint validation and the Cluster DNS
+Operator, at least) can already handle this use case.
 
 Possible resolutions
 --------------------
@@ -229,11 +293,15 @@ to introduce a new field.
 Next steps
 ----------
 
-I will file a bug report and solicit feedback about this post from
+I `filed a bug report`_ and submitted a `proof-of-concept pull
+request`_ to bring attention to the problem and solicit feedback
+from
 Kubernetes and OpenShift DNS experts.  It might be necessary to
 submit a `Kubernetes Enhancement Proposal`_ (KEP), but that seems
 (as a Kubernetes outsider) a long and windy road to landing what is
 a conceptually small change.
 
+.. _filed a bug report: https://github.com/kubernetes/kubernetes/issues/97149
+.. _proof of concept pull request: https://github.com/kubernetes/kubernetes/issues/97150
 .. _Kubernetes Enhancement Proposal:
    https://github.com/kubernetes/enhancements/blob/master/keps/README.md
