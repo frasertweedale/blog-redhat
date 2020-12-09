@@ -140,7 +140,7 @@ The Service &quot;service-test&quot; is invalid:
 spec.ports[2].name: Duplicate value: &quot;kerberos&quot;</code></pre>
 <p>Well, that’s a shame. Kerberos does not admit this important use case.</p>
 <h3 id="endpoints-do-not-have-the-limitation">Endpoints do not have the limitation <a href="#endpoints-do-not-have-the-limitation">§</a></h3>
-<p>Interestingly, the Endpoints type does have this limitation. The Service controller automatically creates Endpoints objects for Services. The ServicePorts are (as far as I can tell) copied across to the Endpoints object.</p>
+<p>Interestingly, the Endpoints type does not have this limitation. The Service controller automatically creates Endpoints objects for Services. The ServicePorts are (as far as I can tell) copied across to the Endpoints object.</p>
 <p>I can manually replace the <code>endpoints/service-test</code> object (see above) with the following spec that includes the “duplicate” <code>kerberos</code> port:</p>
 <pre><code>$ cat endpoints.yaml
 apiVersion: v1
