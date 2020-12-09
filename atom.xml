@@ -176,7 +176,7 @@ sh-5.0# dig +short SRV \
 0 100 88 10-129-2-13.service-test.test.svc.cluster.local.</code></pre>
 <p>Therefore it seems the scope of this problem is limited to validation and processing of the <code>Service</code> object. Other components of Kubernetes (Endpoint validation and the Cluster DNS Operator, at least) can already handle this use case.</p>
 <h2 id="possible-resolutions">Possible resolutions <a href="#possible-resolutions">§</a></h2>
-<p>I am not aware of any workarounds, but I see two possible approaches to resolving this issue.</p>
+<p>Besides manually fiddling with the Endpoints (eww) I am not aware of any workarounds, but I see two possible approaches to resolving this issue.</p>
 <p>One approach is to relax the uniqueness check. Instead of checking for uniqueness of ServicePort <code>name</code>, check for the uniqueness of the <code>name</code>/<code>protocol</code> pair. This is conceptually simple but I am not familiar enough with Kubernetes internals to judge the feasibility or technical tradeoffs of this approach. For users, nothing changes (except the example above would work!)</p>
 <p>Another approach is to add a new ServicePort field to specify the actual DNS service label to use. For the sake of discussion I’ll call it <code>serviceName</code>. It would be optional, defaulting to the value of <code>name</code>. This means <code>name</code> can still be the “primary key”, but the approach requires <em>another</em> uniqueness check on the <code>serviceName</code>/<code>protocol</code> pair. In our use case the configuration would look like:</p>
 <pre><code>...
