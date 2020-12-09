@@ -36,7 +36,7 @@ spec:
     protocol: TCP
     port: 389
 
-$ oc create -f service-test.yaml                                                                                                                
+$ oc create -f service-test.yaml
 service/service-test created</code></pre>
 <p>The Service controller creates <em>Endpoint</em> objects to associating each of the Service <code>ports</code> with each Pod matching the Service <code>selector</code>. If there are no matching pods, there are no endpoints:</p>
 <pre><code>$ oc get endpoints service-test
@@ -125,10 +125,56 @@ spec:
     protocol: UDP
     port: 88
 
-$ oc replace -f service-test.yaml 
+$ oc replace -f service-test.yaml
 The Service &quot;service-test&quot; is invalid:
 spec.ports[2].name: Duplicate value: &quot;kerberos&quot;</code></pre>
 <p>Well, that’s a shame. Kerberos does not admit this important use case.</p>
+<h3 id="endpoints-do-not-have-the-limitation">Endpoints do not have the limitation <a href="#endpoints-do-not-have-the-limitation">§</a></h3>
+<p>Interestingly, the Endpoints type does have this limitation. The Service controller automatically creates Endpoints objects for Services. The ServicePorts are (as far as I can tell) copied across to the Endpoints object.</p>
+<p>I can manually replace the <code>endpoints/service-test</code> object (see above) with the following spec that includes the “duplicate” <code>kerberos</code> port:</p>
+<pre><code>$ cat endpoints.yaml
+apiVersion: v1
+kind: Endpoints
+metadata:
+  creationTimestamp: &quot;2020-12-07T03:51:30Z&quot;
+  labels:
+    app: service-test
+    service.kubernetes.io/headless: &quot;&quot;
+  name: service-test
+subsets:
+- addresses:
+  - ip: 10.129.2.13
+    nodeName: ft-47dev-2-27h8r-worker-0-f8bnl
+    targetRef:
+      kind: Pod
+      name: service-test
+      namespace: test
+      resourceVersion: &quot;5522680&quot;
+      uid: 296030f5-8dff-4f69-be96-ce6f0aa12653
+  ports:
+  - name: ldap
+    port: 389
+    protocol: TCP
+  - name: kerberos
+    port: 88
+    protocol: TCP
+  - name: kerberos
+    port: 88
+    protocol: UDP
+
+$ oc replace -f endpoints.yaml
+endpoints/service-test replaced</code></pre>
+<p>The object was accepted! Observe that the DNS system responds and creates <em>both</em> the <code>_kerberos._tcp</code> and <code>_kerberos._udp</code> <code>SRV</code> records:</p>
+<pre><code>$ oc rsh service-test
+
+sh-5.0# dig +short SRV \
+    _kerberos._tcp.service-test.test.svc.cluster.local
+0 100 88 10-129-2-13.service-test.test.svc.cluster.local.
+
+sh-5.0# dig +short SRV \
+    _kerberos._udp.service-test.test.svc.cluster.local
+0 100 88 10-129-2-13.service-test.test.svc.cluster.local.</code></pre>
+<p>Therefore it seems the scope of this problem is limited to validation and processing of the <code>Service</code> object. Other components of Kubernetes (Endpoint validation and the Cluster DNS Operator, at least) can already handle this use case.</p>
 <h2 id="possible-resolutions">Possible resolutions <a href="#possible-resolutions">§</a></h2>
 <p>I am not aware of any workarounds, but I see two possible approaches to resolving this issue.</p>
 <p>One approach is to relax the uniqueness check. Instead of checking for uniqueness of ServicePort <code>name</code>, check for the uniqueness of the <code>name</code>/<code>protocol</code> pair. This is conceptually simple but I am not familiar enough with Kubernetes internals to judge the feasibility or technical tradeoffs of this approach. For users, nothing changes (except the example above would work!)</p>
@@ -148,7 +194,7 @@ ports:
   port: 88</code></pre>
 <p>From a UX perspective I prefer the first approach, because there are no changes or additions to the ServicePort configuration schema. But to maintain compatibility with programs that assume that <code>name</code> is unique (as is currently enforced), it might be necessary to introduce a new field.</p>
 <h2 id="next-steps">Next steps <a href="#next-steps">§</a></h2>
-<p>I will file a bug report and solicit feedback about this post from Kubernetes and OpenShift DNS experts. It might be necessary to submit a <a href="https://github.com/kubernetes/enhancements/blob/master/keps/README.md">Kubernetes Enhancement Proposal</a> (KEP), but that seems (as a Kubernetes outsider) a long and windy road to landing what is a conceptually small change.</p>]]></summary>
+<p>I <a href="https://github.com/kubernetes/kubernetes/issues/97149">filed a bug report</a> and submitted a <a href="">proof-of-concept pull request</a> to bring attention to the problem and solicit feedback from Kubernetes and OpenShift DNS experts. It might be necessary to submit a <a href="https://github.com/kubernetes/enhancements/blob/master/keps/README.md">Kubernetes Enhancement Proposal</a> (KEP), but that seems (as a Kubernetes outsider) a long and windy road to landing what is a conceptually small change.</p>]]></summary>
 </entry>
 <entry>
     <title>Pod hostnames and FQDNs</title>
