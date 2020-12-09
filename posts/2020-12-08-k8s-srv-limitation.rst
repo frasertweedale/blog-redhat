@@ -252,8 +252,9 @@ Operator, at least) can already handle this use case.
 Possible resolutions
 --------------------
 
-I am not aware of any workarounds, but I see two possible approaches
-to resolving this issue.
+Besides manually fiddling with the Endpoints (eww) I am not aware of
+any workarounds, but I see two possible approaches to resolving this
+issue.
 
 One approach is to relax the uniqueness check.  Instead of checking
 for uniqueness of ServicePort ``name``, check for the uniqueness of
