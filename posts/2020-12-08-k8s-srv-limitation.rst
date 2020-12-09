@@ -188,7 +188,7 @@ case.
 Endpoints do not have the limitation
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Interestingly, the Endpoints type does have this limitation.  The
+Interestingly, the Endpoints type does not have this limitation.  The
 Service controller automatically creates Endpoints objects for
 Services.  The ServicePorts are (as far as I can tell) copied across
 to the Endpoints object.
