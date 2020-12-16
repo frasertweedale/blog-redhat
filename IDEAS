@@ -1,9 +1,6 @@
 - ACME SRVName support?
   - Using Caddy with FreeIPA ACME service
 
-- JNA 
-  https://github.com/dogtagpki/pki/pull/569
-
 - Java ALPN shortcomings
   - https://docs.oracle.com/javase/9/docs/api/javax/net/ssl/SSLSocket.html#setHandshakeApplicationProtocolSelector-java.util.function.BiFunction-
   - https://docs.oracle.com/javase/9/docs/api/javax/net/ssl/SSLParameters.html#setApplicationProtocols-java.lang.String:A-
