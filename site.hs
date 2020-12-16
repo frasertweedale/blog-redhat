@@ -44,12 +44,12 @@ main = hakyll $ do
         >>= loadAndApplyTemplate "templates/default.html" homeContext
         >>= relativizeUrls
 
-  tags <- buildTags "posts/*.rst" (fromCapture "tags/*.html")
+  tags <- buildTags "posts/*" (fromCapture "tags/*.html")
 
   create ["archive.html"] $ do
     route idRoute
     compile $ do
-      posts <- recentFirst =<< loadAll ("posts/*.rst" .&&. hasNoVersion)
+      posts <- recentFirst =<< loadAll ("posts/*" .&&. hasNoVersion)
       tagCloud <- renderTagCloud 80 120 tags
       let archiveContext =
             listField "posts" context (pure posts)
@@ -62,7 +62,7 @@ main = hakyll $ do
         >>= relativizeUrls
 
   -- a version of the posts to use for "recent posts" list
-  match "posts/*.rst" $ version "recent" $ do
+  match "posts/*" $ version "recent" $ do
     route $ setExtension "html"
     compile $
       getResourceBody >>= saveSnapshot "source"
@@ -82,7 +82,7 @@ main = hakyll $ do
         >>= loadAndApplyTemplate "templates/default.html" ctx
         >>= relativizeUrls
 
-  match "posts/*.rst" $ do
+  match "posts/*" $ do
     route $ setExtension "html"
     compile $ do
       posts <- loadRecentPosts
@@ -109,14 +109,14 @@ main = hakyll $ do
       let feedContext =
             bodyField "description"
             `mappend` context
-      posts <- loadAllSnapshots ("posts/*.rst" .&&. hasNoVersion) "content"
+      posts <- loadAllSnapshots ("posts/*" .&&. hasNoVersion) "content"
         >>= fmap (take 10) . recentFirst
       renderAtom feedConfiguration feedContext posts
 
 
 loadRecentPosts :: Compiler [Item String]
 loadRecentPosts =
-  fmap (take 5) . recentFirst =<< loadAll ("posts/*.rst" .&&. hasVersion "recent")
+  fmap (take 5) . recentFirst =<< loadAll ("posts/*" .&&. hasVersion "recent")
 
 
 context :: Context String
