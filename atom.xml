@@ -8,8 +8,64 @@
         <name>Fraser Tweedale</name>
         <email>frase@frase.id.au</email>
     </author>
-    <updated>2020-12-08T00:00:00Z</updated>
+    <updated>2020-12-16T00:00:00Z</updated>
     <entry>
+    <title>Simple Java to C bindings via JNA</title>
+    <link href="https://frasertweedale.github.io/blog-redhat/posts/2020-12-16-java-jna.html" />
+    <id>https://frasertweedale.github.io/blog-redhat/posts/2020-12-16-java-jna.html</id>
+    <published>2020-12-16T00:00:00Z</published>
+    <updated>2020-12-16T00:00:00Z</updated>
+    <summary type="html"><![CDATA[<h1 id="simple-java-to-c-bindings-via-jna">Simple Java to C bindings via JNA</h1>
+<p>This post is an introduction to <em>JNI</em>, an FFI system for Java.</p>
+<p>Most languages offer a way to bind to (use) shared libraries, which are often written in C (Rust is becoming popular too). The general name for such a facility is <a href="https://en.wikipedia.org/wiki/Foreign_function_interface"><em>foreign function interface</em></a> (<em>FFI</em>). FFIs facilitate code reuse, and use of operating system-level functions that would not otherwise be possible.</p>
+<p>There are two significant FFI systems for Java. The older is <a href="https://docs.oracle.com/en/java/javase/14/docs/specs/jni/index.html"><em>Java Native Interface</em></a> (<em>JNI</em>)—an official Java standard. The <a href="https://github.com/dogtagpki/jss"><em>JSS</em></a> Java binding to the <a href="https://developer.mozilla.org/en-US/docs/Mozilla/Projects/NSS"><em>NSS</em></a> cryptography and security library makes heavy use of JNI. The main drawbacks of JNI are that it involves writing C, and is boilerplate-heavy.</p>
+<p><a href="https://github.com/java-native-access/jna"><em>Java Native Access</em></a> (<em>JNA</em>) offers a more lightweight approach. You import JNA as a library and define your binding as a native Java object. There is only a small amount of boilerplate to import the JNA packages, open the shared library, and declare Java method signatures for the functions you want to use. JNA performs <a href="https://github.com/java-native-access/jna/blob/5.6.0/www/Mappings.md">automatic conversion</a> between native Java and C types.</p>
+<p>If you are familiar with Python, you might recognise that the JNA approach is similar to <a href="https://cffi.readthedocs.io/en/latest/"><em>cffi</em></a>. In fact, JNA and cffi use the same underlying FFI library, <a href="https://sourceware.org/libffi/"><em>libffi</em></a>.</p>
+<h2 id="using-jna-in-dogtag">Using JNA in Dogtag <a href="#using-jna-in-dogtag">§</a></h2>
+<p>To simplify and speed up <a href="https://www.freeipa.org/">FreeIPA</a> startup, I needed to implement systemd notification support in <a href="https://www.dogtagpki.org/">Dogtag PKI</a>. Dogtag (when so configured) should call <a href="https://www.freedesktop.org/software/systemd/man/sd_notify.html"><code>sd_notify(3)</code></a> to notify the system service manager when it has started up and is ready to service requests.</p>
+<p>Dogtag already uses JNI in a few places (as does some of its dependencies, including JSS). But I was not keen to use JNI, with all its complexity, for this small use case. A colleague pointed me to JNA, and I decided to give it a go.</p>
+<p>The resulting code is so small I’ll just include it all here, with commentary. (I made some changes for clarity; you can review the actual patch in the <a href="https://github.com/dogtagpki/pki/pull/569/files">pull request</a>).</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode java"><code class="sourceCode java"><span id="cb1-1"><a href="#cb1-1"></a><span class="kw">package</span><span class="im"> com.netscape.cmscore.systemd;</span></span>
+<span id="cb1-2"><a href="#cb1-2"></a></span>
+<span id="cb1-3"><a href="#cb1-3"></a><span class="kw">import</span><span class="im"> com.sun.jna.Library;</span></span>
+<span id="cb1-4"><a href="#cb1-4"></a><span class="kw">import</span><span class="im"> com.sun.jna.Native;</span></span>
+<span id="cb1-5"><a href="#cb1-5"></a></span>
+<span id="cb1-6"><a href="#cb1-6"></a><span class="kw">public</span> <span class="kw">class</span> SystemdStartupNotifier {</span></code></pre></div>
+<p>Import JNA and begin the class definition.</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode java"><code class="sourceCode java"><span id="cb2-1"><a href="#cb2-1"></a><span class="kw">interface</span> Systemd <span class="kw">extends</span> Library {</span>
+<span id="cb2-2"><a href="#cb2-2"></a>    <span class="kw">public</span> <span class="dt">int</span> <span class="fu">sd_booted</span>();</span>
+<span id="cb2-3"><a href="#cb2-3"></a>    <span class="kw">public</span> <span class="dt">int</span> <span class="fu">sd_notify</span>(<span class="dt">int</span> unset_env, <span class="bu">String</span> state);</span>
+<span id="cb2-4"><a href="#cb2-4"></a>}</span></code></pre></div>
+<p>Declare an interface to the shared library by extending <code>sun.jna.Native</code>. Method signatures must match the native function signatures, according to the <a href="https://github.com/java-native-access/jna/blob/5.6.0/www/Mappings.md">type mappings</a>.</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode java"><code class="sourceCode java"><span id="cb3-1"><a href="#cb3-1"></a>Systemd systemd = <span class="kw">null</span>;</span>
+<span id="cb3-2"><a href="#cb3-2"></a></span>
+<span id="cb3-3"><a href="#cb3-3"></a><span class="kw">public</span> <span class="dt">void</span> <span class="fu">init</span>() {</span>
+<span id="cb3-4"><a href="#cb3-4"></a>    systemd = Native.<span class="fu">load</span>(<span class="st">&quot;systemd&quot;</span>, Systemd.<span class="fu">class</span>);</span>
+<span id="cb3-5"><a href="#cb3-5"></a>}</span></code></pre></div>
+<p><code>init()</code> gets called by initialisation code. <code>Native.load()</code> loads <code>libsystemd.so</code> and initialises the foreign library proxy with respect to the <code>Systemd</code> interface. The proxy object is assigned to the instance variable <code>systemd</code>. An alternative approach is to assign the proxy object to a static variable in the interface definition (<a href="https://github.com/java-native-access/jna/blob/5.6.0/www/GettingStarted.md#getting-started-with-jna">example</a>).</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode java"><code class="sourceCode java"><span id="cb4-1"><a href="#cb4-1"></a><span class="dt">boolean</span> <span class="fu">notify</span>(<span class="bu">String</span> status) {</span>
+<span id="cb4-2"><a href="#cb4-2"></a>    <span class="kw">if</span> (!systemd.<span class="fu">sd_booted</span>()) {</span>
+<span id="cb4-3"><a href="#cb4-3"></a>        <span class="kw">return</span> <span class="kw">true</span>;</span>
+<span id="cb4-4"><a href="#cb4-4"></a>    } <span class="kw">else</span> {</span>
+<span id="cb4-5"><a href="#cb4-5"></a>        <span class="dt">int</span> r = systemd.<span class="fu">sd_notify</span>(</span>
+<span id="cb4-6"><a href="#cb4-6"></a>            <span class="dv">0</span> <span class="co">/* don&#39;t unset environment */</span>,</span>
+<span id="cb4-7"><a href="#cb4-7"></a>            status);</span>
+<span id="cb4-8"><a href="#cb4-8"></a>        <span class="kw">if</span> (r &lt; <span class="dv">1</span>) {</span>
+<span id="cb4-9"><a href="#cb4-9"></a>            <span class="bu">System</span>.<span class="fu">err</span>.<span class="fu">println</span>(<span class="st">&quot;sd_notify failed&quot;</span>);</span>
+<span id="cb4-10"><a href="#cb4-10"></a>            <span class="kw">return</span> <span class="kw">false</span>;</span>
+<span id="cb4-11"><a href="#cb4-11"></a>        } <span class="kw">else</span> {</span>
+<span id="cb4-12"><a href="#cb4-12"></a>            <span class="kw">return</span> <span class="kw">true</span>;</span>
+<span id="cb4-13"><a href="#cb4-13"></a>        }</span>
+<span id="cb4-14"><a href="#cb4-14"></a>    }</span>
+<span id="cb4-15"><a href="#cb4-15"></a>}</span></code></pre></div>
+<p><code>notify()</code> makes two foreign calls. First it calls <a href="https://www.freedesktop.org/software/systemd/man/sd_booted.html"><code>sd_booted(3)</code></a> to see if the system was booted using systemd. If not, we return (successfully). If the program <em>is</em> running under systemd it calls <a href="https://www.freedesktop.org/software/systemd/man/sd_notify.html"><code>sd_notify(3)</code></a>, logging an error on failure.</p>
+<p>That’s pretty much all there is to it. This is much, <em>much</em> nicer than JNI.</p>
+<h2 id="discussion">Discussion <a href="#discussion">§</a></h2>
+<p>The adoption of JNA in Dogtag—which already (and still) uses JNI—was not without debate. But JNA is mature, widely available and supported in Dogtag’s target platforms (Fedora and RHEL). In the end, it was agreed that JNA is a nice approach. If JNA becomes problematic for any reason we can reimplement the binding to use JNI instead. The patch was accepted.</p>
+<p>As the Dogtag experience demonstrates, where multiple FFI systems are available it is not necessarily an either/or choice. JNI and JNA now happily coexist in the Dogtag database. It would be nice to gradually migrate Dogtag away from JNI and use JNA exclusively, but this is not a priority.</p>
+<p>There are more advanced topics that were not covered in this post. These include callbacks, custom type mapping and dealing with C <code>struct</code> and <code>union</code> types. The <a href="https://github.com/java-native-access/jna/tree/5.6.0#using-the-library">in-tree documentation</a> provides guidance on these and other advanced topics.</p>]]></summary>
+</entry>
+<entry>
     <title>Kubernetes DNS Service Discovery limitations</title>
     <link href="https://frasertweedale.github.io/blog-redhat/posts/2020-12-08-k8s-srv-limitation.html" />
     <id>https://frasertweedale.github.io/blog-redhat/posts/2020-12-08-k8s-srv-limitation.html</id>
@@ -1244,57 +1300,6 @@ pvc-d3bc7c81-8a24-4318-a914-296dbdc5ec3f   100Gi      RWO            Delete     
 <h2 id="conclusion">Conclusion <a href="#conclusion">§</a></h2>
 <p>As we work toward operationalising FreeIPA in OpenShift, I am interested in how we can use storage classes to make for a smooth deployment across different environments and especially those for which OpenShift Dedicated is available.</p>
 <p>I also need to learn more about the best practices or common idioms for representing in storage classes the application suitability (e.g. file versus block storage) or performance characteristics of supported volume types in a cluster. To make it a bit more concrete, consider that for performance reasons we might require low-latency/high-throughput block storage for the 389 DS LDAP database storage. How can we express this abstract requirement such that we get a satisfactory result across a variety of “clouds” with no administrator effort? Hopefully storage classes are the answer. But if they are not the whole solution, from what I have learned so far I have a strong feeling that they will be a bit part of the solution.</p>]]></summary>
-</entry>
-<entry>
-    <title>CRLs for Dogtag Lightweight CAs</title>
-    <link href="https://frasertweedale.github.io/blog-redhat/posts/2020-06-19-dogtag-lightweight-ca-crl.html" />
-    <id>https://frasertweedale.github.io/blog-redhat/posts/2020-06-19-dogtag-lightweight-ca-crl.html</id>
-    <published>2020-06-19T00:00:00Z</published>
-    <updated>2020-06-19T00:00:00Z</updated>
-    <summary type="html"><![CDATA[<h1 id="crls-for-dogtag-lightweight-cas">CRLs for Dogtag Lightweight CAs</h1>
-<p>A few years ago I implemented <em>lightweight CAs</em> in Dogtag. This feature allows multiple CAs to be hosted in a single Dogtag server instance. For now these are restricted to sub-CAs of the <em>main CA</em> but this is not a fundamental restriction.</p>
-<p>An important aspect of CA operation is <em>revocation</em>: the ability to revoke a certificate because of (suspected) key compromise, cessation of operation, it was superseded, etc. There are currently two main ways of conveying revocation status to clients: <em>Certificate Revocation Lists (CRLs)</em> and <em>Online Certificate Status Protocol (OCSP)</em>. CRLs and OCSP have their respective advantages and drawbacks. Suffice to say, for many security-conscious organisations CRLs are important (as is OCSP).</p>
-<p>There is currently no support for lightweight CA certificates in CRLs produced by Dogtag. The purpose of this post is to discuss the challenges and possible approaches to closing this gap.</p>
-<h2 id="overview-of-ocsp-and-crls">Overview of OCSP and CRLs <a href="#overview-of-ocsp-and-crls">§</a></h2>
-<p>OCSP (defined in <a href="https://tools.ietf.org/html/rfc6960">RFC 6960</a>) is a network protocol for determining certificate revocation status. Any relying party (e.g. a web browser validating a server certificate) can ask the CA’s <em>OCSP responder</em> for a signed assertion of whether or not the certificate is revoked. For scalability and performance reasons, TLS servers can periodically obtain OCSP responses for their certificate and convey them to clients in the TLS handshake; this feature is called <a href="https://en.wikipedia.org/wiki/OCSP_stapling">OCSP stapling</a>.</p>
-<p>On the other hand, CRLs are a more <em>passive</em> technology. X.509 CRLs are defined alongside X.509 certificates in <a href="https://tools.ietf.org/html/rfc5280">RFC 5280</a>. In the simple case a CRL is a signed, timestamped list of all revoked, non-exired certificates issued by a CA. The CA produces new CRLs on a fixed schedule (e.g. every 4 hours) and publishes them (e.g. on HTTP, in an LDAP directory, etc). Clients <em>somehow</em> obtain and refresh their CRL cache, and consult it when validating certificates. The CRL grows linearly in the number of revoked certificates so on a busy CA the CRL can become <em>huge</em>. Retrieving a large CRL takes time and bandwidth, storing it takes space, and consulting it takes time. The advantage is that validation requires no (additional) network traffic. The assumption is that the clients CRL cache is up to date.</p>
-<p>One further downside of CRLs is that they are only as good as their most recent update. What if your CRL is 3 hours old, the certificate of interest was revoked 1 hour ago, and it is still 1 hour until the next CRL gets published? In practice, every approach to revocation suffers from such a delay. Also in practice, the delay duration is often much greater for CRLs than for OCSP.</p>
-<h2 id="ocsp-support-for-lightweight-cas">OCSP support for Lightweight CAs <a href="#ocsp-support-for-lightweight-cas">§</a></h2>
-<p>The initial release of the Dogtag lightweight CAs feature had OCSP support for certificates issued by lightweight CAs. It works properly and there is nothing more to be said about it.</p>
-<h2 id="crl-support-for-lightweight-cas">CRL support for lightweight CAs <a href="#crl-support-for-lightweight-cas">§</a></h2>
-<p>As mentioned in the introduction, certificates issued by lightweight CAs are not included in the CRLs produced by Dogtag. <a href="https://pagure.io/dogtagpki/issue/1627">Ticket #1627</a> in the upstream Pagure tracks this issue.</p>
-<p>The reason this was not implemented in the initial release (or since) is that in the baseline case, a CRL can only include certificates from a single CA. Say we have the main CA <code>CN=MainCA</code> and lightweight sub-CA <code>CN=SubCA</code>. The CRL cannot include certificates from both CAs, because a CRL is just a list of serial numbers.</p>
-<h3 id="indirect-crls">Indirect CRLs <a href="#indirect-crls">§</a></h3>
-<p>There is a way around this limitation. The <a href="https://tools.ietf.org/html/rfc5280#section-5.3.3">Certificate Issuer</a> CRL entry extension, if some other extensions on both the certificate and CRL are set up <em>just right</em>, allows a CRL to include certificates from multiple issuers. Such CRLs are called <em>indirect CRLs</em>. Conforming applications are not required to support indirect CRLs, and the extension is <em>critical</em> so there is a risk of compatibility issues if we were to use indirect CRLs for conveying revocation status of certificates issued by lightweight CAs.</p>
-<p>Apart from client support for the Certificate Issuer extension the other requirements for indirect CRLs to work are:</p>
-<ul>
-<li>The certificate’s <em>CRL Distribution Points (CRLDP)</em> extension must include the <code>cRLIssuer</code> field and its value must match the issuer of the CRL.</li>
-<li>The CRL must include the <em>Issuing Distribution Point</em> CRL extension that asserts the <code>indirectCRL</code> boolean. This is a critical extension.</li>
-<li>The trust anchor for the CRL must be the same as the trust anchor for the certificate. This means that indirect CRLs cannot work for lightweight CAs that do not chain to the same CA. This is only a potential problem if the lightweight CAs feature is enhanced to support hosting unrelated CAs (rather than sub-CAs).</li>
-</ul>
-<p>So to use indirect CRLs some minor changes to certificate profiles would be required. But the changes would be the same for all profiles and the content of the CRL Distribution Point extension would be the same regardless of which lightweight CA issues the certificate.</p>
-<h3 id="separate-crls">Separate CRLs <a href="#separate-crls">§</a></h3>
-<p>An alternative approach is to create a separate CRL for each lightweight CA. This would avoid compatibility issues caused by the use of critical extensions that clients are not required to support. It also avoids the trust anchor limitations that would arise when hosting a lightweight CA that does not share a common trust root with the CRL issuer.</p>
-<p>From an implementation point of view there are two major challenges with this approach.</p>
-<ol type="1">
-<li>Dogtag does not generate CRLs implicitly but currently requires explicit configuration for each CRL. The configuration is not stored in LDAP but in the <code>CS.cfg</code> configuration file, so there is no way to dynamically configure new CRLs as new lightweight CAs are created.</li>
-<li>The content of the CRL Distribution Point extension will differ according to the CA that is issuing the certificate. The CRLDP content is currently configured per-profile. New profile components or enhancements to the existing CRLDP profile component will be required.</li>
-</ol>
-<p>In my view it is not acceptable to have to define multiple profiles differing only the CRL Distribution Point extension. The CA issuing the certificate should, by default, set any extensions that relate specifically to itself, including the CRLDP (also <em>Authority Key Identifier</em> and <em>Authority Information Access</em>). For more specialised use cases, the CRLDP content could be <em>overridden</em> or <em>suppressed</em> on a per-profile basis.</p>
-<h3 id="deciding-the-approach">Deciding the approach <a href="#deciding-the-approach">§</a></h3>
-<p>Indirect CRLs is the lower-effort approach. But before choosing it, we ought to audit certificate verification libraries (especially OpenSSL, NSS and other libraries used in Fedora, RHEL and other Red Hat products) to see if they support indirect CRLs. If support is widespread, the approach is viable. If support is not widespread, it is not a good idea.</p>
-<p>Thinking longer-term, this is a good opportunity to improve the administrator experience. Maybe now is a good time to implement useful features like automatic CRL generation for each CA in a Dogtag instance, and profile components that create a CRL Distribution Point extension that points to the CRL for the CA that is issuing the certificate. The current configuration approach is versatile and can handle all kinds of wild CRL scenarios. But it is <em>hostile</em> to getting things right for the common case.</p>
-<p>This decision will probably not be mine to make because I will soon be leaving the Dogtag team. But I hope this post is useful to whoever is involved in the eventual decision.</p>
-<h3 id="profile-changes">Profile changes <a href="#profile-changes">§</a></h3>
-<p>Both of the discussed approaches require some changes to profile configuration. Required profile changes means upgrade steps to update them. This can be tricky especially in mixed-version topologies when new profile components (if any) are present on some servers but not others.</p>
-<h3 id="the-do-nothing-option">The “do nothing” option <a href="#the-do-nothing-option">§</a></h3>
-<p>Lightweight CAs have been available for nearly 4 years. I can only recall one or two queries about lightweight CA CRL support. To be clear, it is a fair ask. But it seems that OCSP is sufficient for most customers. Or perhaps there is a lack of awareness that CRLs do not include certificates issued by lightweight CAs. Whatever the case, the low demand aligns with my own opinion that although CRL support for lightweight CAs is a nice-to-have, it is not of critical importance to many users or customers.</p>
-<h2 id="conclusion">Conclusion <a href="#conclusion">§</a></h2>
-<p>In this post I identified two possible approaches to CRL support for lightweight CAs. Each approach has advantages, drawbacks and unique challenges. Never implementing it is also an option to be considered because demand, though it does exist, seems low.</p>
-<p>I haven’t often discussed revocation in detail, so it is probably worth mentioning other approaches besides CRLs and OCSP.</p>
-<p><em>Ephemeral PKI</em> avoids the problem by only issuing very short lived certificates, e.g. one week, one day or even less! Assuming keys are rotated just as frequently, when certificate lifetimes approach the “lag” time revocation solutions, the revocation solution is not needed.</p>
-<p><em>CRLite</em> is an experimental revocation solution currently in development. It achieves fast and scalable revocation checking through cascading Bloom filters produced by an <em>aggregator</em> that records certificate revocations from one or more CAs. The target use case is in fact <em>all publicly trusted CAs</em> and Firefox Nightly already uses the system (non-enforcing, telemetry-only by default). Scott Helme wrote an <a href="https://scotthelme.co.uk/crlite-finally-a-fix-for-broken-revocation/">excellent blog post</a> about it and you can read the <a href="https://obj.umiacs.umd.edu/papers_for_stories/crlite_oakland17.pdf">original paper</a> for the gory details.</p>
-<p>One final note. I found some compliance issues with how the CRL Distribution Point extension is configured in the default FreeIPA certificate profiles. A strict reading of <a href="https://tools.ietf.org/html/rfc5280">RFC 5280</a> suggests that the CRL Distribution Point extension data produced by the default FreeIPA profiles would lead to the certificate not being considered in scope of the CRLs produced by Dogtag. This issue is particular to FreeIPA configuration, not a general problem with FreeIPA. More investiation is required and I will probably write a separate post about this in the future.</p>]]></summary>
 </entry>
 
 </feed>
