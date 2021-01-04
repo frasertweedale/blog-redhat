@@ -31,119 +31,119 @@
 <pre><code>certutil -R -d .pki/nssdb -o no-CN.req -a -s 'C=AU, ST=Queensland, L=Brisbane, O=Red Hat'</code></pre>
 <p>The <code>-o no-CN.req</code> instructs <code>certutil</code> to output the CSR to a file, while <code>-a</code> specifies ASCII output. Note that the subject (given by <code>-s</code>) does not contain a common name (CN) component.</p>
 <p>CSRs are submitted to Dogtag in the context of some certificate profile. Available profiles can be listed via <code>pki cert-request-profile-find ""</code>, and the Certificate Enrolment Request template for a profile can be retrieved via <code>pki cert-request-profile-show &lt;profile ID&gt; --output &lt;filename&gt;</code>. Let’s have a look at the <code>caServerCert</code> profile template:</p>
-<div class="sourceCode" id="cb2"><pre class="sourceCode xml"><code class="sourceCode xml"><span id="cb2-1"><a href="#cb2-1"></a><span class="kw">&lt;?xml</span> version=&quot;1.0&quot; encoding=&quot;UTF-8&quot; standalone=&quot;yes&quot;<span class="kw">?&gt;</span></span>
-<span id="cb2-2"><a href="#cb2-2"></a><span class="kw">&lt;CertEnrollmentRequest&gt;</span></span>
-<span id="cb2-3"><a href="#cb2-3"></a>    <span class="kw">&lt;ProfileID&gt;</span>caServerCert<span class="kw">&lt;/ProfileID&gt;</span></span>
-<span id="cb2-4"><a href="#cb2-4"></a>    <span class="kw">&lt;Renewal&gt;</span>false<span class="kw">&lt;/Renewal&gt;</span></span>
-<span id="cb2-5"><a href="#cb2-5"></a>    <span class="kw">&lt;SerialNumber&gt;&lt;/SerialNumber&gt;</span></span>
-<span id="cb2-6"><a href="#cb2-6"></a>    <span class="kw">&lt;RemoteHost&gt;&lt;/RemoteHost&gt;</span></span>
-<span id="cb2-7"><a href="#cb2-7"></a>    <span class="kw">&lt;RemoteAddress&gt;&lt;/RemoteAddress&gt;</span></span>
-<span id="cb2-8"><a href="#cb2-8"></a>    <span class="kw">&lt;Input</span><span class="ot"> id=</span><span class="st">&quot;i1&quot;</span><span class="kw">&gt;</span></span>
-<span id="cb2-9"><a href="#cb2-9"></a>        <span class="kw">&lt;ClassID&gt;</span>certReqInputImpl<span class="kw">&lt;/ClassID&gt;</span></span>
-<span id="cb2-10"><a href="#cb2-10"></a>        <span class="kw">&lt;Name&gt;</span>Certificate Request Input<span class="kw">&lt;/Name&gt;</span></span>
-<span id="cb2-11"><a href="#cb2-11"></a>        <span class="kw">&lt;Attribute</span><span class="ot"> name=</span><span class="st">&quot;cert_request_type&quot;</span><span class="kw">&gt;</span></span>
-<span id="cb2-12"><a href="#cb2-12"></a>            <span class="kw">&lt;Value&gt;&lt;/Value&gt;</span></span>
-<span id="cb2-13"><a href="#cb2-13"></a>            <span class="kw">&lt;Descriptor&gt;</span></span>
-<span id="cb2-14"><a href="#cb2-14"></a>                <span class="kw">&lt;Syntax&gt;</span>cert_request_type<span class="kw">&lt;/Syntax&gt;</span></span>
-<span id="cb2-15"><a href="#cb2-15"></a>                <span class="kw">&lt;Description&gt;</span>Certificate Request Type<span class="kw">&lt;/Description&gt;</span></span>
-<span id="cb2-16"><a href="#cb2-16"></a>            <span class="kw">&lt;/Descriptor&gt;</span></span>
-<span id="cb2-17"><a href="#cb2-17"></a>        <span class="kw">&lt;/Attribute&gt;</span></span>
-<span id="cb2-18"><a href="#cb2-18"></a>        <span class="kw">&lt;Attribute</span><span class="ot"> name=</span><span class="st">&quot;cert_request&quot;</span><span class="kw">&gt;</span></span>
-<span id="cb2-19"><a href="#cb2-19"></a>            <span class="kw">&lt;Value&gt;&lt;/Value&gt;</span></span>
-<span id="cb2-20"><a href="#cb2-20"></a>            <span class="kw">&lt;Descriptor&gt;</span></span>
-<span id="cb2-21"><a href="#cb2-21"></a>                <span class="kw">&lt;Syntax&gt;</span>cert_request<span class="kw">&lt;/Syntax&gt;</span></span>
-<span id="cb2-22"><a href="#cb2-22"></a>                <span class="kw">&lt;Description&gt;</span>Certificate Request<span class="kw">&lt;/Description&gt;</span></span>
-<span id="cb2-23"><a href="#cb2-23"></a>            <span class="kw">&lt;/Descriptor&gt;</span></span>
-<span id="cb2-24"><a href="#cb2-24"></a>        <span class="kw">&lt;/Attribute&gt;</span></span>
-<span id="cb2-25"><a href="#cb2-25"></a>    <span class="kw">&lt;/Input&gt;</span></span>
-<span id="cb2-26"><a href="#cb2-26"></a>    <span class="kw">&lt;Input</span><span class="ot"> id=</span><span class="st">&quot;i2&quot;</span><span class="kw">&gt;</span></span>
-<span id="cb2-27"><a href="#cb2-27"></a>        <span class="kw">&lt;ClassID&gt;</span>submitterInfoInputImpl<span class="kw">&lt;/ClassID&gt;</span></span>
-<span id="cb2-28"><a href="#cb2-28"></a>        <span class="kw">&lt;Name&gt;</span>Requestor Information<span class="kw">&lt;/Name&gt;</span></span>
-<span id="cb2-29"><a href="#cb2-29"></a>        <span class="kw">&lt;Attribute</span><span class="ot"> name=</span><span class="st">&quot;requestor_name&quot;</span><span class="kw">&gt;</span></span>
-<span id="cb2-30"><a href="#cb2-30"></a>            <span class="kw">&lt;Value&gt;&lt;/Value&gt;</span></span>
-<span id="cb2-31"><a href="#cb2-31"></a>            <span class="kw">&lt;Descriptor&gt;</span></span>
-<span id="cb2-32"><a href="#cb2-32"></a>                <span class="kw">&lt;Syntax&gt;</span>string<span class="kw">&lt;/Syntax&gt;</span></span>
-<span id="cb2-33"><a href="#cb2-33"></a>                <span class="kw">&lt;Description&gt;</span>Requestor Name<span class="kw">&lt;/Description&gt;</span></span>
-<span id="cb2-34"><a href="#cb2-34"></a>            <span class="kw">&lt;/Descriptor&gt;</span></span>
-<span id="cb2-35"><a href="#cb2-35"></a>        <span class="kw">&lt;/Attribute&gt;</span></span>
-<span id="cb2-36"><a href="#cb2-36"></a>        <span class="kw">&lt;Attribute</span><span class="ot"> name=</span><span class="st">&quot;requestor_email&quot;</span><span class="kw">&gt;</span></span>
-<span id="cb2-37"><a href="#cb2-37"></a>            <span class="kw">&lt;Value&gt;&lt;/Value&gt;</span></span>
-<span id="cb2-38"><a href="#cb2-38"></a>            <span class="kw">&lt;Descriptor&gt;</span></span>
-<span id="cb2-39"><a href="#cb2-39"></a>                <span class="kw">&lt;Syntax&gt;</span>string<span class="kw">&lt;/Syntax&gt;</span></span>
-<span id="cb2-40"><a href="#cb2-40"></a>                <span class="kw">&lt;Description&gt;</span>Requestor Email<span class="kw">&lt;/Description&gt;</span></span>
-<span id="cb2-41"><a href="#cb2-41"></a>            <span class="kw">&lt;/Descriptor&gt;</span></span>
-<span id="cb2-42"><a href="#cb2-42"></a>        <span class="kw">&lt;/Attribute&gt;</span></span>
-<span id="cb2-43"><a href="#cb2-43"></a>        <span class="kw">&lt;Attribute</span><span class="ot"> name=</span><span class="st">&quot;requestor_phone&quot;</span><span class="kw">&gt;</span></span>
-<span id="cb2-44"><a href="#cb2-44"></a>            <span class="kw">&lt;Value&gt;&lt;/Value&gt;</span></span>
-<span id="cb2-45"><a href="#cb2-45"></a>            <span class="kw">&lt;Descriptor&gt;</span></span>
-<span id="cb2-46"><a href="#cb2-46"></a>                <span class="kw">&lt;Syntax&gt;</span>string<span class="kw">&lt;/Syntax&gt;</span></span>
-<span id="cb2-47"><a href="#cb2-47"></a>                <span class="kw">&lt;Description&gt;</span>Requestor Phone<span class="kw">&lt;/Description&gt;</span></span>
-<span id="cb2-48"><a href="#cb2-48"></a>            <span class="kw">&lt;/Descriptor&gt;</span></span>
-<span id="cb2-49"><a href="#cb2-49"></a>        <span class="kw">&lt;/Attribute&gt;</span></span>
-<span id="cb2-50"><a href="#cb2-50"></a>    <span class="kw">&lt;/Input&gt;</span></span>
-<span id="cb2-51"><a href="#cb2-51"></a><span class="kw">&lt;/CertEnrollmentRequest&gt;</span></span></code></pre></div>
+<div class="sourceCode" id="cb2"><pre class="sourceCode xml"><code class="sourceCode xml"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true"></a><span class="kw">&lt;?xml</span> version=&quot;1.0&quot; encoding=&quot;UTF-8&quot; standalone=&quot;yes&quot;<span class="kw">?&gt;</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true"></a><span class="kw">&lt;CertEnrollmentRequest&gt;</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true"></a>    <span class="kw">&lt;ProfileID&gt;</span>caServerCert<span class="kw">&lt;/ProfileID&gt;</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true"></a>    <span class="kw">&lt;Renewal&gt;</span>false<span class="kw">&lt;/Renewal&gt;</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true"></a>    <span class="kw">&lt;SerialNumber&gt;&lt;/SerialNumber&gt;</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true"></a>    <span class="kw">&lt;RemoteHost&gt;&lt;/RemoteHost&gt;</span></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true"></a>    <span class="kw">&lt;RemoteAddress&gt;&lt;/RemoteAddress&gt;</span></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true"></a>    <span class="kw">&lt;Input</span><span class="ot"> id=</span><span class="st">&quot;i1&quot;</span><span class="kw">&gt;</span></span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true"></a>        <span class="kw">&lt;ClassID&gt;</span>certReqInputImpl<span class="kw">&lt;/ClassID&gt;</span></span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true"></a>        <span class="kw">&lt;Name&gt;</span>Certificate Request Input<span class="kw">&lt;/Name&gt;</span></span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true"></a>        <span class="kw">&lt;Attribute</span><span class="ot"> name=</span><span class="st">&quot;cert_request_type&quot;</span><span class="kw">&gt;</span></span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true"></a>            <span class="kw">&lt;Value&gt;&lt;/Value&gt;</span></span>
+<span id="cb2-13"><a href="#cb2-13" aria-hidden="true"></a>            <span class="kw">&lt;Descriptor&gt;</span></span>
+<span id="cb2-14"><a href="#cb2-14" aria-hidden="true"></a>                <span class="kw">&lt;Syntax&gt;</span>cert_request_type<span class="kw">&lt;/Syntax&gt;</span></span>
+<span id="cb2-15"><a href="#cb2-15" aria-hidden="true"></a>                <span class="kw">&lt;Description&gt;</span>Certificate Request Type<span class="kw">&lt;/Description&gt;</span></span>
+<span id="cb2-16"><a href="#cb2-16" aria-hidden="true"></a>            <span class="kw">&lt;/Descriptor&gt;</span></span>
+<span id="cb2-17"><a href="#cb2-17" aria-hidden="true"></a>        <span class="kw">&lt;/Attribute&gt;</span></span>
+<span id="cb2-18"><a href="#cb2-18" aria-hidden="true"></a>        <span class="kw">&lt;Attribute</span><span class="ot"> name=</span><span class="st">&quot;cert_request&quot;</span><span class="kw">&gt;</span></span>
+<span id="cb2-19"><a href="#cb2-19" aria-hidden="true"></a>            <span class="kw">&lt;Value&gt;&lt;/Value&gt;</span></span>
+<span id="cb2-20"><a href="#cb2-20" aria-hidden="true"></a>            <span class="kw">&lt;Descriptor&gt;</span></span>
+<span id="cb2-21"><a href="#cb2-21" aria-hidden="true"></a>                <span class="kw">&lt;Syntax&gt;</span>cert_request<span class="kw">&lt;/Syntax&gt;</span></span>
+<span id="cb2-22"><a href="#cb2-22" aria-hidden="true"></a>                <span class="kw">&lt;Description&gt;</span>Certificate Request<span class="kw">&lt;/Description&gt;</span></span>
+<span id="cb2-23"><a href="#cb2-23" aria-hidden="true"></a>            <span class="kw">&lt;/Descriptor&gt;</span></span>
+<span id="cb2-24"><a href="#cb2-24" aria-hidden="true"></a>        <span class="kw">&lt;/Attribute&gt;</span></span>
+<span id="cb2-25"><a href="#cb2-25" aria-hidden="true"></a>    <span class="kw">&lt;/Input&gt;</span></span>
+<span id="cb2-26"><a href="#cb2-26" aria-hidden="true"></a>    <span class="kw">&lt;Input</span><span class="ot"> id=</span><span class="st">&quot;i2&quot;</span><span class="kw">&gt;</span></span>
+<span id="cb2-27"><a href="#cb2-27" aria-hidden="true"></a>        <span class="kw">&lt;ClassID&gt;</span>submitterInfoInputImpl<span class="kw">&lt;/ClassID&gt;</span></span>
+<span id="cb2-28"><a href="#cb2-28" aria-hidden="true"></a>        <span class="kw">&lt;Name&gt;</span>Requestor Information<span class="kw">&lt;/Name&gt;</span></span>
+<span id="cb2-29"><a href="#cb2-29" aria-hidden="true"></a>        <span class="kw">&lt;Attribute</span><span class="ot"> name=</span><span class="st">&quot;requestor_name&quot;</span><span class="kw">&gt;</span></span>
+<span id="cb2-30"><a href="#cb2-30" aria-hidden="true"></a>            <span class="kw">&lt;Value&gt;&lt;/Value&gt;</span></span>
+<span id="cb2-31"><a href="#cb2-31" aria-hidden="true"></a>            <span class="kw">&lt;Descriptor&gt;</span></span>
+<span id="cb2-32"><a href="#cb2-32" aria-hidden="true"></a>                <span class="kw">&lt;Syntax&gt;</span>string<span class="kw">&lt;/Syntax&gt;</span></span>
+<span id="cb2-33"><a href="#cb2-33" aria-hidden="true"></a>                <span class="kw">&lt;Description&gt;</span>Requestor Name<span class="kw">&lt;/Description&gt;</span></span>
+<span id="cb2-34"><a href="#cb2-34" aria-hidden="true"></a>            <span class="kw">&lt;/Descriptor&gt;</span></span>
+<span id="cb2-35"><a href="#cb2-35" aria-hidden="true"></a>        <span class="kw">&lt;/Attribute&gt;</span></span>
+<span id="cb2-36"><a href="#cb2-36" aria-hidden="true"></a>        <span class="kw">&lt;Attribute</span><span class="ot"> name=</span><span class="st">&quot;requestor_email&quot;</span><span class="kw">&gt;</span></span>
+<span id="cb2-37"><a href="#cb2-37" aria-hidden="true"></a>            <span class="kw">&lt;Value&gt;&lt;/Value&gt;</span></span>
+<span id="cb2-38"><a href="#cb2-38" aria-hidden="true"></a>            <span class="kw">&lt;Descriptor&gt;</span></span>
+<span id="cb2-39"><a href="#cb2-39" aria-hidden="true"></a>                <span class="kw">&lt;Syntax&gt;</span>string<span class="kw">&lt;/Syntax&gt;</span></span>
+<span id="cb2-40"><a href="#cb2-40" aria-hidden="true"></a>                <span class="kw">&lt;Description&gt;</span>Requestor Email<span class="kw">&lt;/Description&gt;</span></span>
+<span id="cb2-41"><a href="#cb2-41" aria-hidden="true"></a>            <span class="kw">&lt;/Descriptor&gt;</span></span>
+<span id="cb2-42"><a href="#cb2-42" aria-hidden="true"></a>        <span class="kw">&lt;/Attribute&gt;</span></span>
+<span id="cb2-43"><a href="#cb2-43" aria-hidden="true"></a>        <span class="kw">&lt;Attribute</span><span class="ot"> name=</span><span class="st">&quot;requestor_phone&quot;</span><span class="kw">&gt;</span></span>
+<span id="cb2-44"><a href="#cb2-44" aria-hidden="true"></a>            <span class="kw">&lt;Value&gt;&lt;/Value&gt;</span></span>
+<span id="cb2-45"><a href="#cb2-45" aria-hidden="true"></a>            <span class="kw">&lt;Descriptor&gt;</span></span>
+<span id="cb2-46"><a href="#cb2-46" aria-hidden="true"></a>                <span class="kw">&lt;Syntax&gt;</span>string<span class="kw">&lt;/Syntax&gt;</span></span>
+<span id="cb2-47"><a href="#cb2-47" aria-hidden="true"></a>                <span class="kw">&lt;Description&gt;</span>Requestor Phone<span class="kw">&lt;/Description&gt;</span></span>
+<span id="cb2-48"><a href="#cb2-48" aria-hidden="true"></a>            <span class="kw">&lt;/Descriptor&gt;</span></span>
+<span id="cb2-49"><a href="#cb2-49" aria-hidden="true"></a>        <span class="kw">&lt;/Attribute&gt;</span></span>
+<span id="cb2-50"><a href="#cb2-50" aria-hidden="true"></a>    <span class="kw">&lt;/Input&gt;</span></span>
+<span id="cb2-51"><a href="#cb2-51" aria-hidden="true"></a><span class="kw">&lt;/CertEnrollmentRequest&gt;</span></span></code></pre></div>
 <p>The template is XML, containing <em>fields</em> with <em>attributes</em> whose values are not yet specified. Filling out these attributes with the content of the CSR generated earlier along with some ancillary information, we end up with the following:</p>
-<div class="sourceCode" id="cb3"><pre class="sourceCode xml"><code class="sourceCode xml"><span id="cb3-1"><a href="#cb3-1"></a><span class="kw">&lt;?xml</span> version=&quot;1.0&quot; encoding=&quot;UTF-8&quot; standalone=&quot;yes&quot;<span class="kw">?&gt;</span></span>
-<span id="cb3-2"><a href="#cb3-2"></a><span class="kw">&lt;CertEnrollmentRequest&gt;</span></span>
-<span id="cb3-3"><a href="#cb3-3"></a>    <span class="kw">&lt;ProfileID&gt;</span>caServerCert<span class="kw">&lt;/ProfileID&gt;</span></span>
-<span id="cb3-4"><a href="#cb3-4"></a>    <span class="kw">&lt;Renewal&gt;</span>false<span class="kw">&lt;/Renewal&gt;</span></span>
-<span id="cb3-5"><a href="#cb3-5"></a>    <span class="kw">&lt;SerialNumber&gt;&lt;/SerialNumber&gt;</span></span>
-<span id="cb3-6"><a href="#cb3-6"></a>    <span class="kw">&lt;RemoteHost&gt;&lt;/RemoteHost&gt;</span></span>
-<span id="cb3-7"><a href="#cb3-7"></a>    <span class="kw">&lt;RemoteAddress&gt;&lt;/RemoteAddress&gt;</span></span>
-<span id="cb3-8"><a href="#cb3-8"></a>    <span class="kw">&lt;Input</span><span class="ot"> id=</span><span class="st">&quot;i1&quot;</span><span class="kw">&gt;</span></span>
-<span id="cb3-9"><a href="#cb3-9"></a>        <span class="kw">&lt;ClassID&gt;</span>certReqInputImpl<span class="kw">&lt;/ClassID&gt;</span></span>
-<span id="cb3-10"><a href="#cb3-10"></a>        <span class="kw">&lt;Name&gt;</span>Certificate Request Input<span class="kw">&lt;/Name&gt;</span></span>
-<span id="cb3-11"><a href="#cb3-11"></a>        <span class="kw">&lt;Attribute</span><span class="ot"> name=</span><span class="st">&quot;cert_request_type&quot;</span><span class="kw">&gt;</span></span>
-<span id="cb3-12"><a href="#cb3-12"></a>            <span class="kw">&lt;Value&gt;</span>pkcs10<span class="kw">&lt;/Value&gt;</span></span>
-<span id="cb3-13"><a href="#cb3-13"></a>            <span class="kw">&lt;Descriptor&gt;</span></span>
-<span id="cb3-14"><a href="#cb3-14"></a>                <span class="kw">&lt;Syntax&gt;</span>cert_request_type<span class="kw">&lt;/Syntax&gt;</span></span>
-<span id="cb3-15"><a href="#cb3-15"></a>                <span class="kw">&lt;Description&gt;</span>Certificate Request Type<span class="kw">&lt;/Description&gt;</span></span>
-<span id="cb3-16"><a href="#cb3-16"></a>            <span class="kw">&lt;/Descriptor&gt;</span></span>
-<span id="cb3-17"><a href="#cb3-17"></a>        <span class="kw">&lt;/Attribute&gt;</span></span>
-<span id="cb3-18"><a href="#cb3-18"></a>        <span class="kw">&lt;Attribute</span><span class="ot"> name=</span><span class="st">&quot;cert_request&quot;</span><span class="kw">&gt;</span></span>
-<span id="cb3-19"><a href="#cb3-19"></a>                <span class="kw">&lt;Value&gt;</span></span>
-<span id="cb3-20"><a href="#cb3-20"></a>MIIBhjCB8AIBADBHMRAwDgYDVQQKEwdSZWQgSGF0MREwDwYDVQQHEwhCcmlzYmFu</span>
-<span id="cb3-21"><a href="#cb3-21"></a>ZTETMBEGA1UECBMKUXVlZW5zbGFuZDELMAkGA1UEBhMCQVUwgZ8wDQYJKoZIhvcN</span>
-<span id="cb3-22"><a href="#cb3-22"></a>AQEBBQADgY0AMIGJAoGBAJvkY6CyMdY0u7hwFzfG9ZdajT+69bbRh1vqFIArGhhv</span>
-<span id="cb3-23"><a href="#cb3-23"></a>vL09Em2MrlAhQEKF6PuAcdED7U7ryoBByeXDRfivFwQS5W5msVBkA5gZ1i9LyH82</span>
-<span id="cb3-24"><a href="#cb3-24"></a>xULvkdnNFu6He8QnxLr8+bl/r9tdlktP/3k79hHmWRpqBtOqVKtBCwMqEdPltF7H</span>
-<span id="cb3-25"><a href="#cb3-25"></a>AgMBAAGgADANBgkqhkiG9w0BAQUFAAOBgQB5Slu71g30osgQd25puSrUxNf6+eQk</span>
-<span id="cb3-26"><a href="#cb3-26"></a>KEpWfrsrpRh7nOkAo3QmBmR4L7i5tUChnIv6UGi8qTeEWNHnMBcwgoe56tg5vqpK</span>
-<span id="cb3-27"><a href="#cb3-27"></a>mmaz3W1w8hxima/cSqzqWgw4U/JMDU1nBSYz2WJTyEUUvdDD1lSsWzrqFi5f/vC3</span>
-<span id="cb3-28"><a href="#cb3-28"></a>VjjWvio/DSvrgw==</span>
-<span id="cb3-29"><a href="#cb3-29"></a>                <span class="kw">&lt;/Value&gt;</span></span>
-<span id="cb3-30"><a href="#cb3-30"></a>            <span class="kw">&lt;Descriptor&gt;</span></span>
-<span id="cb3-31"><a href="#cb3-31"></a>                <span class="kw">&lt;Syntax&gt;</span>cert_request<span class="kw">&lt;/Syntax&gt;</span></span>
-<span id="cb3-32"><a href="#cb3-32"></a>                <span class="kw">&lt;Description&gt;</span>Certificate Request<span class="kw">&lt;/Description&gt;</span></span>
-<span id="cb3-33"><a href="#cb3-33"></a>            <span class="kw">&lt;/Descriptor&gt;</span></span>
-<span id="cb3-34"><a href="#cb3-34"></a>        <span class="kw">&lt;/Attribute&gt;</span></span>
-<span id="cb3-35"><a href="#cb3-35"></a>    <span class="kw">&lt;/Input&gt;</span></span>
-<span id="cb3-36"><a href="#cb3-36"></a>    <span class="kw">&lt;Input</span><span class="ot"> id=</span><span class="st">&quot;i2&quot;</span><span class="kw">&gt;</span></span>
-<span id="cb3-37"><a href="#cb3-37"></a>        <span class="kw">&lt;ClassID&gt;</span>submitterInfoInputImpl<span class="kw">&lt;/ClassID&gt;</span></span>
-<span id="cb3-38"><a href="#cb3-38"></a>        <span class="kw">&lt;Name&gt;</span>Requestor Information<span class="kw">&lt;/Name&gt;</span></span>
-<span id="cb3-39"><a href="#cb3-39"></a>        <span class="kw">&lt;Attribute</span><span class="ot"> name=</span><span class="st">&quot;requestor_name&quot;</span><span class="kw">&gt;</span></span>
-<span id="cb3-40"><a href="#cb3-40"></a>            <span class="kw">&lt;Value&gt;</span>ftweedal<span class="kw">&lt;/Value&gt;</span></span>
-<span id="cb3-41"><a href="#cb3-41"></a>            <span class="kw">&lt;Descriptor&gt;</span></span>
-<span id="cb3-42"><a href="#cb3-42"></a>                <span class="kw">&lt;Syntax&gt;</span>string<span class="kw">&lt;/Syntax&gt;</span></span>
-<span id="cb3-43"><a href="#cb3-43"></a>                <span class="kw">&lt;Description&gt;</span>Requestor Name<span class="kw">&lt;/Description&gt;</span></span>
-<span id="cb3-44"><a href="#cb3-44"></a>            <span class="kw">&lt;/Descriptor&gt;</span></span>
-<span id="cb3-45"><a href="#cb3-45"></a>        <span class="kw">&lt;/Attribute&gt;</span></span>
-<span id="cb3-46"><a href="#cb3-46"></a>        <span class="kw">&lt;Attribute</span><span class="ot"> name=</span><span class="st">&quot;requestor_email&quot;</span><span class="kw">&gt;</span></span>
-<span id="cb3-47"><a href="#cb3-47"></a>            <span class="kw">&lt;Value&gt;</span>ftweedal@redhat.com<span class="kw">&lt;/Value&gt;</span></span>
-<span id="cb3-48"><a href="#cb3-48"></a>            <span class="kw">&lt;Descriptor&gt;</span></span>
-<span id="cb3-49"><a href="#cb3-49"></a>                <span class="kw">&lt;Syntax&gt;</span>string<span class="kw">&lt;/Syntax&gt;</span></span>
-<span id="cb3-50"><a href="#cb3-50"></a>                <span class="kw">&lt;Description&gt;</span>Requestor Email<span class="kw">&lt;/Description&gt;</span></span>
-<span id="cb3-51"><a href="#cb3-51"></a>            <span class="kw">&lt;/Descriptor&gt;</span></span>
-<span id="cb3-52"><a href="#cb3-52"></a>        <span class="kw">&lt;/Attribute&gt;</span></span>
-<span id="cb3-53"><a href="#cb3-53"></a>        <span class="kw">&lt;Attribute</span><span class="ot"> name=</span><span class="st">&quot;requestor_phone&quot;</span><span class="kw">&gt;</span></span>
-<span id="cb3-54"><a href="#cb3-54"></a>            <span class="kw">&lt;Value&gt;&lt;/Value&gt;</span></span>
-<span id="cb3-55"><a href="#cb3-55"></a>            <span class="kw">&lt;Descriptor&gt;</span></span>
-<span id="cb3-56"><a href="#cb3-56"></a>                <span class="kw">&lt;Syntax&gt;</span>string<span class="kw">&lt;/Syntax&gt;</span></span>
-<span id="cb3-57"><a href="#cb3-57"></a>                <span class="kw">&lt;Description&gt;</span>Requestor Phone<span class="kw">&lt;/Description&gt;</span></span>
-<span id="cb3-58"><a href="#cb3-58"></a>            <span class="kw">&lt;/Descriptor&gt;</span></span>
-<span id="cb3-59"><a href="#cb3-59"></a>        <span class="kw">&lt;/Attribute&gt;</span></span>
-<span id="cb3-60"><a href="#cb3-60"></a>    <span class="kw">&lt;/Input&gt;</span></span>
-<span id="cb3-61"><a href="#cb3-61"></a><span class="kw">&lt;/CertEnrollmentRequest&gt;</span></span></code></pre></div>
+<div class="sourceCode" id="cb3"><pre class="sourceCode xml"><code class="sourceCode xml"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true"></a><span class="kw">&lt;?xml</span> version=&quot;1.0&quot; encoding=&quot;UTF-8&quot; standalone=&quot;yes&quot;<span class="kw">?&gt;</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true"></a><span class="kw">&lt;CertEnrollmentRequest&gt;</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true"></a>    <span class="kw">&lt;ProfileID&gt;</span>caServerCert<span class="kw">&lt;/ProfileID&gt;</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true"></a>    <span class="kw">&lt;Renewal&gt;</span>false<span class="kw">&lt;/Renewal&gt;</span></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true"></a>    <span class="kw">&lt;SerialNumber&gt;&lt;/SerialNumber&gt;</span></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true"></a>    <span class="kw">&lt;RemoteHost&gt;&lt;/RemoteHost&gt;</span></span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true"></a>    <span class="kw">&lt;RemoteAddress&gt;&lt;/RemoteAddress&gt;</span></span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true"></a>    <span class="kw">&lt;Input</span><span class="ot"> id=</span><span class="st">&quot;i1&quot;</span><span class="kw">&gt;</span></span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true"></a>        <span class="kw">&lt;ClassID&gt;</span>certReqInputImpl<span class="kw">&lt;/ClassID&gt;</span></span>
+<span id="cb3-10"><a href="#cb3-10" aria-hidden="true"></a>        <span class="kw">&lt;Name&gt;</span>Certificate Request Input<span class="kw">&lt;/Name&gt;</span></span>
+<span id="cb3-11"><a href="#cb3-11" aria-hidden="true"></a>        <span class="kw">&lt;Attribute</span><span class="ot"> name=</span><span class="st">&quot;cert_request_type&quot;</span><span class="kw">&gt;</span></span>
+<span id="cb3-12"><a href="#cb3-12" aria-hidden="true"></a>            <span class="kw">&lt;Value&gt;</span>pkcs10<span class="kw">&lt;/Value&gt;</span></span>
+<span id="cb3-13"><a href="#cb3-13" aria-hidden="true"></a>            <span class="kw">&lt;Descriptor&gt;</span></span>
+<span id="cb3-14"><a href="#cb3-14" aria-hidden="true"></a>                <span class="kw">&lt;Syntax&gt;</span>cert_request_type<span class="kw">&lt;/Syntax&gt;</span></span>
+<span id="cb3-15"><a href="#cb3-15" aria-hidden="true"></a>                <span class="kw">&lt;Description&gt;</span>Certificate Request Type<span class="kw">&lt;/Description&gt;</span></span>
+<span id="cb3-16"><a href="#cb3-16" aria-hidden="true"></a>            <span class="kw">&lt;/Descriptor&gt;</span></span>
+<span id="cb3-17"><a href="#cb3-17" aria-hidden="true"></a>        <span class="kw">&lt;/Attribute&gt;</span></span>
+<span id="cb3-18"><a href="#cb3-18" aria-hidden="true"></a>        <span class="kw">&lt;Attribute</span><span class="ot"> name=</span><span class="st">&quot;cert_request&quot;</span><span class="kw">&gt;</span></span>
+<span id="cb3-19"><a href="#cb3-19" aria-hidden="true"></a>                <span class="kw">&lt;Value&gt;</span></span>
+<span id="cb3-20"><a href="#cb3-20" aria-hidden="true"></a>MIIBhjCB8AIBADBHMRAwDgYDVQQKEwdSZWQgSGF0MREwDwYDVQQHEwhCcmlzYmFu</span>
+<span id="cb3-21"><a href="#cb3-21" aria-hidden="true"></a>ZTETMBEGA1UECBMKUXVlZW5zbGFuZDELMAkGA1UEBhMCQVUwgZ8wDQYJKoZIhvcN</span>
+<span id="cb3-22"><a href="#cb3-22" aria-hidden="true"></a>AQEBBQADgY0AMIGJAoGBAJvkY6CyMdY0u7hwFzfG9ZdajT+69bbRh1vqFIArGhhv</span>
+<span id="cb3-23"><a href="#cb3-23" aria-hidden="true"></a>vL09Em2MrlAhQEKF6PuAcdED7U7ryoBByeXDRfivFwQS5W5msVBkA5gZ1i9LyH82</span>
+<span id="cb3-24"><a href="#cb3-24" aria-hidden="true"></a>xULvkdnNFu6He8QnxLr8+bl/r9tdlktP/3k79hHmWRpqBtOqVKtBCwMqEdPltF7H</span>
+<span id="cb3-25"><a href="#cb3-25" aria-hidden="true"></a>AgMBAAGgADANBgkqhkiG9w0BAQUFAAOBgQB5Slu71g30osgQd25puSrUxNf6+eQk</span>
+<span id="cb3-26"><a href="#cb3-26" aria-hidden="true"></a>KEpWfrsrpRh7nOkAo3QmBmR4L7i5tUChnIv6UGi8qTeEWNHnMBcwgoe56tg5vqpK</span>
+<span id="cb3-27"><a href="#cb3-27" aria-hidden="true"></a>mmaz3W1w8hxima/cSqzqWgw4U/JMDU1nBSYz2WJTyEUUvdDD1lSsWzrqFi5f/vC3</span>
+<span id="cb3-28"><a href="#cb3-28" aria-hidden="true"></a>VjjWvio/DSvrgw==</span>
+<span id="cb3-29"><a href="#cb3-29" aria-hidden="true"></a>                <span class="kw">&lt;/Value&gt;</span></span>
+<span id="cb3-30"><a href="#cb3-30" aria-hidden="true"></a>            <span class="kw">&lt;Descriptor&gt;</span></span>
+<span id="cb3-31"><a href="#cb3-31" aria-hidden="true"></a>                <span class="kw">&lt;Syntax&gt;</span>cert_request<span class="kw">&lt;/Syntax&gt;</span></span>
+<span id="cb3-32"><a href="#cb3-32" aria-hidden="true"></a>                <span class="kw">&lt;Description&gt;</span>Certificate Request<span class="kw">&lt;/Description&gt;</span></span>
+<span id="cb3-33"><a href="#cb3-33" aria-hidden="true"></a>            <span class="kw">&lt;/Descriptor&gt;</span></span>
+<span id="cb3-34"><a href="#cb3-34" aria-hidden="true"></a>        <span class="kw">&lt;/Attribute&gt;</span></span>
+<span id="cb3-35"><a href="#cb3-35" aria-hidden="true"></a>    <span class="kw">&lt;/Input&gt;</span></span>
+<span id="cb3-36"><a href="#cb3-36" aria-hidden="true"></a>    <span class="kw">&lt;Input</span><span class="ot"> id=</span><span class="st">&quot;i2&quot;</span><span class="kw">&gt;</span></span>
+<span id="cb3-37"><a href="#cb3-37" aria-hidden="true"></a>        <span class="kw">&lt;ClassID&gt;</span>submitterInfoInputImpl<span class="kw">&lt;/ClassID&gt;</span></span>
+<span id="cb3-38"><a href="#cb3-38" aria-hidden="true"></a>        <span class="kw">&lt;Name&gt;</span>Requestor Information<span class="kw">&lt;/Name&gt;</span></span>
+<span id="cb3-39"><a href="#cb3-39" aria-hidden="true"></a>        <span class="kw">&lt;Attribute</span><span class="ot"> name=</span><span class="st">&quot;requestor_name&quot;</span><span class="kw">&gt;</span></span>
+<span id="cb3-40"><a href="#cb3-40" aria-hidden="true"></a>            <span class="kw">&lt;Value&gt;</span>ftweedal<span class="kw">&lt;/Value&gt;</span></span>
+<span id="cb3-41"><a href="#cb3-41" aria-hidden="true"></a>            <span class="kw">&lt;Descriptor&gt;</span></span>
+<span id="cb3-42"><a href="#cb3-42" aria-hidden="true"></a>                <span class="kw">&lt;Syntax&gt;</span>string<span class="kw">&lt;/Syntax&gt;</span></span>
+<span id="cb3-43"><a href="#cb3-43" aria-hidden="true"></a>                <span class="kw">&lt;Description&gt;</span>Requestor Name<span class="kw">&lt;/Description&gt;</span></span>
+<span id="cb3-44"><a href="#cb3-44" aria-hidden="true"></a>            <span class="kw">&lt;/Descriptor&gt;</span></span>
+<span id="cb3-45"><a href="#cb3-45" aria-hidden="true"></a>        <span class="kw">&lt;/Attribute&gt;</span></span>
+<span id="cb3-46"><a href="#cb3-46" aria-hidden="true"></a>        <span class="kw">&lt;Attribute</span><span class="ot"> name=</span><span class="st">&quot;requestor_email&quot;</span><span class="kw">&gt;</span></span>
+<span id="cb3-47"><a href="#cb3-47" aria-hidden="true"></a>            <span class="kw">&lt;Value&gt;</span>ftweedal@redhat.com<span class="kw">&lt;/Value&gt;</span></span>
+<span id="cb3-48"><a href="#cb3-48" aria-hidden="true"></a>            <span class="kw">&lt;Descriptor&gt;</span></span>
+<span id="cb3-49"><a href="#cb3-49" aria-hidden="true"></a>                <span class="kw">&lt;Syntax&gt;</span>string<span class="kw">&lt;/Syntax&gt;</span></span>
+<span id="cb3-50"><a href="#cb3-50" aria-hidden="true"></a>                <span class="kw">&lt;Description&gt;</span>Requestor Email<span class="kw">&lt;/Description&gt;</span></span>
+<span id="cb3-51"><a href="#cb3-51" aria-hidden="true"></a>            <span class="kw">&lt;/Descriptor&gt;</span></span>
+<span id="cb3-52"><a href="#cb3-52" aria-hidden="true"></a>        <span class="kw">&lt;/Attribute&gt;</span></span>
+<span id="cb3-53"><a href="#cb3-53" aria-hidden="true"></a>        <span class="kw">&lt;Attribute</span><span class="ot"> name=</span><span class="st">&quot;requestor_phone&quot;</span><span class="kw">&gt;</span></span>
+<span id="cb3-54"><a href="#cb3-54" aria-hidden="true"></a>            <span class="kw">&lt;Value&gt;&lt;/Value&gt;</span></span>
+<span id="cb3-55"><a href="#cb3-55" aria-hidden="true"></a>            <span class="kw">&lt;Descriptor&gt;</span></span>
+<span id="cb3-56"><a href="#cb3-56" aria-hidden="true"></a>                <span class="kw">&lt;Syntax&gt;</span>string<span class="kw">&lt;/Syntax&gt;</span></span>
+<span id="cb3-57"><a href="#cb3-57" aria-hidden="true"></a>                <span class="kw">&lt;Description&gt;</span>Requestor Phone<span class="kw">&lt;/Description&gt;</span></span>
+<span id="cb3-58"><a href="#cb3-58" aria-hidden="true"></a>            <span class="kw">&lt;/Descriptor&gt;</span></span>
+<span id="cb3-59"><a href="#cb3-59" aria-hidden="true"></a>        <span class="kw">&lt;/Attribute&gt;</span></span>
+<span id="cb3-60"><a href="#cb3-60" aria-hidden="true"></a>    <span class="kw">&lt;/Input&gt;</span></span>
+<span id="cb3-61"><a href="#cb3-61" aria-hidden="true"></a><span class="kw">&lt;/CertEnrollmentRequest&gt;</span></span></code></pre></div>
 <p>With these fields filled out, the enrolment request can now be submitted to Dogtag:</p>
 <pre><code>$ pki cert-request-submit no-CN-req.xml
 -----------------------------

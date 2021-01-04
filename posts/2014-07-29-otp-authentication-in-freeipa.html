@@ -38,40 +38,40 @@
 <p>The problem I encountered was that HOTP authentication (to the FreeIPA web UI) was failing about half the time (there was no discernable pattern of failure). The FreeIPA web UI seemed like a logical place to start investigating the problem, but for a password (and OTP value) it is just the first port of call in a journey through a remarkable number of services and libraries.</p>
 <h3 id="web-ui-and-kinit">Web UI and <code>kinit</code> <a href="#web-ui-and-kinit">§</a></h3>
 <p>The <code>ipaserver.rpcserver.login_password</code> class is responsible for handling the password login process. It’s implementation reads request parameters and calls <code>kinit(1)</code> with the user credentials. Its (heavily abridged) implementation follows:</p>
-<div class="sourceCode" id="cb1"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1"></a><span class="kw">class</span> login_password(Backend, KerberosSession, HTTP_Status):</span>
-<span id="cb1-2"><a href="#cb1-2"></a>    <span class="kw">def</span> <span class="fu">__call__</span>(<span class="va">self</span>, environ, start_response):</span>
-<span id="cb1-3"><a href="#cb1-3"></a>        <span class="co"># Get the user and password parameters from the request</span></span>
-<span id="cb1-4"><a href="#cb1-4"></a>        query_dict <span class="op">=</span> urlparse.parse_qs(query_string)</span>
-<span id="cb1-5"><a href="#cb1-5"></a>        user <span class="op">=</span> query_dict.get(<span class="st">'user'</span>, <span class="va">None</span>)</span>
-<span id="cb1-6"><a href="#cb1-6"></a>        password <span class="op">=</span> query_dict.get(<span class="st">'password'</span>, <span class="va">None</span>)</span>
-<span id="cb1-7"><a href="#cb1-7"></a></span>
-<span id="cb1-8"><a href="#cb1-8"></a>        <span class="co"># Get the ccache we'll use and attempt to get</span></span>
-<span id="cb1-9"><a href="#cb1-9"></a>        <span class="co"># credentials in it with user,password</span></span>
-<span id="cb1-10"><a href="#cb1-10"></a>        ipa_ccache_name <span class="op">=</span> get_ipa_ccache_name()</span>
-<span id="cb1-11"><a href="#cb1-11"></a>        <span class="va">self</span>.kinit(user, <span class="va">self</span>.api.env.realm, password, ipa_ccache_name)</span>
-<span id="cb1-12"><a href="#cb1-12"></a>        <span class="cf">return</span> <span class="va">self</span>.finalize_kerberos_acquisition(</span>
-<span id="cb1-13"><a href="#cb1-13"></a>            <span class="st">'login_password'</span>, ipa_ccache_name, environ, start_response)</span>
-<span id="cb1-14"><a href="#cb1-14"></a></span>
-<span id="cb1-15"><a href="#cb1-15"></a>    <span class="kw">def</span> kinit(<span class="va">self</span>, user, realm, password, ccache_name):</span>
-<span id="cb1-16"><a href="#cb1-16"></a>        <span class="co"># get http service ccache as an armor for FAST to enable</span></span>
-<span id="cb1-17"><a href="#cb1-17"></a>        <span class="co"># OTP authentication</span></span>
-<span id="cb1-18"><a href="#cb1-18"></a>        armor_principal <span class="op">=</span> krb5_format_service_principal_name(</span>
-<span id="cb1-19"><a href="#cb1-19"></a>            <span class="st">'HTTP'</span>, <span class="va">self</span>.api.env.host, realm)</span>
-<span id="cb1-20"><a href="#cb1-20"></a>        keytab <span class="op">=</span> paths.IPA_KEYTAB</span>
-<span id="cb1-21"><a href="#cb1-21"></a>        armor_name <span class="op">=</span> <span class="st">&quot;</span><span class="sc">%s</span><span class="st">A_</span><span class="sc">%s</span><span class="st">&quot;</span> <span class="op">%</span> (krbccache_prefix, user)</span>
-<span id="cb1-22"><a href="#cb1-22"></a>        armor_path <span class="op">=</span> os.path.join(krbccache_dir, armor_name)</span>
-<span id="cb1-23"><a href="#cb1-23"></a></span>
-<span id="cb1-24"><a href="#cb1-24"></a>        (stdout, stderr, returncode) <span class="op">=</span> ipautil.run(</span>
-<span id="cb1-25"><a href="#cb1-25"></a>            [paths.KINIT, <span class="st">'-kt'</span>, keytab, armor_principal],</span>
-<span id="cb1-26"><a href="#cb1-26"></a>            env<span class="op">=</span>{<span class="st">'KRB5CCNAME'</span>: armor_path}, raiseonerr<span class="op">=</span><span class="va">False</span>)</span>
-<span id="cb1-27"><a href="#cb1-27"></a></span>
-<span id="cb1-28"><a href="#cb1-28"></a>        <span class="co"># Format the user as a kerberos principal</span></span>
-<span id="cb1-29"><a href="#cb1-29"></a>        principal <span class="op">=</span> krb5_format_principal_name(user, realm)</span>
-<span id="cb1-30"><a href="#cb1-30"></a></span>
-<span id="cb1-31"><a href="#cb1-31"></a>        (stdout, stderr, returncode) <span class="op">=</span> ipautil.run(</span>
-<span id="cb1-32"><a href="#cb1-32"></a>            [paths.KINIT, principal, <span class="st">'-T'</span>, armor_path],</span>
-<span id="cb1-33"><a href="#cb1-33"></a>            env<span class="op">=</span>{<span class="st">'KRB5CCNAME'</span>: ccache_name, <span class="st">'LC_ALL'</span>: <span class="st">'C'</span>},</span>
-<span id="cb1-34"><a href="#cb1-34"></a>            stdin<span class="op">=</span>password, raiseonerr<span class="op">=</span><span class="va">False</span>)</span></code></pre></div>
+<div class="sourceCode" id="cb1"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true"></a><span class="kw">class</span> login_password(Backend, KerberosSession, HTTP_Status):</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true"></a>    <span class="kw">def</span> <span class="fu">__call__</span>(<span class="va">self</span>, environ, start_response):</span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true"></a>        <span class="co"># Get the user and password parameters from the request</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true"></a>        query_dict <span class="op">=</span> urlparse.parse_qs(query_string)</span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true"></a>        user <span class="op">=</span> query_dict.get(<span class="st">'user'</span>, <span class="va">None</span>)</span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true"></a>        password <span class="op">=</span> query_dict.get(<span class="st">'password'</span>, <span class="va">None</span>)</span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true"></a></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true"></a>        <span class="co"># Get the ccache we'll use and attempt to get</span></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true"></a>        <span class="co"># credentials in it with user,password</span></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true"></a>        ipa_ccache_name <span class="op">=</span> get_ipa_ccache_name()</span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true"></a>        <span class="va">self</span>.kinit(user, <span class="va">self</span>.api.env.realm, password, ipa_ccache_name)</span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true"></a>        <span class="cf">return</span> <span class="va">self</span>.finalize_kerberos_acquisition(</span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true"></a>            <span class="st">'login_password'</span>, ipa_ccache_name, environ, start_response)</span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true"></a></span>
+<span id="cb1-15"><a href="#cb1-15" aria-hidden="true"></a>    <span class="kw">def</span> kinit(<span class="va">self</span>, user, realm, password, ccache_name):</span>
+<span id="cb1-16"><a href="#cb1-16" aria-hidden="true"></a>        <span class="co"># get http service ccache as an armor for FAST to enable</span></span>
+<span id="cb1-17"><a href="#cb1-17" aria-hidden="true"></a>        <span class="co"># OTP authentication</span></span>
+<span id="cb1-18"><a href="#cb1-18" aria-hidden="true"></a>        armor_principal <span class="op">=</span> krb5_format_service_principal_name(</span>
+<span id="cb1-19"><a href="#cb1-19" aria-hidden="true"></a>            <span class="st">'HTTP'</span>, <span class="va">self</span>.api.env.host, realm)</span>
+<span id="cb1-20"><a href="#cb1-20" aria-hidden="true"></a>        keytab <span class="op">=</span> paths.IPA_KEYTAB</span>
+<span id="cb1-21"><a href="#cb1-21" aria-hidden="true"></a>        armor_name <span class="op">=</span> <span class="st">&quot;</span><span class="sc">%s</span><span class="st">A_</span><span class="sc">%s</span><span class="st">&quot;</span> <span class="op">%</span> (krbccache_prefix, user)</span>
+<span id="cb1-22"><a href="#cb1-22" aria-hidden="true"></a>        armor_path <span class="op">=</span> os.path.join(krbccache_dir, armor_name)</span>
+<span id="cb1-23"><a href="#cb1-23" aria-hidden="true"></a></span>
+<span id="cb1-24"><a href="#cb1-24" aria-hidden="true"></a>        (stdout, stderr, returncode) <span class="op">=</span> ipautil.run(</span>
+<span id="cb1-25"><a href="#cb1-25" aria-hidden="true"></a>            [paths.KINIT, <span class="st">'-kt'</span>, keytab, armor_principal],</span>
+<span id="cb1-26"><a href="#cb1-26" aria-hidden="true"></a>            env<span class="op">=</span>{<span class="st">'KRB5CCNAME'</span>: armor_path}, raiseonerr<span class="op">=</span><span class="va">False</span>)</span>
+<span id="cb1-27"><a href="#cb1-27" aria-hidden="true"></a></span>
+<span id="cb1-28"><a href="#cb1-28" aria-hidden="true"></a>        <span class="co"># Format the user as a kerberos principal</span></span>
+<span id="cb1-29"><a href="#cb1-29" aria-hidden="true"></a>        principal <span class="op">=</span> krb5_format_principal_name(user, realm)</span>
+<span id="cb1-30"><a href="#cb1-30" aria-hidden="true"></a></span>
+<span id="cb1-31"><a href="#cb1-31" aria-hidden="true"></a>        (stdout, stderr, returncode) <span class="op">=</span> ipautil.run(</span>
+<span id="cb1-32"><a href="#cb1-32" aria-hidden="true"></a>            [paths.KINIT, principal, <span class="st">'-T'</span>, armor_path],</span>
+<span id="cb1-33"><a href="#cb1-33" aria-hidden="true"></a>            env<span class="op">=</span>{<span class="st">'KRB5CCNAME'</span>: ccache_name, <span class="st">'LC_ALL'</span>: <span class="st">'C'</span>},</span>
+<span id="cb1-34"><a href="#cb1-34" aria-hidden="true"></a>            stdin<span class="op">=</span>password, raiseonerr<span class="op">=</span><span class="va">False</span>)</span></code></pre></div>
 <p>We see that the <code>login_password</code> object reads credentials out of the request and invokes <code>kinit</code> using those credentials, over an encrypted <a href="http://tools.ietf.org/html/rfc6113">FAST</a> (flexible authentication secure tunneling) channel. At this point, the authentication flow is the same as if a user had invoked <code>kinit</code> from the command line in a similar manner.</p>
 <h3 id="kdc">KDC <a href="#kdc">§</a></h3>
 <p>Recent versions of the MIT Kerberos key distrubution centre (KDC) have support for <a href="http://web.mit.edu/~kerberos/krb5-devel/doc/admin/otp.html">OTP preauthentication</a>. This preauthentication mechanism is specified in <a href="http://tools.ietf.org/html/rfc6560">RFC 6560</a>.</p>

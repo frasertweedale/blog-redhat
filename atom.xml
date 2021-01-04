@@ -25,39 +25,39 @@
 <p>To simplify and speed up <a href="https://www.freeipa.org/">FreeIPA</a> startup, I needed to implement systemd notification support in <a href="https://www.dogtagpki.org/">Dogtag PKI</a>. Dogtag (when so configured) should call <a href="https://www.freedesktop.org/software/systemd/man/sd_notify.html"><code>sd_notify(3)</code></a> to notify the system service manager when it has started up and is ready to service requests.</p>
 <p>Dogtag already uses JNI in a few places (as does some of its dependencies, including JSS). But I was not keen to use JNI, with all its complexity, for this small use case. A colleague pointed me to JNA, and I decided to give it a go.</p>
 <p>The resulting code is so small I’ll just include it all here, with commentary. (I made some changes for clarity; you can review the actual patch in the <a href="https://github.com/dogtagpki/pki/pull/569/files">pull request</a>).</p>
-<div class="sourceCode" id="cb1"><pre class="sourceCode java"><code class="sourceCode java"><span id="cb1-1"><a href="#cb1-1"></a><span class="kw">package</span><span class="im"> com.netscape.cmscore.systemd;</span></span>
-<span id="cb1-2"><a href="#cb1-2"></a></span>
-<span id="cb1-3"><a href="#cb1-3"></a><span class="kw">import</span><span class="im"> com.sun.jna.Library;</span></span>
-<span id="cb1-4"><a href="#cb1-4"></a><span class="kw">import</span><span class="im"> com.sun.jna.Native;</span></span>
-<span id="cb1-5"><a href="#cb1-5"></a></span>
-<span id="cb1-6"><a href="#cb1-6"></a><span class="kw">public</span> <span class="kw">class</span> SystemdStartupNotifier {</span></code></pre></div>
+<div class="sourceCode" id="cb1"><pre class="sourceCode java"><code class="sourceCode java"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true"></a><span class="kw">package</span><span class="im"> com.netscape.cmscore.systemd;</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true"></a></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true"></a><span class="kw">import</span><span class="im"> com.sun.jna.Library;</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true"></a><span class="kw">import</span><span class="im"> com.sun.jna.Native;</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true"></a></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true"></a><span class="kw">public</span> <span class="kw">class</span> SystemdStartupNotifier {</span></code></pre></div>
 <p>Import JNA and begin the class definition.</p>
-<div class="sourceCode" id="cb2"><pre class="sourceCode java"><code class="sourceCode java"><span id="cb2-1"><a href="#cb2-1"></a><span class="kw">interface</span> Systemd <span class="kw">extends</span> Library {</span>
-<span id="cb2-2"><a href="#cb2-2"></a>    <span class="kw">public</span> <span class="dt">int</span> <span class="fu">sd_booted</span>();</span>
-<span id="cb2-3"><a href="#cb2-3"></a>    <span class="kw">public</span> <span class="dt">int</span> <span class="fu">sd_notify</span>(<span class="dt">int</span> unset_env, <span class="bu">String</span> state);</span>
-<span id="cb2-4"><a href="#cb2-4"></a>}</span></code></pre></div>
+<div class="sourceCode" id="cb2"><pre class="sourceCode java"><code class="sourceCode java"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true"></a><span class="kw">interface</span> Systemd <span class="kw">extends</span> Library {</span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true"></a>    <span class="kw">public</span> <span class="dt">int</span> <span class="fu">sd_booted</span>();</span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true"></a>    <span class="kw">public</span> <span class="dt">int</span> <span class="fu">sd_notify</span>(<span class="dt">int</span> unset_env, <span class="bu">String</span> state);</span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true"></a>}</span></code></pre></div>
 <p>Declare an interface to the shared library by extending <code>sun.jna.Native</code>. Method signatures must match the native function signatures, according to the <a href="https://github.com/java-native-access/jna/blob/5.6.0/www/Mappings.md">type mappings</a>.</p>
-<div class="sourceCode" id="cb3"><pre class="sourceCode java"><code class="sourceCode java"><span id="cb3-1"><a href="#cb3-1"></a>Systemd systemd = <span class="kw">null</span>;</span>
-<span id="cb3-2"><a href="#cb3-2"></a></span>
-<span id="cb3-3"><a href="#cb3-3"></a><span class="kw">public</span> <span class="dt">void</span> <span class="fu">init</span>() {</span>
-<span id="cb3-4"><a href="#cb3-4"></a>    systemd = Native.<span class="fu">load</span>(<span class="st">&quot;systemd&quot;</span>, Systemd.<span class="fu">class</span>);</span>
-<span id="cb3-5"><a href="#cb3-5"></a>}</span></code></pre></div>
+<div class="sourceCode" id="cb3"><pre class="sourceCode java"><code class="sourceCode java"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true"></a>Systemd systemd = <span class="kw">null</span>;</span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true"></a></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true"></a><span class="kw">public</span> <span class="dt">void</span> <span class="fu">init</span>() {</span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true"></a>    systemd = Native.<span class="fu">load</span>(<span class="st">&quot;systemd&quot;</span>, Systemd.<span class="fu">class</span>);</span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true"></a>}</span></code></pre></div>
 <p><code>init()</code> gets called by initialisation code. <code>Native.load()</code> loads <code>libsystemd.so</code> and initialises the foreign library proxy with respect to the <code>Systemd</code> interface. The proxy object is assigned to the instance variable <code>systemd</code>. An alternative approach is to assign the proxy object to a static variable in the interface definition (<a href="https://github.com/java-native-access/jna/blob/5.6.0/www/GettingStarted.md#getting-started-with-jna">example</a>).</p>
-<div class="sourceCode" id="cb4"><pre class="sourceCode java"><code class="sourceCode java"><span id="cb4-1"><a href="#cb4-1"></a><span class="dt">boolean</span> <span class="fu">notify</span>(<span class="bu">String</span> status) {</span>
-<span id="cb4-2"><a href="#cb4-2"></a>    <span class="kw">if</span> (!systemd.<span class="fu">sd_booted</span>()) {</span>
-<span id="cb4-3"><a href="#cb4-3"></a>        <span class="kw">return</span> <span class="kw">true</span>;</span>
-<span id="cb4-4"><a href="#cb4-4"></a>    } <span class="kw">else</span> {</span>
-<span id="cb4-5"><a href="#cb4-5"></a>        <span class="dt">int</span> r = systemd.<span class="fu">sd_notify</span>(</span>
-<span id="cb4-6"><a href="#cb4-6"></a>            <span class="dv">0</span> <span class="co">/* don&#39;t unset environment */</span>,</span>
-<span id="cb4-7"><a href="#cb4-7"></a>            status);</span>
-<span id="cb4-8"><a href="#cb4-8"></a>        <span class="kw">if</span> (r &lt; <span class="dv">1</span>) {</span>
-<span id="cb4-9"><a href="#cb4-9"></a>            <span class="bu">System</span>.<span class="fu">err</span>.<span class="fu">println</span>(<span class="st">&quot;sd_notify failed&quot;</span>);</span>
-<span id="cb4-10"><a href="#cb4-10"></a>            <span class="kw">return</span> <span class="kw">false</span>;</span>
-<span id="cb4-11"><a href="#cb4-11"></a>        } <span class="kw">else</span> {</span>
-<span id="cb4-12"><a href="#cb4-12"></a>            <span class="kw">return</span> <span class="kw">true</span>;</span>
-<span id="cb4-13"><a href="#cb4-13"></a>        }</span>
-<span id="cb4-14"><a href="#cb4-14"></a>    }</span>
-<span id="cb4-15"><a href="#cb4-15"></a>}</span></code></pre></div>
+<div class="sourceCode" id="cb4"><pre class="sourceCode java"><code class="sourceCode java"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true"></a><span class="dt">boolean</span> <span class="fu">notify</span>(<span class="bu">String</span> status) {</span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true"></a>    <span class="kw">if</span> (!systemd.<span class="fu">sd_booted</span>()) {</span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true"></a>        <span class="kw">return</span> <span class="kw">true</span>;</span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true"></a>    } <span class="kw">else</span> {</span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true"></a>        <span class="dt">int</span> r = systemd.<span class="fu">sd_notify</span>(</span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true"></a>            <span class="dv">0</span> <span class="co">/* don&#39;t unset environment */</span>,</span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true"></a>            status);</span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true"></a>        <span class="kw">if</span> (r &lt; <span class="dv">1</span>) {</span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true"></a>            <span class="bu">System</span>.<span class="fu">err</span>.<span class="fu">println</span>(<span class="st">&quot;sd_notify failed&quot;</span>);</span>
+<span id="cb4-10"><a href="#cb4-10" aria-hidden="true"></a>            <span class="kw">return</span> <span class="kw">false</span>;</span>
+<span id="cb4-11"><a href="#cb4-11" aria-hidden="true"></a>        } <span class="kw">else</span> {</span>
+<span id="cb4-12"><a href="#cb4-12" aria-hidden="true"></a>            <span class="kw">return</span> <span class="kw">true</span>;</span>
+<span id="cb4-13"><a href="#cb4-13" aria-hidden="true"></a>        }</span>
+<span id="cb4-14"><a href="#cb4-14" aria-hidden="true"></a>    }</span>
+<span id="cb4-15"><a href="#cb4-15" aria-hidden="true"></a>}</span></code></pre></div>
 <p><code>notify()</code> makes two foreign calls. First it calls <a href="https://www.freedesktop.org/software/systemd/man/sd_booted.html"><code>sd_booted(3)</code></a> to see if the system was booted using systemd. If not, we return (successfully). If the program <em>is</em> running under systemd it calls <a href="https://www.freedesktop.org/software/systemd/man/sd_notify.html"><code>sd_notify(3)</code></a>, logging an error on failure.</p>
 <p>That’s pretty much all there is to it. This is much, <em>much</em> nicer than JNI.</p>
 <h2 id="discussion">Discussion <a href="#discussion">§</a></h2>
@@ -950,13 +950,13 @@ dr-xr-xr-x. 9 root root 0 Nov  5 05:55 /proc/1381728</code></pre>
 <p>Right now there is no final proposal and no implementation plan. As a team we cannot proceed on the assumption that Kubernetes will support user namespaces. We will certainly present our case to OpenShift engineering internally at Red Hat, but we have to look at other options.</p>
 <h2 id="user-namespace-support-in-cri-o">User namespace support in CRI-O <a href="#user-namespace-support-in-cri-o">§</a></h2>
 <p>The <a href="https://cri-o.io/">CRI-O</a> container runtime <a href="https://github.com/cri-o/cri-o/pull/3944">recently implemented</a> support for running each pod in a separate user namespace, via <em>annotations</em> on the pod, e.g.:</p>
-<div class="sourceCode" id="cb11"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb11-1"><a href="#cb11-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
-<span id="cb11-2"><a href="#cb11-2"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Pod</span></span>
-<span id="cb11-3"><a href="#cb11-3"></a><span class="fu">metadata</span><span class="kw">:</span></span>
-<span id="cb11-4"><a href="#cb11-4"></a><span class="at">  </span><span class="fu">annotations</span><span class="kw">:</span></span>
-<span id="cb11-5"><a href="#cb11-5"></a><span class="at">    </span><span class="fu">io.kubernetes.cri-o.userns-mode</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;auto&quot;</span></span>
-<span id="cb11-6"><a href="#cb11-6"></a><span class="fu">spec</span><span class="kw">:</span></span>
-<span id="cb11-7"><a href="#cb11-7"></a><span class="at">  ...</span></span></code></pre></div>
+<div class="sourceCode" id="cb11"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
+<span id="cb11-2"><a href="#cb11-2" aria-hidden="true"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Pod</span></span>
+<span id="cb11-3"><a href="#cb11-3" aria-hidden="true"></a><span class="fu">metadata</span><span class="kw">:</span></span>
+<span id="cb11-4"><a href="#cb11-4" aria-hidden="true"></a><span class="at">  </span><span class="fu">annotations</span><span class="kw">:</span></span>
+<span id="cb11-5"><a href="#cb11-5" aria-hidden="true"></a><span class="at">    </span><span class="fu">io.kubernetes.cri-o.userns-mode</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;auto&quot;</span></span>
+<span id="cb11-6"><a href="#cb11-6" aria-hidden="true"></a><span class="fu">spec</span><span class="kw">:</span></span>
+<span id="cb11-7"><a href="#cb11-7" aria-hidden="true"></a><span class="at">  ...</span></span></code></pre></div>
 <p>Using annotations means that no explicit support in Kubernetes is required. All that is required is that Kubernetes is using the CRI-O container runtime, and that CRI-O is configured to enable this feature. OpenShift 4.x does use CRI-O, so we’re halfway there. The remaining step is to enable the feature in <code>crio.conf</code>:</p>
 <pre><code>allow_userns_annotation = true</code></pre>
 <p>The developer Giuseppe Scrivano kindly published a <a href="https://asciinema.org/a/351396">screencast showing the feature in action</a> (2 minutes). This feature is not yet in a supported release but is available on the v1.20 branch and is included in OpenShift <a href="">nightly builds</a>.</p>
@@ -1165,27 +1165,27 @@ nsTaskExitCode: 0</code></pre>
 <h2 id="creating-volumes">Creating volumes <a href="#creating-volumes">§</a></h2>
 <p>A cluster can provide a variety of types of volumes: Ceph, NFS, <code>hostPath</code>, iSCSI and several more. Storage types of the infrastructure the cluster is deployed in may also be available, e.g. AWS EBS, Azure Disk, GCE PersistentDisk (PD), Cinder (OpenStack), etc.</p>
 <p>Creating a <code>PersistentVolume</code> requires knowing about what volume types are supported, and possibly additional details about that storage type. For example, to create a PV based on a GCE PD:</p>
-<div class="sourceCode" id="cb1"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb1-1"><a href="#cb1-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
-<span id="cb1-2"><a href="#cb1-2"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> PersistentVolume</span></span>
-<span id="cb1-3"><a href="#cb1-3"></a><span class="fu">metadata</span><span class="kw">:</span></span>
-<span id="cb1-4"><a href="#cb1-4"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> pv-test</span></span>
-<span id="cb1-5"><a href="#cb1-5"></a><span class="fu">spec</span><span class="kw">:</span></span>
-<span id="cb1-6"><a href="#cb1-6"></a><span class="at">  </span><span class="fu">capacity</span><span class="kw">:</span></span>
-<span id="cb1-7"><a href="#cb1-7"></a><span class="at">    </span><span class="fu">storage</span><span class="kw">:</span><span class="at"> 100Gi</span></span>
-<span id="cb1-8"><a href="#cb1-8"></a><span class="at">  </span><span class="fu">accessModes</span><span class="kw">:</span></span>
-<span id="cb1-9"><a href="#cb1-9"></a><span class="at">  </span><span class="kw">-</span><span class="at"> ReadWriteOnce</span></span>
-<span id="cb1-10"><a href="#cb1-10"></a><span class="at">  </span><span class="fu">gcePersistentDisk</span><span class="kw">:</span></span>
-<span id="cb1-11"><a href="#cb1-11"></a><span class="at">    </span><span class="fu">pdName</span><span class="kw">:</span><span class="at"> my-data-disk</span></span>
-<span id="cb1-12"><a href="#cb1-12"></a><span class="at">    </span><span class="fu">fsType</span><span class="kw">:</span><span class="at"> ext4</span></span>
-<span id="cb1-13"><a href="#cb1-13"></a><span class="at">  </span><span class="fu">nodeAffinity</span><span class="kw">:</span></span>
-<span id="cb1-14"><a href="#cb1-14"></a><span class="at">    </span><span class="fu">required</span><span class="kw">:</span></span>
-<span id="cb1-15"><a href="#cb1-15"></a><span class="at">      </span><span class="fu">nodeSelectorTerms</span><span class="kw">:</span></span>
-<span id="cb1-16"><a href="#cb1-16"></a><span class="at">      </span><span class="kw">-</span><span class="at"> </span><span class="fu">matchExpressions</span><span class="kw">:</span></span>
-<span id="cb1-17"><a href="#cb1-17"></a><span class="at">        </span><span class="kw">-</span><span class="at"> </span><span class="fu">key</span><span class="kw">:</span><span class="at"> failure-domain.beta.kubernetes.io/zone</span></span>
-<span id="cb1-18"><a href="#cb1-18"></a><span class="at">          </span><span class="fu">operator</span><span class="kw">:</span><span class="at"> In</span></span>
-<span id="cb1-19"><a href="#cb1-19"></a><span class="at">          </span><span class="fu">values</span><span class="kw">:</span></span>
-<span id="cb1-20"><a href="#cb1-20"></a><span class="at">          </span><span class="kw">-</span><span class="at"> us-central1-a</span></span>
-<span id="cb1-21"><a href="#cb1-21"></a><span class="at">          </span><span class="kw">-</span><span class="at"> us-central1-b</span></span></code></pre></div>
+<div class="sourceCode" id="cb1"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> PersistentVolume</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true"></a><span class="fu">metadata</span><span class="kw">:</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> pv-test</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true"></a><span class="fu">spec</span><span class="kw">:</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true"></a><span class="at">  </span><span class="fu">capacity</span><span class="kw">:</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true"></a><span class="at">    </span><span class="fu">storage</span><span class="kw">:</span><span class="at"> 100Gi</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true"></a><span class="at">  </span><span class="fu">accessModes</span><span class="kw">:</span></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true"></a><span class="at">  </span><span class="kw">-</span><span class="at"> ReadWriteOnce</span></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true"></a><span class="at">  </span><span class="fu">gcePersistentDisk</span><span class="kw">:</span></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true"></a><span class="at">    </span><span class="fu">pdName</span><span class="kw">:</span><span class="at"> my-data-disk</span></span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true"></a><span class="at">    </span><span class="fu">fsType</span><span class="kw">:</span><span class="at"> ext4</span></span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true"></a><span class="at">  </span><span class="fu">nodeAffinity</span><span class="kw">:</span></span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true"></a><span class="at">    </span><span class="fu">required</span><span class="kw">:</span></span>
+<span id="cb1-15"><a href="#cb1-15" aria-hidden="true"></a><span class="at">      </span><span class="fu">nodeSelectorTerms</span><span class="kw">:</span></span>
+<span id="cb1-16"><a href="#cb1-16" aria-hidden="true"></a><span class="at">      </span><span class="kw">-</span><span class="at"> </span><span class="fu">matchExpressions</span><span class="kw">:</span></span>
+<span id="cb1-17"><a href="#cb1-17" aria-hidden="true"></a><span class="at">        </span><span class="kw">-</span><span class="at"> </span><span class="fu">key</span><span class="kw">:</span><span class="at"> failure-domain.beta.kubernetes.io/zone</span></span>
+<span id="cb1-18"><a href="#cb1-18" aria-hidden="true"></a><span class="at">          </span><span class="fu">operator</span><span class="kw">:</span><span class="at"> In</span></span>
+<span id="cb1-19"><a href="#cb1-19" aria-hidden="true"></a><span class="at">          </span><span class="fu">values</span><span class="kw">:</span></span>
+<span id="cb1-20"><a href="#cb1-20" aria-hidden="true"></a><span class="at">          </span><span class="kw">-</span><span class="at"> us-central1-a</span></span>
+<span id="cb1-21"><a href="#cb1-21" aria-hidden="true"></a><span class="at">          </span><span class="kw">-</span><span class="at"> us-central1-b</span></span></code></pre></div>
 <p>Creating this PV required:</p>
 <ul>
 <li>knowing that the cluster provides the GCE PD volume type</li>
@@ -1199,28 +1199,28 @@ nsTaskExitCode: 0</code></pre>
 NAME                 PROVISIONER            RECLAIMPOLICY   VOLUMEBINDINGMODE      ALLOWVOLUMEEXPANSION   AGE
 standard (default)   kubernetes.io/cinder   Delete          WaitForFirstConsumer   true                   28d</code></pre>
 <p>This cluster has only one storage class, called <code>standard</code>. It is also the default storage class for this cluster. To use dynamic provisioning, in the PVC spec instead of <code>volumeName</code> specify <code>storageClassName</code>:</p>
-<div class="sourceCode" id="cb3"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb3-1"><a href="#cb3-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
-<span id="cb3-2"><a href="#cb3-2"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> PersistentVolumeClaim</span></span>
-<span id="cb3-3"><a href="#cb3-3"></a><span class="fu">metadata</span><span class="kw">:</span></span>
-<span id="cb3-4"><a href="#cb3-4"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> pvc-test</span></span>
-<span id="cb3-5"><a href="#cb3-5"></a><span class="fu">spec</span><span class="kw">:</span></span>
-<span id="cb3-6"><a href="#cb3-6"></a><span class="at">  </span><span class="fu">accessModes</span><span class="kw">:</span></span>
-<span id="cb3-7"><a href="#cb3-7"></a><span class="at">    </span><span class="kw">-</span><span class="at"> ReadWriteOnce</span></span>
-<span id="cb3-8"><a href="#cb3-8"></a><span class="at">  </span><span class="fu">resources</span><span class="kw">:</span></span>
-<span id="cb3-9"><a href="#cb3-9"></a><span class="at">    </span><span class="fu">requests</span><span class="kw">:</span></span>
-<span id="cb3-10"><a href="#cb3-10"></a><span class="at">      </span><span class="fu">storage</span><span class="kw">:</span><span class="at"> 10Gi</span></span>
-<span id="cb3-11"><a href="#cb3-11"></a><span class="at">  </span><span class="fu">storageClassName</span><span class="kw">:</span><span class="at"> standard</span></span></code></pre></div>
+<div class="sourceCode" id="cb3"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> PersistentVolumeClaim</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true"></a><span class="fu">metadata</span><span class="kw">:</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> pvc-test</span></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true"></a><span class="fu">spec</span><span class="kw">:</span></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true"></a><span class="at">  </span><span class="fu">accessModes</span><span class="kw">:</span></span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true"></a><span class="at">    </span><span class="kw">-</span><span class="at"> ReadWriteOnce</span></span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true"></a><span class="at">  </span><span class="fu">resources</span><span class="kw">:</span></span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true"></a><span class="at">    </span><span class="fu">requests</span><span class="kw">:</span></span>
+<span id="cb3-10"><a href="#cb3-10" aria-hidden="true"></a><span class="at">      </span><span class="fu">storage</span><span class="kw">:</span><span class="at"> 10Gi</span></span>
+<span id="cb3-11"><a href="#cb3-11" aria-hidden="true"></a><span class="at">  </span><span class="fu">storageClassName</span><span class="kw">:</span><span class="at"> standard</span></span></code></pre></div>
 <p>If you want to use the default storage class, you can even omit the <code>storageClassName</code> field:</p>
-<div class="sourceCode" id="cb4"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb4-1"><a href="#cb4-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
-<span id="cb4-2"><a href="#cb4-2"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> PersistentVolumeClaim</span></span>
-<span id="cb4-3"><a href="#cb4-3"></a><span class="fu">metadata</span><span class="kw">:</span></span>
-<span id="cb4-4"><a href="#cb4-4"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> pvc-test</span></span>
-<span id="cb4-5"><a href="#cb4-5"></a><span class="fu">spec</span><span class="kw">:</span></span>
-<span id="cb4-6"><a href="#cb4-6"></a><span class="at">  </span><span class="fu">accessModes</span><span class="kw">:</span></span>
-<span id="cb4-7"><a href="#cb4-7"></a><span class="at">    </span><span class="kw">-</span><span class="at"> ReadWriteOnce</span></span>
-<span id="cb4-8"><a href="#cb4-8"></a><span class="at">  </span><span class="fu">resources</span><span class="kw">:</span></span>
-<span id="cb4-9"><a href="#cb4-9"></a><span class="at">    </span><span class="fu">requests</span><span class="kw">:</span></span>
-<span id="cb4-10"><a href="#cb4-10"></a><span class="at">      </span><span class="fu">storage</span><span class="kw">:</span><span class="at"> 10Gi</span></span></code></pre></div>
+<div class="sourceCode" id="cb4"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> PersistentVolumeClaim</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true"></a><span class="fu">metadata</span><span class="kw">:</span></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> pvc-test</span></span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true"></a><span class="fu">spec</span><span class="kw">:</span></span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true"></a><span class="at">  </span><span class="fu">accessModes</span><span class="kw">:</span></span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true"></a><span class="at">    </span><span class="kw">-</span><span class="at"> ReadWriteOnce</span></span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true"></a><span class="at">  </span><span class="fu">resources</span><span class="kw">:</span></span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true"></a><span class="at">    </span><span class="fu">requests</span><span class="kw">:</span></span>
+<span id="cb4-10"><a href="#cb4-10" aria-hidden="true"></a><span class="at">      </span><span class="fu">storage</span><span class="kw">:</span><span class="at"> 10Gi</span></span></code></pre></div>
 <h2 id="dynamic-provisioning-in-action">Dynamic provisioning in action <a href="#dynamic-provisioning-in-action">§</a></h2>
 <p>Let’s see what actually happens when we use dynamic provisioning. We will observe what objects are created and how their status changes as we create, use and delete a PVC that uses the default storage class.</p>
 <p>First let’s see what PVs exist:</p>
@@ -1244,24 +1244,24 @@ ftweedal% oc get pvc pvc-test -o yaml |grep storageClassName
 storageClassName: standard</code></pre>
 <p>The PVC <code>pvc-test</code> was created and has status <code>pending</code>. No new PV has been created yet. Finally note that the PVC has <code>storageClassName: standard</code> (which is the cluster default).</p>
 <p>Now lets create a pod that uses <code>pvc-test</code>, mounting it at <code>/data</code>. The pod spec is:</p>
-<div class="sourceCode" id="cb7"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb7-1"><a href="#cb7-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
-<span id="cb7-2"><a href="#cb7-2"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Pod</span></span>
-<span id="cb7-3"><a href="#cb7-3"></a><span class="fu">metadata</span><span class="kw">:</span></span>
-<span id="cb7-4"><a href="#cb7-4"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> pod-test</span></span>
-<span id="cb7-5"><a href="#cb7-5"></a><span class="fu">spec</span><span class="kw">:</span></span>
-<span id="cb7-6"><a href="#cb7-6"></a><span class="at">  </span><span class="fu">containers</span><span class="kw">:</span></span>
-<span id="cb7-7"><a href="#cb7-7"></a><span class="at">    </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> pod-test-container</span></span>
-<span id="cb7-8"><a href="#cb7-8"></a><span class="at">      </span><span class="fu">image</span><span class="kw">:</span><span class="at"> freeipa/freeipa-server:fedora-31</span></span>
-<span id="cb7-9"><a href="#cb7-9"></a><span class="at">      </span><span class="fu">volumeMounts</span><span class="kw">:</span></span>
-<span id="cb7-10"><a href="#cb7-10"></a><span class="at">        </span><span class="kw">-</span><span class="at"> </span><span class="fu">mountPath</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;/data&quot;</span></span>
-<span id="cb7-11"><a href="#cb7-11"></a><span class="at">          </span><span class="fu">name</span><span class="kw">:</span><span class="at"> data</span></span>
-<span id="cb7-12"><a href="#cb7-12"></a><span class="at">      </span><span class="fu">command</span><span class="kw">:</span></span>
-<span id="cb7-13"><a href="#cb7-13"></a><span class="at">        </span><span class="kw">-</span><span class="at"> sleep</span></span>
-<span id="cb7-14"><a href="#cb7-14"></a><span class="at">        </span><span class="kw">-</span><span class="at"> </span><span class="st">&quot;3600&quot;</span></span>
-<span id="cb7-15"><a href="#cb7-15"></a><span class="at">  </span><span class="fu">volumes</span><span class="kw">:</span></span>
-<span id="cb7-16"><a href="#cb7-16"></a><span class="at">    </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> data</span></span>
-<span id="cb7-17"><a href="#cb7-17"></a><span class="at">      </span><span class="fu">persistentVolumeClaim</span><span class="kw">:</span></span>
-<span id="cb7-18"><a href="#cb7-18"></a><span class="at">        </span><span class="fu">claimName</span><span class="kw">:</span><span class="at"> pvc-test</span></span></code></pre></div>
+<div class="sourceCode" id="cb7"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Pod</span></span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true"></a><span class="fu">metadata</span><span class="kw">:</span></span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> pod-test</span></span>
+<span id="cb7-5"><a href="#cb7-5" aria-hidden="true"></a><span class="fu">spec</span><span class="kw">:</span></span>
+<span id="cb7-6"><a href="#cb7-6" aria-hidden="true"></a><span class="at">  </span><span class="fu">containers</span><span class="kw">:</span></span>
+<span id="cb7-7"><a href="#cb7-7" aria-hidden="true"></a><span class="at">    </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> pod-test-container</span></span>
+<span id="cb7-8"><a href="#cb7-8" aria-hidden="true"></a><span class="at">      </span><span class="fu">image</span><span class="kw">:</span><span class="at"> freeipa/freeipa-server:fedora-31</span></span>
+<span id="cb7-9"><a href="#cb7-9" aria-hidden="true"></a><span class="at">      </span><span class="fu">volumeMounts</span><span class="kw">:</span></span>
+<span id="cb7-10"><a href="#cb7-10" aria-hidden="true"></a><span class="at">        </span><span class="kw">-</span><span class="at"> </span><span class="fu">mountPath</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;/data&quot;</span></span>
+<span id="cb7-11"><a href="#cb7-11" aria-hidden="true"></a><span class="at">          </span><span class="fu">name</span><span class="kw">:</span><span class="at"> data</span></span>
+<span id="cb7-12"><a href="#cb7-12" aria-hidden="true"></a><span class="at">      </span><span class="fu">command</span><span class="kw">:</span></span>
+<span id="cb7-13"><a href="#cb7-13" aria-hidden="true"></a><span class="at">        </span><span class="kw">-</span><span class="at"> sleep</span></span>
+<span id="cb7-14"><a href="#cb7-14" aria-hidden="true"></a><span class="at">        </span><span class="kw">-</span><span class="at"> </span><span class="st">&quot;3600&quot;</span></span>
+<span id="cb7-15"><a href="#cb7-15" aria-hidden="true"></a><span class="at">  </span><span class="fu">volumes</span><span class="kw">:</span></span>
+<span id="cb7-16"><a href="#cb7-16" aria-hidden="true"></a><span class="at">    </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> data</span></span>
+<span id="cb7-17"><a href="#cb7-17" aria-hidden="true"></a><span class="at">      </span><span class="fu">persistentVolumeClaim</span><span class="kw">:</span></span>
+<span id="cb7-18"><a href="#cb7-18" aria-hidden="true"></a><span class="at">        </span><span class="fu">claimName</span><span class="kw">:</span><span class="at"> pvc-test</span></span></code></pre></div>
 <p>After creating the pod we will write a file under <code>/data</code>, delete then re-create the pod, and observe that the file we wrote persists.</p>
 <pre><code>ftweedal% oc create -f deploy/pod-test.yaml
 pod/pod-test created
