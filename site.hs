@@ -64,15 +64,19 @@ main = hakyll $ do
   -- a version of the posts to use for "recent posts" list
   match "posts/*" $ version "recent" $ do
     route $ setExtension "html"
-    compile $ do
-      pandoc <- readPandoc =<< getResourceBody
-      let
-        h1 = maybe [Str "no title"] id . firstHeader <$> pandoc
-        render f = writePandoc . fmap (Pandoc mempty . pure . Plain . f)
-        title = render removeFormatting h1
-        fancyTitle = render id h1
-      saveSnapshot "title" title
-      saveSnapshot "fancyTitle" fancyTitle
+    compile $
+      pandocCompilerWithTransformM
+        defaultHakyllReaderOptions
+        defaultHakyllWriterOptions
+        (\pandoc -> do
+          let
+            h1 = maybe [Str "no title"] id . firstHeader $ pandoc
+            render f = fmap writePandoc . makeItem . Pandoc mempty . pure . Plain . f
+          render removeFormatting h1 >>= saveSnapshot "title"
+          render id h1 >>= saveSnapshot "fancyTitle"
+          pure $ addSectionLinks pandoc
+        )
+      >>= saveSnapshot "content"
 
   tagsRules tags $ \tag pattern -> do
     route idRoute
@@ -98,11 +102,9 @@ main = hakyll $ do
             `mappend` tagsField "tags" tags
             `mappend` context
 
-      pandocCompilerWithTransform
-              defaultHakyllReaderOptions
-              defaultHakyllWriterOptions
-              addSectionLinks
-        >>= saveSnapshot "content"
+      ident <- getUnderlying
+      loadSnapshotBody (setVersion (Just "recent") ident) "content"
+        >>= makeItem
         >>= loadAndApplyTemplate "templates/post.html" postContext
         >>= loadAndApplyTemplate "templates/default.html" postContext
         >>= relativizeUrls
@@ -115,7 +117,7 @@ main = hakyll $ do
       let feedContext =
             bodyField "description"
             `mappend` context
-      posts <- loadAllSnapshots ("posts/*" .&&. hasNoVersion) "content"
+      posts <- loadAllSnapshots ("posts/*" .&&. hasVersion "recent") "content"
         >>= fmap (take 10) . recentFirst
       renderAtom feedConfiguration feedContext posts
 
