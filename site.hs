@@ -68,8 +68,9 @@ main = hakyll $ do
       pandoc <- readPandoc =<< getResourceBody
       let
         h1 = maybe [Str "no title"] id . firstHeader <$> pandoc
-        title = writePandoc $ Pandoc mempty . pure . Plain . removeFormatting <$> h1
-        fancyTitle = writePandoc $ Pandoc mempty . pure . Plain <$> h1
+        render f = writePandoc . fmap (Pandoc mempty . pure . Plain . f)
+        title = render removeFormatting h1
+        fancyTitle = render id h1
       saveSnapshot "title" title
       saveSnapshot "fancyTitle" fancyTitle
 
