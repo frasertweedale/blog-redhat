@@ -163,6 +163,7 @@ removeFormatting = query f
     LineBreak -> [LineBreak]
     Math _ s -> [Str s]
     RawInline _ s -> [Str s]
+    _ -> []
 
 
 feedConfiguration :: FeedConfiguration
