@@ -69,8 +69,8 @@ main = hakyll $ do
           let
             h1 = maybe [Str "no title"] id . firstHeader $ pandoc
             render f = fmap writePandoc . makeItem . Pandoc mempty . pure . Plain . f
-          render removeFormatting h1 >>= saveSnapshot "title"
-          render id h1 >>= saveSnapshot "fancyTitle"
+          _ <- render removeFormatting h1 >>= saveSnapshot "title"
+          _ <- render id h1 >>= saveSnapshot "fancyTitle"
           pure $ addSectionLinks pandoc
         )
       >>= saveSnapshot "content"
@@ -147,7 +147,7 @@ firstHeader (Pandoc _ xs) = go xs
   where
   go [] = Nothing
   go (Header _ _ ys : _) = Just ys
-  go (_ : xs) = go xs
+  go (_ : t) = go t
 
 
 -- yield "plain" terminal inline content; discard formatting

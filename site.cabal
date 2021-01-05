@@ -10,5 +10,5 @@ executable site
     , hakyll >= 4.12.5.1
     , pandoc >= 2.6
     , pandoc-types >= 1.17.5
-  ghc-options:      -threaded
+  ghc-options:      -threaded -Wall
   default-language: Haskell2010
