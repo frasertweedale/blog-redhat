@@ -202,7 +202,7 @@ to shed more light on the issue.
 
 We are considering adding an automated check to the FreeIPA *Health
 Check* system, specifically for the range management VLVs.  The
-`GitHub ticket`_ already contains some discussion and high level
+`upstream ticket`_ already contains some discussion and high level
 steps of how the check would work.
 
 The proper fix for this issue is to move to UUIDs for all object
