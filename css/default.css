@@ -141,24 +141,19 @@ blockquote {
     font-style: italic;
 }
 
-p code
-, h1 code
-, h2 code
-, h3 code
-, h4 code
-, h5 code
-, h6 code
-, dl code
-, ul code
-, ol code
-{
-    padding: 3px;
-    hyphens: none;
-}
-
 code {
     background: #f0f0f0;
     color: #3f3f3f;
+    border: solid 1px #d0d0f0;
+    padding: 2px;
+    hyphens: none;
+    white-space: nowrap;
+}
+
+pre code {
+    border: none;
+    padding: 0px;
+    white-space: pre;
 }
 
 pre {
