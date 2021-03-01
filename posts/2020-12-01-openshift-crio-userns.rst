@@ -226,9 +226,9 @@ The error message is::
 
 Upon further investigation, I learned that the Machine Config
 Operator does not support ``append`` operations.  This is because
-are not idempotent.  So I will try again with a new machine config
-that completely replaces the ``/etc/subuid`` and ``/etc/subgid``
-files.
+appends, in general, are not idempotent and commutative.  So I will
+try again with a new machine config that completely replaces the
+``/etc/subuid`` and ``/etc/subgid`` files.
 
 The new content shall be::
 
