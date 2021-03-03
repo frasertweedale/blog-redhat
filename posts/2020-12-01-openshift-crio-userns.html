@@ -153,7 +153,7 @@ machineconfig.machineconfiguration.openshift.io/subuid-subgid created</code></pr
 reconcile config rendered-worker-a37679c5cfcefb5b0af61bb3674dccc4
 with rendered-worker-3cbd4cabeedd441500c83363dbf505fd: ignition
 file /etc/subuid includes append: unreconcilable\&quot;&quot;,</code></pre>
-<p>Upon further investigation, I learned that the Machine Config Operator does not support <code>append</code> operations. This is because are not idempotent. So I will try again with a new machine config that completely replaces the <code>/etc/subuid</code> and <code>/etc/subgid</code> files.</p>
+<p>Upon further investigation, I learned that the Machine Config Operator does not support <code>append</code> operations. This is because appends, in general, are not idempotent and commutative. So I will try again with a new machine config that completely replaces the <code>/etc/subuid</code> and <code>/etc/subgid</code> files.</p>
 <p>The new content shall be:</p>
 <pre><code>core:100000:65536
 root:200000:268435456</code></pre>
@@ -346,6 +346,10 @@ Recent posts:
 <ul>
     
         <li>
+            <a href="../posts/2021-03-03-openshift-4.7-user-namespaces.html">User namespace support in OpenShift 4.7</a>
+        </li>
+    
+        <li>
             <a href="../posts/2020-12-16-java-jna.html">Simple Java to C bindings via JNA</a>
         </li>
     
@@ -359,10 +363,6 @@ Recent posts:
     
         <li>
             <a href="../posts/2020-12-01-openshift-crio-userns.html">User namespaces in OpenShift via CRI-O annotations</a>
-        </li>
-    
-        <li>
-            <a href="../posts/2020-11-30-openshift-machine-config-operator.html">Using the OpenShift Machine Config Operator</a>
         </li>
     
 </ul>

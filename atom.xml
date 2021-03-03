@@ -8,8 +8,151 @@
         <name>Fraser Tweedale</name>
         <email>frase@frase.id.au</email>
     </author>
-    <updated>2020-12-16T00:00:00Z</updated>
+    <updated>2021-03-03T00:00:00Z</updated>
     <entry>
+    <title>User namespace support in OpenShift 4.7</title>
+    <link href="https://frasertweedale.github.io/blog-redhat/posts/2021-03-03-openshift-4.7-user-namespaces.html" />
+    <id>https://frasertweedale.github.io/blog-redhat/posts/2021-03-03-openshift-4.7-user-namespaces.html</id>
+    <published>2021-03-03T00:00:00Z</published>
+    <updated>2021-03-03T00:00:00Z</updated>
+    <summary type="html"><![CDATA[<h1 id="user-namespace-support-in-openshift-4.7">User namespace support in OpenShift 4.7</h1>
+<p>In a <a href="2020-12-01-openshift-crio-userns.html">previous post</a> I investigated how to use the annotation-based <a href="https://github.com/cri-o/cri-o/pull/3944">user namespace support</a> in CRI-O 1.20. At the end of that post, I was stuck. Now that <a href="https://www.openshift.com/blog/red-hat-openshift-4.7-is-now-available">OpenShift 4.7 has been released</a>, where do things stand?</p>
+<h2 id="user-namespaces-are-working">User namespaces are working <a href="#user-namespaces-are-working">§</a></h2>
+<p>Using the same setup, and a similar pod specification, I am able to run the pod in a user namespace. The process executes as <code>root</code> inside the namespace, and an unprivileged account outside the namespace.</p>
+<p>I won’t repeat all the setup here, but one important difference is that I granted to <code>anyuid</code> SCC to the account that creates the pod (named <code>test</code>):</p>
+<pre class="shell"><code>% oc adm policy add-scc-to-user anyuid test
+securitycontextconstraints.security.openshift.io/anyuid added to: [&quot;test&quot;]</code></pre>
+<p>The pod definition is:</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true"></a><span class="pp">% cat userns-test.yaml</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Pod</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true"></a><span class="fu">metadata</span><span class="kw">:</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> userns-test</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true"></a><span class="at">  </span><span class="fu">annotations</span><span class="kw">:</span></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true"></a><span class="at">    </span><span class="fu">openshift.io/scc</span><span class="kw">:</span><span class="at"> restricted</span></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true"></a><span class="at">    </span><span class="fu">io.kubernetes.cri-o.userns-mode</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;auto:size=65536;map-to-root=true&quot;</span></span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true"></a><span class="fu">spec</span><span class="kw">:</span></span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true"></a><span class="at">  </span><span class="fu">containers</span><span class="kw">:</span></span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> userns-test</span></span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true"></a><span class="at">    </span><span class="fu">image</span><span class="kw">:</span><span class="at"> freeipa/freeipa-server:fedora-31</span></span>
+<span id="cb2-13"><a href="#cb2-13" aria-hidden="true"></a><span class="at">    </span><span class="fu">command</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="st">&quot;sleep&quot;</span><span class="kw">,</span><span class="at"> </span><span class="st">&quot;3601&quot;</span><span class="kw">]</span></span>
+<span id="cb2-14"><a href="#cb2-14" aria-hidden="true"></a><span class="at">    </span><span class="fu">securityContext</span><span class="kw">:</span></span>
+<span id="cb2-15"><a href="#cb2-15" aria-hidden="true"></a><span class="at">      </span><span class="fu">runAsUser</span><span class="kw">:</span><span class="at"> </span><span class="dv">0</span></span>
+<span id="cb2-16"><a href="#cb2-16" aria-hidden="true"></a><span class="at">      </span><span class="fu">runAsGroup</span><span class="kw">:</span><span class="at"> </span><span class="dv">0</span></span>
+<span id="cb2-17"><a href="#cb2-17" aria-hidden="true"></a><span class="at">  </span><span class="fu">securityContext</span><span class="kw">:</span></span>
+<span id="cb2-18"><a href="#cb2-18" aria-hidden="true"></a><span class="at">    </span><span class="fu">sysctls</span><span class="kw">:</span></span>
+<span id="cb2-19"><a href="#cb2-19" aria-hidden="true"></a><span class="at">    </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;net.ipv4.ping_group_range&quot;</span></span>
+<span id="cb2-20"><a href="#cb2-20" aria-hidden="true"></a><span class="at">      </span><span class="fu">value</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;0 65535&quot;</span></span></code></pre></div>
+<p>Note the <code>io.kubernetes.cri-o.userns-mode</code> annotation. That activates the user namespace feature. The <code>runAsUser</code> and <code>runAsGroup</code> fields in <code>securityContext</code> are also important.</p>
+<p>I create the pod. After a few moments I observe that it is running, and query the node and container ID:</p>
+<pre class="shell"><code>$ oc --as test create -f userns-test.yaml
+pod/userns-test created
+
+% oc get -o json pod userns-test \
+    | jq .status.phase
+&quot;Running&quot;
+
+% oc get -o json pod userns-test \
+    | jq .spec.nodeName
+&quot;ft-47dev-1-4kplg-worker-0-qjfcj&quot;
+
+% oc get -o json pod userns-test \
+    | jq &quot;.status.containerStatuses[0].containerID&quot;
+&quot;cri-o://92bf6c3b61337f18f4c963450b5db76cbcd4aa73e2659759ba2725f4d0f8aac7&quot;</code></pre>
+<p>In a debug shell on the worker node, I use <code>crictl</code> to find out the pid of the pod’s (first) process:</p>
+<pre class="shell"><code>% oc debug node/ft-47dev-1-4kplg-worker-0-qjfcj
+Starting pod/ft-47dev-1-4kplg-worker-0-qjfcj-debug ...
+To use host binaries, run `chroot /host`
+Pod IP: 10.8.0.165
+If you don&#39;t see a command prompt, try pressing enter.
+sh-4.2# chroot /host
+sh-4.4# crictl inspect 92bf6c3b | jq .info.pid
+937107</code></pre>
+<div class="note">
+<p>Earlier versions of <code>crictl</code> have the PID in the top-level object (<code>jq</code> selector <code>.pid</code>). The selector is now <code>.info.pid</code>.</p>
+</div>
+<p>Now we can query the UID map of the container process:</p>
+<pre class="shell"><code>sh-4.4# cat /proc/937107/uid_map
+         0     200000      65536</code></pre>
+<p>This shows that the process is running as uid 0 (<code>root</code>) in the namespace, and uid 200000 outside the namespace. The mapped range is contiguous and has size 65536, which agrees with the annotation:</p>
+<pre><code>io.kubernetes.cri-o.userns-mode: &quot;auto:size=65536;map-to-root=true&quot;</code></pre>
+<p>This is great!</p>
+<h2 id="they-still-require-a-privileged-service-account">They still require a privileged service account <a href="#they-still-require-a-privileged-service-account">§</a></h2>
+<p>In my earlier investigation I found that that users require the <code>anyuid</code> SCC (or equivalent) to create user-namespaced pods running as specific UIDs (e.g. <code>root</code>) inside the pod. This is still the case. Rescinding <code>anyuid</code> from user <code>test</code> and (re)creating the pod results in an error:</p>
+<pre class="shell"><code>% oc adm policy remove-scc-from-user anyuid test
+securitycontextconstraints.security.openshift.io/anyuid removed from: [&quot;test&quot;]
+
+% oc --as test create -f userns-test.yaml
+Error from server (Forbidden): error when creating
+&quot;userns-test.yaml&quot;: pods &quot;userns-test&quot; is forbidden: unable to
+validate against any security context constraint:
+[spec.containers[0].securityContext.runAsUser: Invalid value: 0:
+must be in the ranges: [1000630000, 1000639999]]</code></pre>
+<p>At the end of my previous post, I wrote:</p>
+<blockquote>
+<p>The security context constraint (SCC) is prohibiting the use of uid <code>0</code> for the container process. Switching to a permissive SCC might allow me to proceed, but it would also mean using a more privileged OpenShift user account. Then that privileged account could then create containers running as <code>root</code> <em>in the system user namespace</em>. We want user namespaces in OpenShift so that we can <em>avoid</em> this exact scenario. So resorting to a permissive SCC (e.g. <code>anyuid</code>) feels like the wrong way to go.</p>
+</blockquote>
+<p>After giving this more thought, my opinion has shifted. This is still an important gap in overall security, and it should be addressed. But even though it currently requires a privileged account to create user-namespaced pods, that fact that you even <em>can</em> is a huge win.</p>
+<p>In other words, the user namespace support in its current form is still a giant leap forward. Previously, many kinds of applications cannot run securely in OpenShift. The service account privileges caveat may be unacceptable to some, but I hope that would be addressed in time.</p>
+<h2 id="inconsistent-treatment-of-securitycontext">Inconsistent treatment of <code>securityContext</code> <a href="#inconsistent-treatment-of-securitycontext">§</a></h2>
+<p>The PodSpec I used above (with success) is:</p>
+<div class="sourceCode" id="cb8"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true"></a><span class="fu">containers</span><span class="kw">:</span></span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true"></a><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> userns-test</span></span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true"></a><span class="at">  </span><span class="fu">image</span><span class="kw">:</span><span class="at"> freeipa/freeipa-server:fedora-31</span></span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true"></a><span class="at">  </span><span class="fu">command</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="st">&quot;sleep&quot;</span><span class="kw">,</span><span class="at"> </span><span class="st">&quot;3601&quot;</span><span class="kw">]</span></span>
+<span id="cb8-5"><a href="#cb8-5" aria-hidden="true"></a><span class="at">  </span><span class="fu">securityContext</span><span class="kw">:</span></span>
+<span id="cb8-6"><a href="#cb8-6" aria-hidden="true"></a><span class="at">    </span><span class="fu">runAsUser</span><span class="kw">:</span><span class="at"> </span><span class="dv">0</span></span>
+<span id="cb8-7"><a href="#cb8-7" aria-hidden="true"></a><span class="at">    </span><span class="fu">runAsGroup</span><span class="kw">:</span><span class="at"> </span><span class="dv">0</span></span>
+<span id="cb8-8"><a href="#cb8-8" aria-hidden="true"></a><span class="fu">securityContext</span><span class="kw">:</span></span>
+<span id="cb8-9"><a href="#cb8-9" aria-hidden="true"></a><span class="at">  </span><span class="fu">sysctls</span><span class="kw">:</span></span>
+<span id="cb8-10"><a href="#cb8-10" aria-hidden="true"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;net.ipv4.ping_group_range&quot;</span></span>
+<span id="cb8-11"><a href="#cb8-11" aria-hidden="true"></a><span class="at">    </span><span class="fu">value</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;0 65535&quot;</span></span></code></pre></div>
+<p>Note there are two <code>securityContext</code> fields. The first, in the Container spec, is a <a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.20/#securitycontext-v1-core">SecurityContext</a> object. The second, in the PodSpec, is a <a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.20/#podsecuritycontext-v1-core">PodSecurityContext</a> object.</p>
+<p>The <code>runAsUser</code> and <code>runAsGroup</code> fields can be specified in either of these objects (or both, with SecurityContext taking precedence). I can move these fields to the PodSecurityContext, as below.</p>
+<div class="sourceCode" id="cb9"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true"></a><span class="fu">containers</span><span class="kw">:</span></span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true"></a><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> userns-test</span></span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true"></a><span class="at">  </span><span class="fu">image</span><span class="kw">:</span><span class="at"> freeipa/freeipa-server:fedora-31</span></span>
+<span id="cb9-4"><a href="#cb9-4" aria-hidden="true"></a><span class="at">  </span><span class="fu">command</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="st">&quot;sleep&quot;</span><span class="kw">,</span><span class="at"> </span><span class="st">&quot;3601&quot;</span><span class="kw">]</span></span>
+<span id="cb9-5"><a href="#cb9-5" aria-hidden="true"></a><span class="fu">securityContext</span><span class="kw">:</span></span>
+<span id="cb9-6"><a href="#cb9-6" aria-hidden="true"></a><span class="at">  </span><span class="fu">runAsUser</span><span class="kw">:</span><span class="at"> </span><span class="dv">0</span></span>
+<span id="cb9-7"><a href="#cb9-7" aria-hidden="true"></a><span class="at">  </span><span class="fu">runAsGroup</span><span class="kw">:</span><span class="at"> </span><span class="dv">0</span></span>
+<span id="cb9-8"><a href="#cb9-8" aria-hidden="true"></a><span class="at">  </span><span class="fu">sysctls</span><span class="kw">:</span></span>
+<span id="cb9-9"><a href="#cb9-9" aria-hidden="true"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;net.ipv4.ping_group_range&quot;</span></span>
+<span id="cb9-10"><a href="#cb9-10" aria-hidden="true"></a><span class="at">    </span><span class="fu">value</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;0 65535&quot;</span></span></code></pre></div>
+<p>According to the documentation, this object should have the same meaning as the previous one. But there is a critical behavioural difference! I create and examine the pod as before:</p>
+<pre class="shell"><code>$ oc --as test create -f userns-test.yaml
+pod/userns-test created
+
+% oc get -o json pod userns-test \
+    | jq .status.phase
+&quot;Running&quot;
+
+% oc get -o json pod userns-test \
+    | jq .spec.nodeName
+&quot;ft-47dev-1-4kplg-worker-0-qjfcj&quot;
+
+% oc get -o json pod userns-test \
+    | jq &quot;.status.containerStatuses[0].containerID&quot;
+&quot;cri-o://c90760e88ee8493bfdb9af661c18afef139b79541160850ceac125b0c62e1de3&quot;</code></pre>
+<p>And in the node debug shell, I query the <code>uid_map</code> for the container:</p>
+<pre class="shell"><code>sh-4.4# crictl inspect c90760e | jq .info.pid
+1022187
+sh-4.4# cat /proc/1022187/uid_map
+         1     200001      65535
+         0          0          1
+</code></pre>
+<p>This subtle change to the object definition caused OpenShift to run the process as <code>root</code> in the container <strong>and on the host!</strong> Given that the Kubernetes documentation implies that the two configurations are equivalent, this is a dangerous situation. I will file a ticket to bring this to the attention of the developers.</p>
+<h2 id="continuing-investigation">Continuing investigation <a href="#continuing-investigation">§</a></h2>
+<p>There are two particular lines of investigation I need to pursue from here. The first is to confirm that <code>setuid(2)</code> and related functionality work properly in the namespaced container. This is important for containers that run multiple processes as different users. I do not anticipate any particular issues here. But I still need to verify it.</p>
+<div class="note">
+<p>This is not the <em>cloud native</em> way. But this is the approach we are taking, for now. “Monolithic container” is a reasonable way to bring complex, traditional software systems into the cloud. As long as it can be done securely.</p>
+</div>
+<p>The other line of investigation is to find out how user-namespaced containers interact with volume mounts. If multiple containers, perhaps running on different nodes, read and write the same volume, what are the UIDs on that volume? Do we need stable, cluster-wide subuid/subgid mappings? If so, how can that be achieved? I expect I will much more to say about this in upcoming posts.</p>
+<h2 id="conclusion">Conclusion <a href="#conclusion">§</a></h2>
+<p>CRI-O annotation-based user namespaces work in OpenShift 4.7. But there are some caveats, and at least one scary “gotcha”. Nevertheless, for simple workloads the feature does work well. It is big leap forward for running more kinds of workloads without compromising the security of your cluster.</p>
+<p>In time, I hope the account privilege (SCC) caveat and <code>securityContext</code> issues can be resolved. I will file tickets and continue to discuss these topics with the OpenShift developers. And my investigations about more complex workloads and multi-node considerations shall continue.</p>]]></summary>
+</entry>
+<entry>
     <title>Simple Java to C bindings via JNA</title>
     <link href="https://frasertweedale.github.io/blog-redhat/posts/2020-12-16-java-jna.html" />
     <id>https://frasertweedale.github.io/blog-redhat/posts/2020-12-16-java-jna.html</id>
@@ -482,7 +625,7 @@ machineconfig.machineconfiguration.openshift.io/subuid-subgid created</code></pr
 reconcile config rendered-worker-a37679c5cfcefb5b0af61bb3674dccc4
 with rendered-worker-3cbd4cabeedd441500c83363dbf505fd: ignition
 file /etc/subuid includes append: unreconcilable\&quot;&quot;,</code></pre>
-<p>Upon further investigation, I learned that the Machine Config Operator does not support <code>append</code> operations. This is because are not idempotent. So I will try again with a new machine config that completely replaces the <code>/etc/subuid</code> and <code>/etc/subgid</code> files.</p>
+<p>Upon further investigation, I learned that the Machine Config Operator does not support <code>append</code> operations. This is because appends, in general, are not idempotent and commutative. So I will try again with a new machine config that completely replaces the <code>/etc/subuid</code> and <code>/etc/subgid</code> files.</p>
 <p>The new content shall be:</p>
 <pre><code>core:100000:65536
 root:200000:268435456</code></pre>
@@ -1151,155 +1294,6 @@ nsTaskExitCode: 0</code></pre>
 <p>We are considering adding an automated check to the FreeIPA <em>Health Check</em> system, specifically for the range management VLVs. The <a href="https://github.com/freeipa/freeipa-healthcheck/issues/151">upstream ticket</a> already contains some discussion and high level steps of how the check would work.</p>
 <p>The proper fix for this issue is to move to UUIDs for all object identifiers. Serial numbers might need something different but it is the same idea. This work is on the roadmap. <em>So many problems</em> will go away when we make this change.</p>
 <p>Historical commentary: I don’t know why the <code>serialno</code>, <code>requestId</code> and other attributes use Directory String syntax, which necessitates the length prefixing hack. Maybe SSS/VLV only work on strings (or it was thus in the past). The code predates our current VCS and the reasons are lost in time. The implication of this is that we can only handle numbers up to 99 decimal digits. Assumptions like this do bother me, but I think we are probably OK here. For my lifetime, anyway.</p>]]></summary>
-</entry>
-<entry>
-    <title>Dynamic volume provisioning with OpenShift storage classes</title>
-    <link href="https://frasertweedale.github.io/blog-redhat/posts/2020-08-13-openshift-storage-classes.html" />
-    <id>https://frasertweedale.github.io/blog-redhat/posts/2020-08-13-openshift-storage-classes.html</id>
-    <published>2020-08-13T00:00:00Z</published>
-    <updated>2020-08-13T00:00:00Z</updated>
-    <summary type="html"><![CDATA[<h1 id="dynamic-volume-provisioning-with-openshift-storage-classes">Dynamic volume provisioning with OpenShift storage classes</h1>
-<p>For containerised applications that require persistent storage, the Kubernetes <code>PersistentVolumeClaim</code> (PVC) object provides the link between a <code>PersistentVolume</code> (PV) and the pod. When scaling such an application or even deploying it the first time, the operator (human or otherwise) has to create the PVC; the pod specification can then refer to it.</p>
-<p>For example, a <code>StatefulSet</code> object can optionally specify <code>volumeClaimTemplates</code> alongside the pod <code>template</code>. As the application creates pods, so will it create the associated PVCs according to the defined templates.</p>
-<p>But PVCs need PVs to bind to. Can these also be created on the fly? And if so, how can we abstract over the details of the underlying storage provider(s), which may vary from cluster to cluster? In this post I provide an overview of <em>storage classes</em>, which solve these problems.</p>
-<h2 id="creating-volumes">Creating volumes <a href="#creating-volumes">§</a></h2>
-<p>A cluster can provide a variety of types of volumes: Ceph, NFS, <code>hostPath</code>, iSCSI and several more. Storage types of the infrastructure the cluster is deployed in may also be available, e.g. AWS EBS, Azure Disk, GCE PersistentDisk (PD), Cinder (OpenStack), etc.</p>
-<p>Creating a <code>PersistentVolume</code> requires knowing about what volume types are supported, and possibly additional details about that storage type. For example, to create a PV based on a GCE PD:</p>
-<div class="sourceCode" id="cb1"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
-<span id="cb1-2"><a href="#cb1-2" aria-hidden="true"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> PersistentVolume</span></span>
-<span id="cb1-3"><a href="#cb1-3" aria-hidden="true"></a><span class="fu">metadata</span><span class="kw">:</span></span>
-<span id="cb1-4"><a href="#cb1-4" aria-hidden="true"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> pv-test</span></span>
-<span id="cb1-5"><a href="#cb1-5" aria-hidden="true"></a><span class="fu">spec</span><span class="kw">:</span></span>
-<span id="cb1-6"><a href="#cb1-6" aria-hidden="true"></a><span class="at">  </span><span class="fu">capacity</span><span class="kw">:</span></span>
-<span id="cb1-7"><a href="#cb1-7" aria-hidden="true"></a><span class="at">    </span><span class="fu">storage</span><span class="kw">:</span><span class="at"> 100Gi</span></span>
-<span id="cb1-8"><a href="#cb1-8" aria-hidden="true"></a><span class="at">  </span><span class="fu">accessModes</span><span class="kw">:</span></span>
-<span id="cb1-9"><a href="#cb1-9" aria-hidden="true"></a><span class="at">  </span><span class="kw">-</span><span class="at"> ReadWriteOnce</span></span>
-<span id="cb1-10"><a href="#cb1-10" aria-hidden="true"></a><span class="at">  </span><span class="fu">gcePersistentDisk</span><span class="kw">:</span></span>
-<span id="cb1-11"><a href="#cb1-11" aria-hidden="true"></a><span class="at">    </span><span class="fu">pdName</span><span class="kw">:</span><span class="at"> my-data-disk</span></span>
-<span id="cb1-12"><a href="#cb1-12" aria-hidden="true"></a><span class="at">    </span><span class="fu">fsType</span><span class="kw">:</span><span class="at"> ext4</span></span>
-<span id="cb1-13"><a href="#cb1-13" aria-hidden="true"></a><span class="at">  </span><span class="fu">nodeAffinity</span><span class="kw">:</span></span>
-<span id="cb1-14"><a href="#cb1-14" aria-hidden="true"></a><span class="at">    </span><span class="fu">required</span><span class="kw">:</span></span>
-<span id="cb1-15"><a href="#cb1-15" aria-hidden="true"></a><span class="at">      </span><span class="fu">nodeSelectorTerms</span><span class="kw">:</span></span>
-<span id="cb1-16"><a href="#cb1-16" aria-hidden="true"></a><span class="at">      </span><span class="kw">-</span><span class="at"> </span><span class="fu">matchExpressions</span><span class="kw">:</span></span>
-<span id="cb1-17"><a href="#cb1-17" aria-hidden="true"></a><span class="at">        </span><span class="kw">-</span><span class="at"> </span><span class="fu">key</span><span class="kw">:</span><span class="at"> failure-domain.beta.kubernetes.io/zone</span></span>
-<span id="cb1-18"><a href="#cb1-18" aria-hidden="true"></a><span class="at">          </span><span class="fu">operator</span><span class="kw">:</span><span class="at"> In</span></span>
-<span id="cb1-19"><a href="#cb1-19" aria-hidden="true"></a><span class="at">          </span><span class="fu">values</span><span class="kw">:</span></span>
-<span id="cb1-20"><a href="#cb1-20" aria-hidden="true"></a><span class="at">          </span><span class="kw">-</span><span class="at"> us-central1-a</span></span>
-<span id="cb1-21"><a href="#cb1-21" aria-hidden="true"></a><span class="at">          </span><span class="kw">-</span><span class="at"> us-central1-b</span></span></code></pre></div>
-<p>Creating this PV required:</p>
-<ul>
-<li>knowing that the cluster provides the GCE PD volume type</li>
-<li>knowing the name and region/zones of the PD to use</li>
-</ul>
-<p>Having to know these details and encoding them into an application’s deployment manifests imposes a greater burden on administrators, or necessitates more complex operators, or results in a less portable application. Or some combination of those outcomes.</p>
-<h2 id="storage-classes">Storage classes <a href="#storage-classes">§</a></h2>
-<p>What we really want is to abstract over the storage implementations. We want to able to specify some high-level characteristics of the storage (e.g. block or file, fast or slow?). This is what <em>storage classes</em> provide. Then when we create a PVC, we can specify the desired capacity and class, and the cluster should <em>dynamically provision</em> an appropriate volume. As a result, applications are simpler to deploy and more portable.</p>
-<p>To see the storage classes available in a cluster:</p>
-<pre><code>ftweedal% oc get storageclass
-NAME                 PROVISIONER            RECLAIMPOLICY   VOLUMEBINDINGMODE      ALLOWVOLUMEEXPANSION   AGE
-standard (default)   kubernetes.io/cinder   Delete          WaitForFirstConsumer   true                   28d</code></pre>
-<p>This cluster has only one storage class, called <code>standard</code>. It is also the default storage class for this cluster. To use dynamic provisioning, in the PVC spec instead of <code>volumeName</code> specify <code>storageClassName</code>:</p>
-<div class="sourceCode" id="cb3"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
-<span id="cb3-2"><a href="#cb3-2" aria-hidden="true"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> PersistentVolumeClaim</span></span>
-<span id="cb3-3"><a href="#cb3-3" aria-hidden="true"></a><span class="fu">metadata</span><span class="kw">:</span></span>
-<span id="cb3-4"><a href="#cb3-4" aria-hidden="true"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> pvc-test</span></span>
-<span id="cb3-5"><a href="#cb3-5" aria-hidden="true"></a><span class="fu">spec</span><span class="kw">:</span></span>
-<span id="cb3-6"><a href="#cb3-6" aria-hidden="true"></a><span class="at">  </span><span class="fu">accessModes</span><span class="kw">:</span></span>
-<span id="cb3-7"><a href="#cb3-7" aria-hidden="true"></a><span class="at">    </span><span class="kw">-</span><span class="at"> ReadWriteOnce</span></span>
-<span id="cb3-8"><a href="#cb3-8" aria-hidden="true"></a><span class="at">  </span><span class="fu">resources</span><span class="kw">:</span></span>
-<span id="cb3-9"><a href="#cb3-9" aria-hidden="true"></a><span class="at">    </span><span class="fu">requests</span><span class="kw">:</span></span>
-<span id="cb3-10"><a href="#cb3-10" aria-hidden="true"></a><span class="at">      </span><span class="fu">storage</span><span class="kw">:</span><span class="at"> 10Gi</span></span>
-<span id="cb3-11"><a href="#cb3-11" aria-hidden="true"></a><span class="at">  </span><span class="fu">storageClassName</span><span class="kw">:</span><span class="at"> standard</span></span></code></pre></div>
-<p>If you want to use the default storage class, you can even omit the <code>storageClassName</code> field:</p>
-<div class="sourceCode" id="cb4"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
-<span id="cb4-2"><a href="#cb4-2" aria-hidden="true"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> PersistentVolumeClaim</span></span>
-<span id="cb4-3"><a href="#cb4-3" aria-hidden="true"></a><span class="fu">metadata</span><span class="kw">:</span></span>
-<span id="cb4-4"><a href="#cb4-4" aria-hidden="true"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> pvc-test</span></span>
-<span id="cb4-5"><a href="#cb4-5" aria-hidden="true"></a><span class="fu">spec</span><span class="kw">:</span></span>
-<span id="cb4-6"><a href="#cb4-6" aria-hidden="true"></a><span class="at">  </span><span class="fu">accessModes</span><span class="kw">:</span></span>
-<span id="cb4-7"><a href="#cb4-7" aria-hidden="true"></a><span class="at">    </span><span class="kw">-</span><span class="at"> ReadWriteOnce</span></span>
-<span id="cb4-8"><a href="#cb4-8" aria-hidden="true"></a><span class="at">  </span><span class="fu">resources</span><span class="kw">:</span></span>
-<span id="cb4-9"><a href="#cb4-9" aria-hidden="true"></a><span class="at">    </span><span class="fu">requests</span><span class="kw">:</span></span>
-<span id="cb4-10"><a href="#cb4-10" aria-hidden="true"></a><span class="at">      </span><span class="fu">storage</span><span class="kw">:</span><span class="at"> 10Gi</span></span></code></pre></div>
-<h2 id="dynamic-provisioning-in-action">Dynamic provisioning in action <a href="#dynamic-provisioning-in-action">§</a></h2>
-<p>Let’s see what actually happens when we use dynamic provisioning. We will observe what objects are created and how their status changes as we create, use and delete a PVC that uses the default storage class.</p>
-<p>First let’s see what PVs exist:</p>
-<pre><code>ftweedal% oc get pv
-NAME                                       CAPACITY   ACCESS MODES   RECLAIM POLICY   STATUS    CLAIM                                             STORAGECLASS   REASON    AGE
-pvc-d3bc7c81-8a24-4318-a914-296dbdc5ec3f   100Gi      RWO            Delete           Bound     openshift-image-registry/image-registry-storage   standard                 7d22h</code></pre>
-<p>There is one PV, with a 100Gi capacity. It is used for the image registry.</p>
-<p>Now, lets create <code>pvc-test</code> as specified above:</p>
-<pre><code>ftweedal% oc create -f deploy/pvc-test.yaml
-persistentvolumeclaim/pvc-test created
-
-ftweedal% oc get pvc pvc-test
-NAME       STATUS    VOLUME    CAPACITY   ACCESS MODES   STORAGECLASS   AGE
-pvc-test   Pending                                       standard       11s
-
-ftweedal% oc get pv
-NAME                                       CAPACITY   ACCESS MODES   RECLAIM POLICY   STATUS    CLAIM                                             STORAGECLASS   REASON    AGE
-pvc-d3bc7c81-8a24-4318-a914-296dbdc5ec3f   100Gi      RWO            Delete           Bound     openshift-image-registry/image-registry-storage   standard                 7d22h
-
-ftweedal% oc get pvc pvc-test -o yaml |grep storageClassName
-storageClassName: standard</code></pre>
-<p>The PVC <code>pvc-test</code> was created and has status <code>pending</code>. No new PV has been created yet. Finally note that the PVC has <code>storageClassName: standard</code> (which is the cluster default).</p>
-<p>Now lets create a pod that uses <code>pvc-test</code>, mounting it at <code>/data</code>. The pod spec is:</p>
-<div class="sourceCode" id="cb7"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
-<span id="cb7-2"><a href="#cb7-2" aria-hidden="true"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Pod</span></span>
-<span id="cb7-3"><a href="#cb7-3" aria-hidden="true"></a><span class="fu">metadata</span><span class="kw">:</span></span>
-<span id="cb7-4"><a href="#cb7-4" aria-hidden="true"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> pod-test</span></span>
-<span id="cb7-5"><a href="#cb7-5" aria-hidden="true"></a><span class="fu">spec</span><span class="kw">:</span></span>
-<span id="cb7-6"><a href="#cb7-6" aria-hidden="true"></a><span class="at">  </span><span class="fu">containers</span><span class="kw">:</span></span>
-<span id="cb7-7"><a href="#cb7-7" aria-hidden="true"></a><span class="at">    </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> pod-test-container</span></span>
-<span id="cb7-8"><a href="#cb7-8" aria-hidden="true"></a><span class="at">      </span><span class="fu">image</span><span class="kw">:</span><span class="at"> freeipa/freeipa-server:fedora-31</span></span>
-<span id="cb7-9"><a href="#cb7-9" aria-hidden="true"></a><span class="at">      </span><span class="fu">volumeMounts</span><span class="kw">:</span></span>
-<span id="cb7-10"><a href="#cb7-10" aria-hidden="true"></a><span class="at">        </span><span class="kw">-</span><span class="at"> </span><span class="fu">mountPath</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;/data&quot;</span></span>
-<span id="cb7-11"><a href="#cb7-11" aria-hidden="true"></a><span class="at">          </span><span class="fu">name</span><span class="kw">:</span><span class="at"> data</span></span>
-<span id="cb7-12"><a href="#cb7-12" aria-hidden="true"></a><span class="at">      </span><span class="fu">command</span><span class="kw">:</span></span>
-<span id="cb7-13"><a href="#cb7-13" aria-hidden="true"></a><span class="at">        </span><span class="kw">-</span><span class="at"> sleep</span></span>
-<span id="cb7-14"><a href="#cb7-14" aria-hidden="true"></a><span class="at">        </span><span class="kw">-</span><span class="at"> </span><span class="st">&quot;3600&quot;</span></span>
-<span id="cb7-15"><a href="#cb7-15" aria-hidden="true"></a><span class="at">  </span><span class="fu">volumes</span><span class="kw">:</span></span>
-<span id="cb7-16"><a href="#cb7-16" aria-hidden="true"></a><span class="at">    </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> data</span></span>
-<span id="cb7-17"><a href="#cb7-17" aria-hidden="true"></a><span class="at">      </span><span class="fu">persistentVolumeClaim</span><span class="kw">:</span></span>
-<span id="cb7-18"><a href="#cb7-18" aria-hidden="true"></a><span class="at">        </span><span class="fu">claimName</span><span class="kw">:</span><span class="at"> pvc-test</span></span></code></pre></div>
-<p>After creating the pod we will write a file under <code>/data</code>, delete then re-create the pod, and observe that the file we wrote persists.</p>
-<pre><code>ftweedal% oc create -f deploy/pod-test.yaml
-pod/pod-test created
-
-ftweedal% oc exec pod-test -- sh -c &#39;echo &quot;hello world&quot; &gt; /data/foo&#39;
-
-ftweedal% oc delete pod pod-test
-pod &quot;pod-test&quot; deleted
-
-ftweedal% oc create -f deploy/pod-test.yaml
-pod/pod-test created
-
-ftweedal% oc exec pod-test -- cat /data/foo
-hello world
-
-ftweedal% oc delete pod pod-test
-pod &quot;pod-test&quot; deleted</code></pre>
-<p>This confirms that the PVC works as intended. Let’s check the status of the PVC and PVs to see what happened behind the scenes:</p>
-<pre><code>ftweedal% oc get pvc pvc-test
-NAME       STATUS    VOLUME                                     CAPACITY   ACCESS MODES   STORAGECLASS   AGE
-pvc-test   Bound     pvc-26d82d50-8e66-4938-bdee-f28ff2bcb49c   10Gi       RWO            standard       16m
-
-ftweedal% oc get pv
-NAME                                       CAPACITY   ACCESS MODES   RECLAIM POLICY   STATUS    CLAIM                                             STORAGECLASS   REASON    AGE
-pvc-26d82d50-8e66-4938-bdee-f28ff2bcb49c   10Gi       RWO            Delete           Bound     ftweedal-operator/pvc-test                        standard                 4m53s
-pvc-d3bc7c81-8a24-4318-a914-296dbdc5ec3f   100Gi      RWO            Delete           Bound     openshift-image-registry/image-registry-storage   standard                 7d23h</code></pre>
-<p>Before creating the pod <code>pvc-test</code> had status <code>Pending</code>. Now it is <code>Bound</code> to the volume <code>pvc-26d82d50-8e66-4938-bdee-f28ff2bcb49c</code> which was dynamically provisioned with capacity 10Gi as required by <code>pvc-test</code>.</p>
-<p>Finally as we delete <code>pvc-test</code>, observe the automatic deletion of the dynamically provisioned volume:</p>
-<pre><code>ftweedal% oc delete pvc pvc-test
-persistentvolumeclaim &quot;pvc-test&quot; deleted
-
-ftweedal% oc get pv
-NAME                                       CAPACITY   ACCESS MODES   RECLAIM POLICY   STATUS    CLAIM                                             STORAGECLASS   REASON    AGE
-pvc-d3bc7c81-8a24-4318-a914-296dbdc5ec3f   100Gi      RWO            Delete           Bound     openshift-image-registry/image-registry-storage   standard                 7d23h</code></pre>
-<p><code>pvc-26d82d50-8e66-4938-bdee-f28ff2bcb49c</code> went away, as expected.</p>
-<h2 id="conclusion">Conclusion <a href="#conclusion">§</a></h2>
-<p>As we work toward operationalising FreeIPA in OpenShift, I am interested in how we can use storage classes to make for a smooth deployment across different environments and especially those for which OpenShift Dedicated is available.</p>
-<p>I also need to learn more about the best practices or common idioms for representing in storage classes the application suitability (e.g. file versus block storage) or performance characteristics of supported volume types in a cluster. To make it a bit more concrete, consider that for performance reasons we might require low-latency/high-throughput block storage for the 389 DS LDAP database storage. How can we express this abstract requirement such that we get a satisfactory result across a variety of “clouds” with no administrator effort? Hopefully storage classes are the answer. But if they are not the whole solution, from what I have learned so far I have a strong feeling that they will be a bit part of the solution.</p>]]></summary>
 </entry>
 
 </feed>

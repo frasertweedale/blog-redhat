@@ -1,0 +1,220 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+    <head>
+        <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+        <title>Fraser's IdM Blog - User namespace support in OpenShift 4.7</title>
+        <link rel="stylesheet" type="text/css" href="../css/default.css" />
+    </head>
+    <body>
+        <div id="header">
+            <div id="logo">
+                <a href="../">Fraser's IdM Blog</a>
+            </div>
+            <div id="navigation">
+                <a href="../">Home</a>
+                <a href="../archive.html">Archive</a>
+            </div>
+        </div>
+
+        <div id="content">
+            <div class="info">
+    
+    Tags: 
+    
+</div>
+
+<div id="postContent">
+    <h1 id="user-namespace-support-in-openshift-4.7">User namespace support in OpenShift 4.7</h1>
+<p>In a <a href="2020-12-01-openshift-crio-userns.html">previous post</a> I investigated how to use the annotation-based <a href="https://github.com/cri-o/cri-o/pull/3944">user namespace support</a> in CRI-O 1.20. At the end of that post, I was stuck. Now that <a href="https://www.openshift.com/blog/red-hat-openshift-4.7-is-now-available">OpenShift 4.7 has been released</a>, where do things stand?</p>
+<h2 id="user-namespaces-are-working">User namespaces are working <a href="#user-namespaces-are-working">§</a></h2>
+<p>Using the same setup, and a similar pod specification, I am able to run the pod in a user namespace. The process executes as <code>root</code> inside the namespace, and an unprivileged account outside the namespace.</p>
+<p>I won’t repeat all the setup here, but one important difference is that I granted to <code>anyuid</code> SCC to the account that creates the pod (named <code>test</code>):</p>
+<pre class="shell"><code>% oc adm policy add-scc-to-user anyuid test
+securitycontextconstraints.security.openshift.io/anyuid added to: [&quot;test&quot;]</code></pre>
+<p>The pod definition is:</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true"></a><span class="pp">% cat userns-test.yaml</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Pod</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true"></a><span class="fu">metadata</span><span class="kw">:</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> userns-test</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true"></a><span class="at">  </span><span class="fu">annotations</span><span class="kw">:</span></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true"></a><span class="at">    </span><span class="fu">openshift.io/scc</span><span class="kw">:</span><span class="at"> restricted</span></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true"></a><span class="at">    </span><span class="fu">io.kubernetes.cri-o.userns-mode</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;auto:size=65536;map-to-root=true&quot;</span></span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true"></a><span class="fu">spec</span><span class="kw">:</span></span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true"></a><span class="at">  </span><span class="fu">containers</span><span class="kw">:</span></span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> userns-test</span></span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true"></a><span class="at">    </span><span class="fu">image</span><span class="kw">:</span><span class="at"> freeipa/freeipa-server:fedora-31</span></span>
+<span id="cb2-13"><a href="#cb2-13" aria-hidden="true"></a><span class="at">    </span><span class="fu">command</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="st">&quot;sleep&quot;</span><span class="kw">,</span><span class="at"> </span><span class="st">&quot;3601&quot;</span><span class="kw">]</span></span>
+<span id="cb2-14"><a href="#cb2-14" aria-hidden="true"></a><span class="at">    </span><span class="fu">securityContext</span><span class="kw">:</span></span>
+<span id="cb2-15"><a href="#cb2-15" aria-hidden="true"></a><span class="at">      </span><span class="fu">runAsUser</span><span class="kw">:</span><span class="at"> </span><span class="dv">0</span></span>
+<span id="cb2-16"><a href="#cb2-16" aria-hidden="true"></a><span class="at">      </span><span class="fu">runAsGroup</span><span class="kw">:</span><span class="at"> </span><span class="dv">0</span></span>
+<span id="cb2-17"><a href="#cb2-17" aria-hidden="true"></a><span class="at">  </span><span class="fu">securityContext</span><span class="kw">:</span></span>
+<span id="cb2-18"><a href="#cb2-18" aria-hidden="true"></a><span class="at">    </span><span class="fu">sysctls</span><span class="kw">:</span></span>
+<span id="cb2-19"><a href="#cb2-19" aria-hidden="true"></a><span class="at">    </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;net.ipv4.ping_group_range&quot;</span></span>
+<span id="cb2-20"><a href="#cb2-20" aria-hidden="true"></a><span class="at">      </span><span class="fu">value</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;0 65535&quot;</span></span></code></pre></div>
+<p>Note the <code>io.kubernetes.cri-o.userns-mode</code> annotation. That activates the user namespace feature. The <code>runAsUser</code> and <code>runAsGroup</code> fields in <code>securityContext</code> are also important.</p>
+<p>I create the pod. After a few moments I observe that it is running, and query the node and container ID:</p>
+<pre class="shell"><code>$ oc --as test create -f userns-test.yaml
+pod/userns-test created
+
+% oc get -o json pod userns-test \
+    | jq .status.phase
+&quot;Running&quot;
+
+% oc get -o json pod userns-test \
+    | jq .spec.nodeName
+&quot;ft-47dev-1-4kplg-worker-0-qjfcj&quot;
+
+% oc get -o json pod userns-test \
+    | jq &quot;.status.containerStatuses[0].containerID&quot;
+&quot;cri-o://92bf6c3b61337f18f4c963450b5db76cbcd4aa73e2659759ba2725f4d0f8aac7&quot;</code></pre>
+<p>In a debug shell on the worker node, I use <code>crictl</code> to find out the pid of the pod’s (first) process:</p>
+<pre class="shell"><code>% oc debug node/ft-47dev-1-4kplg-worker-0-qjfcj
+Starting pod/ft-47dev-1-4kplg-worker-0-qjfcj-debug ...
+To use host binaries, run `chroot /host`
+Pod IP: 10.8.0.165
+If you don't see a command prompt, try pressing enter.
+sh-4.2# chroot /host
+sh-4.4# crictl inspect 92bf6c3b | jq .info.pid
+937107</code></pre>
+<div class="note">
+<p>Earlier versions of <code>crictl</code> have the PID in the top-level object (<code>jq</code> selector <code>.pid</code>). The selector is now <code>.info.pid</code>.</p>
+</div>
+<p>Now we can query the UID map of the container process:</p>
+<pre class="shell"><code>sh-4.4# cat /proc/937107/uid_map
+         0     200000      65536</code></pre>
+<p>This shows that the process is running as uid 0 (<code>root</code>) in the namespace, and uid 200000 outside the namespace. The mapped range is contiguous and has size 65536, which agrees with the annotation:</p>
+<pre><code>io.kubernetes.cri-o.userns-mode: &quot;auto:size=65536;map-to-root=true&quot;</code></pre>
+<p>This is great!</p>
+<h2 id="they-still-require-a-privileged-service-account">They still require a privileged service account <a href="#they-still-require-a-privileged-service-account">§</a></h2>
+<p>In my earlier investigation I found that that users require the <code>anyuid</code> SCC (or equivalent) to create user-namespaced pods running as specific UIDs (e.g. <code>root</code>) inside the pod. This is still the case. Rescinding <code>anyuid</code> from user <code>test</code> and (re)creating the pod results in an error:</p>
+<pre class="shell"><code>% oc adm policy remove-scc-from-user anyuid test
+securitycontextconstraints.security.openshift.io/anyuid removed from: [&quot;test&quot;]
+
+% oc --as test create -f userns-test.yaml
+Error from server (Forbidden): error when creating
+&quot;userns-test.yaml&quot;: pods &quot;userns-test&quot; is forbidden: unable to
+validate against any security context constraint:
+[spec.containers[0].securityContext.runAsUser: Invalid value: 0:
+must be in the ranges: [1000630000, 1000639999]]</code></pre>
+<p>At the end of my previous post, I wrote:</p>
+<blockquote>
+<p>The security context constraint (SCC) is prohibiting the use of uid <code>0</code> for the container process. Switching to a permissive SCC might allow me to proceed, but it would also mean using a more privileged OpenShift user account. Then that privileged account could then create containers running as <code>root</code> <em>in the system user namespace</em>. We want user namespaces in OpenShift so that we can <em>avoid</em> this exact scenario. So resorting to a permissive SCC (e.g. <code>anyuid</code>) feels like the wrong way to go.</p>
+</blockquote>
+<p>After giving this more thought, my opinion has shifted. This is still an important gap in overall security, and it should be addressed. But even though it currently requires a privileged account to create user-namespaced pods, that fact that you even <em>can</em> is a huge win.</p>
+<p>In other words, the user namespace support in its current form is still a giant leap forward. Previously, many kinds of applications cannot run securely in OpenShift. The service account privileges caveat may be unacceptable to some, but I hope that would be addressed in time.</p>
+<h2 id="inconsistent-treatment-of-securitycontext">Inconsistent treatment of <code>securityContext</code> <a href="#inconsistent-treatment-of-securitycontext">§</a></h2>
+<p>The PodSpec I used above (with success) is:</p>
+<div class="sourceCode" id="cb8"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true"></a><span class="fu">containers</span><span class="kw">:</span></span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true"></a><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> userns-test</span></span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true"></a><span class="at">  </span><span class="fu">image</span><span class="kw">:</span><span class="at"> freeipa/freeipa-server:fedora-31</span></span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true"></a><span class="at">  </span><span class="fu">command</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="st">&quot;sleep&quot;</span><span class="kw">,</span><span class="at"> </span><span class="st">&quot;3601&quot;</span><span class="kw">]</span></span>
+<span id="cb8-5"><a href="#cb8-5" aria-hidden="true"></a><span class="at">  </span><span class="fu">securityContext</span><span class="kw">:</span></span>
+<span id="cb8-6"><a href="#cb8-6" aria-hidden="true"></a><span class="at">    </span><span class="fu">runAsUser</span><span class="kw">:</span><span class="at"> </span><span class="dv">0</span></span>
+<span id="cb8-7"><a href="#cb8-7" aria-hidden="true"></a><span class="at">    </span><span class="fu">runAsGroup</span><span class="kw">:</span><span class="at"> </span><span class="dv">0</span></span>
+<span id="cb8-8"><a href="#cb8-8" aria-hidden="true"></a><span class="fu">securityContext</span><span class="kw">:</span></span>
+<span id="cb8-9"><a href="#cb8-9" aria-hidden="true"></a><span class="at">  </span><span class="fu">sysctls</span><span class="kw">:</span></span>
+<span id="cb8-10"><a href="#cb8-10" aria-hidden="true"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;net.ipv4.ping_group_range&quot;</span></span>
+<span id="cb8-11"><a href="#cb8-11" aria-hidden="true"></a><span class="at">    </span><span class="fu">value</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;0 65535&quot;</span></span></code></pre></div>
+<p>Note there are two <code>securityContext</code> fields. The first, in the Container spec, is a <a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.20/#securitycontext-v1-core">SecurityContext</a> object. The second, in the PodSpec, is a <a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.20/#podsecuritycontext-v1-core">PodSecurityContext</a> object.</p>
+<p>The <code>runAsUser</code> and <code>runAsGroup</code> fields can be specified in either of these objects (or both, with SecurityContext taking precedence). I can move these fields to the PodSecurityContext, as below.</p>
+<div class="sourceCode" id="cb9"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true"></a><span class="fu">containers</span><span class="kw">:</span></span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true"></a><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> userns-test</span></span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true"></a><span class="at">  </span><span class="fu">image</span><span class="kw">:</span><span class="at"> freeipa/freeipa-server:fedora-31</span></span>
+<span id="cb9-4"><a href="#cb9-4" aria-hidden="true"></a><span class="at">  </span><span class="fu">command</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="st">&quot;sleep&quot;</span><span class="kw">,</span><span class="at"> </span><span class="st">&quot;3601&quot;</span><span class="kw">]</span></span>
+<span id="cb9-5"><a href="#cb9-5" aria-hidden="true"></a><span class="fu">securityContext</span><span class="kw">:</span></span>
+<span id="cb9-6"><a href="#cb9-6" aria-hidden="true"></a><span class="at">  </span><span class="fu">runAsUser</span><span class="kw">:</span><span class="at"> </span><span class="dv">0</span></span>
+<span id="cb9-7"><a href="#cb9-7" aria-hidden="true"></a><span class="at">  </span><span class="fu">runAsGroup</span><span class="kw">:</span><span class="at"> </span><span class="dv">0</span></span>
+<span id="cb9-8"><a href="#cb9-8" aria-hidden="true"></a><span class="at">  </span><span class="fu">sysctls</span><span class="kw">:</span></span>
+<span id="cb9-9"><a href="#cb9-9" aria-hidden="true"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;net.ipv4.ping_group_range&quot;</span></span>
+<span id="cb9-10"><a href="#cb9-10" aria-hidden="true"></a><span class="at">    </span><span class="fu">value</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;0 65535&quot;</span></span></code></pre></div>
+<p>According to the documentation, this object should have the same meaning as the previous one. But there is a critical behavioural difference! I create and examine the pod as before:</p>
+<pre class="shell"><code>$ oc --as test create -f userns-test.yaml
+pod/userns-test created
+
+% oc get -o json pod userns-test \
+    | jq .status.phase
+&quot;Running&quot;
+
+% oc get -o json pod userns-test \
+    | jq .spec.nodeName
+&quot;ft-47dev-1-4kplg-worker-0-qjfcj&quot;
+
+% oc get -o json pod userns-test \
+    | jq &quot;.status.containerStatuses[0].containerID&quot;
+&quot;cri-o://c90760e88ee8493bfdb9af661c18afef139b79541160850ceac125b0c62e1de3&quot;</code></pre>
+<p>And in the node debug shell, I query the <code>uid_map</code> for the container:</p>
+<pre class="shell"><code>sh-4.4# crictl inspect c90760e | jq .info.pid
+1022187
+sh-4.4# cat /proc/1022187/uid_map
+         1     200001      65535
+         0          0          1
+</code></pre>
+<p>This subtle change to the object definition caused OpenShift to run the process as <code>root</code> in the container <strong>and on the host!</strong> Given that the Kubernetes documentation implies that the two configurations are equivalent, this is a dangerous situation. I will file a ticket to bring this to the attention of the developers.</p>
+<h2 id="continuing-investigation">Continuing investigation <a href="#continuing-investigation">§</a></h2>
+<p>There are two particular lines of investigation I need to pursue from here. The first is to confirm that <code>setuid(2)</code> and related functionality work properly in the namespaced container. This is important for containers that run multiple processes as different users. I do not anticipate any particular issues here. But I still need to verify it.</p>
+<div class="note">
+<p>This is not the <em>cloud native</em> way. But this is the approach we are taking, for now. “Monolithic container” is a reasonable way to bring complex, traditional software systems into the cloud. As long as it can be done securely.</p>
+</div>
+<p>The other line of investigation is to find out how user-namespaced containers interact with volume mounts. If multiple containers, perhaps running on different nodes, read and write the same volume, what are the UIDs on that volume? Do we need stable, cluster-wide subuid/subgid mappings? If so, how can that be achieved? I expect I will much more to say about this in upcoming posts.</p>
+<h2 id="conclusion">Conclusion <a href="#conclusion">§</a></h2>
+<p>CRI-O annotation-based user namespaces work in OpenShift 4.7. But there are some caveats, and at least one scary “gotcha”. Nevertheless, for simple workloads the feature does work well. It is big leap forward for running more kinds of workloads without compromising the security of your cluster.</p>
+<p>In time, I hope the account privilege (SCC) caveat and <code>securityContext</code> issues can be resolved. I will file tickets and continue to discuss these topics with the OpenShift developers. And my investigations about more complex workloads and multi-node considerations shall continue.</p>
+</div>
+<div id="postFooter">
+    <div id="recent">
+Recent posts:
+<ul>
+    
+        <li>
+            <a href="../posts/2021-03-03-openshift-4.7-user-namespaces.html">User namespace support in OpenShift 4.7</a>
+        </li>
+    
+        <li>
+            <a href="../posts/2020-12-16-java-jna.html">Simple Java to C bindings via JNA</a>
+        </li>
+    
+        <li>
+            <a href="../posts/2020-12-08-k8s-srv-limitation.html">Kubernetes DNS Service Discovery limitations</a>
+        </li>
+    
+        <li>
+            <a href="../posts/2020-12-05-pod-hostname-fqdn.html">Pod hostnames and FQDNs</a>
+        </li>
+    
+        <li>
+            <a href="../posts/2020-12-01-openshift-crio-userns.html">User namespaces in OpenShift via CRI-O annotations</a>
+        </li>
+    
+</ul>
+
+<div id="recentLinks">
+    <a type="application/atom+xml" href="../atom.xml">Atom feed</a>
+     <!-- em space -->
+    <a href="../archive.html">All posts…</a>
+</div>
+
+</div>
+
+    <div id="license">
+    <a rel="license" href="https://creativecommons.org/licenses/by/4.0/">
+        <img alt="Creative Commons License" style="border-width:0" src="https://licensebuttons.net/l/by/4.0/88x31.png">
+    </a>
+    <br />
+    Except where otherwise noted, this work is licensed under a
+    <a rel="license" href="https://creativecommons.org/licenses/by/4.0/">
+        Creative Commons Attribution 4.0 International License
+    </a>.
+</div>
+
+</div>
+
+        </div>
+        <div class="clear"></div>
+        <div id="footer">
+            Generated by
+            <a href="https://jaspervdj.be/hakyll">Hakyll</a>
+        </div>
+    </body>
+</html>
