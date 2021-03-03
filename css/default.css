@@ -163,6 +163,14 @@ pre {
     overflow: auto;
 }
 
+.note p {
+    border: solid 1px yellow;
+    border-radius: 10px;
+    background: lightyellow;
+    padding: 10px 15px;
+    overflow: auto;
+}
+
 .sourceCode .im { color: mediumvioletred; } /* import */
 .sourceCode .kw { color: mediumvioletred; } /* keyword */
 .sourceCode .fu { color: mediumvioletred; } /* function */
