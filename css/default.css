@@ -39,7 +39,7 @@ div#header #navigation a {
     border-top: solid 2px black;
     color: #555;
     font-size: 12px;
-    margin-top: 12px;
+    margin-top: 20px;
     padding: 12px 0px 12px 0px;
 }
 
@@ -137,6 +137,14 @@ p {
     hyphens: auto;
 }
 
+div p:first-child {
+    margin-top: 0;
+}
+
+div p:last-child {
+    margin-bottom: 0;
+}
+
 blockquote {
     font-style: italic;
 }
@@ -163,7 +171,7 @@ pre {
     overflow: auto;
 }
 
-.note p {
+.note {
     border: solid 1px gold;
     border-radius: 10px;
     background: lightyellow;
