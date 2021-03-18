@@ -150,7 +150,7 @@ blockquote {
 }
 
 code {
-    background: #f0f0f0;
+    background: #f7f7ff;
     color: #3f3f3f;
     border: solid 1px #d0d0f0;
     padding: 2px;
@@ -166,7 +166,7 @@ pre code {
 
 pre {
     border: solid 1px #d0d0f0;
-    background: #f0f0f0;
+    background: #f7f7ff;
     padding: 10px 15px;
     overflow: auto;
 }
