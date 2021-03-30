@@ -8,8 +8,275 @@
         <name>Fraser Tweedale</name>
         <email>frase@frase.id.au</email>
     </author>
-    <updated>2021-03-10T00:00:00Z</updated>
+    <updated>2021-03-30T00:00:00Z</updated>
     <entry>
+    <title>systemd containers on OpenShift with cgroups v2</title>
+    <link href="https://frasertweedale.github.io/blog-redhat/posts/2021-03-30-openshift-cgroupv2-systemd.html" />
+    <id>https://frasertweedale.github.io/blog-redhat/posts/2021-03-30-openshift-cgroupv2-systemd.html</id>
+    <published>2021-03-30T00:00:00Z</published>
+    <updated>2021-03-30T00:00:00Z</updated>
+    <summary type="html"><![CDATA[<h1 id="systemd-containers-on-openshift-with-cgroups-v2">systemd containers on OpenShift with cgroups v2</h1>
+<p><em>systemd</em> in a container is a practical reality of migrating nontrivial applications to container infrastructure. It is not the “cloud native” way, but many applications written in The Before Times cannot be broken up and rearchitected without a huge cost. And so, there is a demand to run containers that run systemd, which in turn manages application services.</p>
+<p>FreeIPA is one example. It’s traditional environment is a dedicated Linux server (ignoring replicas). There are <em>many</em> services which both interact among themselves, and process requests from external clients and other FreeIPA servers. The engineering effort to redesign FreeIPA as a suite of several containerised services is expected to be very high. Therefore our small team focused on bringing FreeIPA to OpenShift therefore decided to pursue the “monolithic container” approach.</p>
+<p>Support for systemd containers in OpenShift, <em>without hacks</em>, is a prerequisite for this approach to viable. In this post I experiment with systemd containers in OpenShift and share my results.</p>
+<h2 id="test-application-http-server">Test application: HTTP server <a href="#test-application-http-server">§</a></h2>
+<p>To test systemd containers on OpenShift, I created a Fedora-based container running the <em>nginx</em> HTTP server. I enable the <code>nginx</code> systemd and set the default command to <code>/sbin/init</code>, which is systemd. The server doesn’t host any interesting content, but if it responds to requests we know that systemd is working.</p>
+<p>The <code>Containerfile</code> definition is:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode dockerfile"><code class="sourceCode dockerfile"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true"></a><span class="kw">FROM</span> fedora:33-x86_64</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true"></a><span class="kw">RUN</span> dnf -y install nginx &amp;&amp; dnf clean all &amp;&amp; systemctl enable nginx</span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true"></a><span class="kw">EXPOSE</span> 80</span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true"></a><span class="kw">CMD</span> [ <span class="st">&quot;/sbin/init&quot;</span> ]</span></code></pre></div>
+<p>I built the container on my workstation and tagged it <code>test-nginx</code>. To check that the container works, I ran it locally and performed an HTTP request via <code>curl</code>:</p>
+<pre class="shell"><code>% podman run --detach --publish 8080:80 test-nginx
+2d8059e555c821d9ffcccd84bee88996207794957696c54e8d29787e8c33fab3
+
+% curl --head localhost:8080
+HTTP/1.1 200 OK
+Server: nginx/1.18.0
+Date: Thu, 25 Mar 2021 00:22:23 GMT
+Content-Type: text/html
+Content-Length: 5564
+Last-Modified: Mon, 27 Jul 2020 22:20:49 GMT
+Connection: keep-alive
+ETag: &quot;5f1f5341-15bc&quot;
+Accept-Ranges: bytes
+
+% podman kill 2d8059e5
+2d8059e555c821d9ffcccd84bee88996207794957696c54e8d29787e8c33fab3</code></pre>
+<p>The container works properly in <code>podman</code>. I proceed to testing it on OpenShift.</p>
+<h2 id="running-privileged-user">Running (<strong>privileged</strong> user) <a href="#running-privileged-user">§</a></h2>
+<p>I performed my testing on an OpenShift 4.8 nightly cluster. The exact build is <code>4.8.0-0.nightly-2021-03-26-010831</code>. As far as I’m aware, with respect to systemd and cgroups there are no major differences between OpenShift 4.7 (which is Generally Available) and the build I’m using. So results should be similar on OpenShift 4.7.</p>
+<p>The Pod definition for my test service is:</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Pod</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true"></a><span class="fu">metadata</span><span class="kw">:</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> nginx</span></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true"></a><span class="at">  </span><span class="fu">labels</span><span class="kw">:</span></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true"></a><span class="at">    </span><span class="fu">app</span><span class="kw">:</span><span class="at"> nginx</span></span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true"></a><span class="fu">spec</span><span class="kw">:</span></span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true"></a><span class="at">  </span><span class="fu">containers</span><span class="kw">:</span></span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> nginx</span></span>
+<span id="cb3-10"><a href="#cb3-10" aria-hidden="true"></a><span class="at">    </span><span class="fu">image</span><span class="kw">:</span><span class="at"> quay.io/ftweedal/test-nginx:latest</span></span></code></pre></div>
+<p>I create the Pod, operating with the cluster <code>admin</code> credential. After a few seconds, the pod is running:</p>
+<pre class="shell"><code>% oc create -f pod-nginx.yaml 
+pod/nginx created
+
+% oc get -o json pod/nginx | jq .status.phase
+&quot;Running&quot;</code></pre>
+<h3 id="verifying-that-the-service-is-working">Verifying that the service is working <a href="#verifying-that-the-service-is-working">§</a></h3>
+<p><code>pod/nginx</code> is running, but it is not exposed to other pods in the cluster, or to the outside world. To test that the server is working, I will expose it on the hostname <code>nginx.apps.ft-48dev-5.idmocp.lab.eng.rdu2.redhat.com</code>. First, observe that performing an HTTP request from my workstation fails because the service is not available:</p>
+<pre class="shell"><code>% curl --head nginx.apps.ft-48dev-5.idmocp.lab.eng.rdu2.redhat.com
+HTTP/1.0 503 Service Unavailable
+pragma: no-cache
+cache-control: private, max-age=0, no-cache, no-store
+content-type: text/html</code></pre>
+<p>Now I create Service and Route objects to expose the nginx server. The Service definition is:</p>
+<div class="sourceCode" id="cb6"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Service</span></span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true"></a><span class="fu">metadata</span><span class="kw">:</span></span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> nginx</span></span>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true"></a><span class="fu">spec</span><span class="kw">:</span></span>
+<span id="cb6-6"><a href="#cb6-6" aria-hidden="true"></a><span class="at">  </span><span class="fu">selector</span><span class="kw">:</span></span>
+<span id="cb6-7"><a href="#cb6-7" aria-hidden="true"></a><span class="at">    </span><span class="fu">app</span><span class="kw">:</span><span class="at"> nginx</span></span>
+<span id="cb6-8"><a href="#cb6-8" aria-hidden="true"></a><span class="at">  </span><span class="fu">ports</span><span class="kw">:</span></span>
+<span id="cb6-9"><a href="#cb6-9" aria-hidden="true"></a><span class="at">    </span><span class="kw">-</span><span class="at"> </span><span class="fu">protocol</span><span class="kw">:</span><span class="at"> TCP</span></span>
+<span id="cb6-10"><a href="#cb6-10" aria-hidden="true"></a><span class="at">      </span><span class="fu">port</span><span class="kw">:</span><span class="at"> </span><span class="dv">80</span></span></code></pre></div>
+<p>And the Route definition is:</p>
+<div class="sourceCode" id="cb7"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Route</span></span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true"></a><span class="fu">metadata</span><span class="kw">:</span></span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> nginx</span></span>
+<span id="cb7-5"><a href="#cb7-5" aria-hidden="true"></a><span class="fu">spec</span><span class="kw">:</span></span>
+<span id="cb7-6"><a href="#cb7-6" aria-hidden="true"></a><span class="at">  </span><span class="fu">host</span><span class="kw">:</span><span class="at"> nginx.apps.ft-48dev-5.idmocp.lab.eng.rdu2.redhat.com</span></span>
+<span id="cb7-7"><a href="#cb7-7" aria-hidden="true"></a><span class="at">  </span><span class="fu">to</span><span class="kw">:</span></span>
+<span id="cb7-8"><a href="#cb7-8" aria-hidden="true"></a><span class="at">    </span><span class="fu">kind</span><span class="kw">:</span><span class="at"> Service</span></span>
+<span id="cb7-9"><a href="#cb7-9" aria-hidden="true"></a><span class="at">    </span><span class="fu">name</span><span class="kw">:</span><span class="at"> nginx</span></span></code></pre></div>
+<p>I create the objects:</p>
+<pre class="shell"><code>% oc create -f service-nginx.yaml 
+service/nginx created
+
+% oc create -f route-nginx.yaml
+route.route.openshift.io/nginx created</code></pre>
+<p>After a few seconds I performed the HTTP request again, and it succeeded:</p>
+<pre class="shell"><code>% curl --head nginx.apps.ft-48dev-5.idmocp.lab.eng.rdu2.redhat.com
+HTTP/1.1 200 OK
+server: nginx/1.18.0
+date: Tue, 30 Mar 2021 08:16:23 GMT
+content-type: text/html
+content-length: 5564
+last-modified: Mon, 27 Jul 2020 22:20:49 GMT
+etag: &quot;5f1f5341-15bc&quot;
+accept-ranges: bytes
+set-cookie: 6cf5f3bc2fa4d24f45018c591d3617c3=6f2f093d36d535f1dde195e08a311bda; path=/; HttpOnly
+cache-control: private</code></pre>
+<p>This confirms that the systemd container is running properly on OpenShift 4.8.</p>
+<h3 id="low-level-details">Low-level details <a href="#low-level-details">§</a></h3>
+<p>Now I will inspect some low-level details of the container. I’ll do that in a debug shell on the worker node. So first, I query the pod’s worker node name and container ID:</p>
+<pre class="shell"><code>% oc get -o json pod/nginx \
+    | jq &#39;.spec.nodeName,
+          .status.containerStatuses[0].containerID&#39;
+&quot;ft-48dev-5-f24l6-worker-0-q7lff&quot;
+&quot;cri-o://d9d106cb65e4c965737ef66f15bd5b9e0988c386675e3404e24fd36e58284638&quot;</code></pre>
+<p>Now I enter a debug shell on the worker node:</p>
+<pre class="shell"><code>% oc debug node/ft-48dev-5-f24l6-worker-0-q7lff
+Starting pod/ft-48dev-5-f24l6-worker-0-q7lff-debug ...
+To use host binaries, run `chroot /host`
+Pod IP: 10.8.1.64
+If you don&#39;t see a command prompt, try pressing enter.
+sh-4.2# chroot /host
+sh-4.4# </code></pre>
+<p>I use <code>crictl</code> to query the namespaces of the container:</p>
+<pre class="shell"><code>sh-4.4# crictl inspect d9d106 \
+        | jq .info.runtimeSpec.linux.namespaces[].type
+&quot;pid&quot;
+&quot;network&quot;
+&quot;ipc&quot;
+&quot;uts&quot;
+&quot;mount&quot;</code></pre>
+<p>Observe that there are <code>pid</code> and <code>mount</code> namespaces (among others), but no <code>cgroup</code> namespace. The worker node and container are using cgroups v1.</p>
+<p>The <code>container_manage_cgroup</code> SELinux boolean is <code>off</code>:</p>
+<pre class="shell"><code>sh-4.4# getsebool container_manage_cgroup
+container_manage_cgroup --&gt; off</code></pre>
+<p>Now let’s see what processes are running in the container. We can query the PID of the initial container process via <code>crictl inspect</code>. Then I use <code>pgrep(1)</code> with the <code>--ns</code> option, which lists processes executing in the same namespace(s) as the specified PID:</p>
+<pre class="shell"><code>sh-4.4# crictl inspect d9d106 | jq .info.pid
+14591
+
+sh-4.4# pgrep --ns 14591 | xargs ps -o user,pid,cmd --sort pid
+USER         PID CMD
+root       14591 /sbin/init
+root       14625 /usr/lib/systemd/systemd-journald
+systemd+   14636 /usr/lib/systemd/systemd-resolved
+root       14642 /usr/lib/systemd/systemd-homed
+root       14643 /usr/lib/systemd/systemd-logind
+root       14646 /sbin/agetty -o -p -- \u --noclear --keep-baud console 115200,38400,9600 xterm
+dbus       14647 /usr/bin/dbus-broker-launch --scope system --audit
+dbus       14651 dbus-broker --log 4 --controller 9 --machine-id 2f2fcc4033c5428996568ca34219c72a --max-bytes 536870912 --max-fds 4096 --max-matches 16384 --audit
+root       14654 nginx: master process /usr/sbin/nginx
+polkitd    14655 nginx: worker process
+polkitd    14656 nginx: worker process
+polkitd    14657 nginx: worker process
+polkitd    14658 nginx: worker process
+polkitd    14659 nginx: worker process
+polkitd    14660 nginx: worker process
+polkitd    14661 nginx: worker process
+polkitd    14662 nginx: worker process</code></pre>
+<p>The <code>PID</code> column shows the PIDs from the point of view of the host’s PID namespace. The first process (PID 1 <em>inside</em> the container) is systemd (<code>/sbin/init</code>). systemd has started other system services, and also nginx.</p>
+<p>systemd is running as <code>root</code> <strong>on the host</strong>. The other processes run under various system accounts. The container does not have its own user namespace. This pod was created by a privileged account, which allows it to run as <code>root</code> on the host.</p>
+<h2 id="running-unprivileged-user">Running (<strong>unprivileged</strong> user) <a href="#running-unprivileged-user">§</a></h2>
+<p>I created an unprivileged user called <code>test</code>, and granted it admin privileges (so it can create pods).</p>
+<pre class="shell"><code>% oc create user test
+user.user.openshift.io/test created 
+
+% oc adm policy add-role-to-user admin test
+clusterrole.rbac.authorization.k8s.io/admin added: &quot;test&quot;</code></pre>
+<p>I did not grant to the <code>test</code> account any <em>Security Context Constraints (SCCs)</em> that would allow it to run privileged containers or use host user accounts (including <code>root</code>).</p>
+<p>Now I create the same <code>nginx</code> pod, as this user <code>test</code>. The pod fails to execute:</p>
+<pre class="shell"><code>% oc --as test create -f pod-nginx.yaml
+pod/nginx created
+
+% oc get pod/nginx
+NAME    READY   STATUS             RESTARTS   AGE
+nginx   0/1     CrashLoopBackOff   1          23s</code></pre>
+<p>Let’s inspect the logs to see what went wrong:</p>
+<pre class="shell"><code>% oc logs pod/nginx
+%</code></pre>
+<p>There is no output. This baffled me, at first. Eventually I learned that Kubernetes, by default, does not allocate pseudo-terminal devices to containers. You can overcome this on a per-container basis by including <code>tty: true</code> in the Container object definition:</p>
+<div class="sourceCode" id="cb18"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
+<span id="cb18-2"><a href="#cb18-2" aria-hidden="true"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Pod</span></span>
+<span id="cb18-3"><a href="#cb18-3" aria-hidden="true"></a><span class="fu">metadata</span><span class="kw">:</span></span>
+<span id="cb18-4"><a href="#cb18-4" aria-hidden="true"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> nginx</span></span>
+<span id="cb18-5"><a href="#cb18-5" aria-hidden="true"></a><span class="at">  </span><span class="fu">labels</span><span class="kw">:</span></span>
+<span id="cb18-6"><a href="#cb18-6" aria-hidden="true"></a><span class="at">    </span><span class="fu">app</span><span class="kw">:</span><span class="at"> nginx</span></span>
+<span id="cb18-7"><a href="#cb18-7" aria-hidden="true"></a><span class="fu">spec</span><span class="kw">:</span></span>
+<span id="cb18-8"><a href="#cb18-8" aria-hidden="true"></a><span class="at">  </span><span class="fu">containers</span><span class="kw">:</span></span>
+<span id="cb18-9"><a href="#cb18-9" aria-hidden="true"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> nginx</span></span>
+<span id="cb18-10"><a href="#cb18-10" aria-hidden="true"></a><span class="at">    </span><span class="fu">image</span><span class="kw">:</span><span class="at"> quay.io/ftweedal/test-nginx:latest</span></span>
+<span id="cb18-11"><a href="#cb18-11" aria-hidden="true"></a><span class="at">    </span><span class="fu">tty</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span></code></pre></div>
+<p>With the pseudo-terminal enabled, <code>oc logs</code> now shows the error output:</p>
+<pre class="shell"><code>% oc logs pod/nginx
+systemd v246.10-1.fc33 running in system mode. (+PAM +AUDIT +SELINUX +IMA -APPARMOR +SMACK +SYSVINIT +UTMP +LIBCRYPTSETUP +GCRYPT +GNUTLS +ACL +XZ +LZ4 +ZSTD +SECCOMP +BLKID +ELFUTILS +KMOD +IDN2 -IDN +PCRE2 default-hierarchy=unified)
+Detected virtualization container-other.
+Detected architecture x86-64.
+
+Welcome to Fedora 33 (Container Image)!
+
+Set hostname to &lt;nginx&gt;.
+Failed to write /run/systemd/container, ignoring: Permission denied
+Failed to create /kubepods.slice/kubepods-besteffort.slice/kubepods-besteffort-pod3bbed45f_634a_4f60_bb07_5f080c483f0f.slice/crio-90dead4cf549b844c4fb704765edfbba9e9e188b30299f484906f15d22b29fbd.scope/init.scope control group: Permission denied
+Failed to allocate manager object: Permission denied
+[!!!!!!] Failed to allocate manager object.
+Exiting PID 1...</code></pre>
+<p>The user executing systemd does not have permissions to write the cgroup filesystem. Although cgroups are heirarchical, cgroups v1 does not support delegating management of part of the heirarchy to unprivileged users. But cgroups v2 does support this.</p>
+<div class="note">
+<p>Set the <a href="https://www.freedesktop.org/software/systemd/man/systemd.html#%24SYSTEMD_LOG_LEVEL"><code>SYSTEMD_LOG_LEVEL</code></a> environment variable to <code>info</code> or <code>debug</code> to get more detail in the systemd log output.</p>
+</div>
+<h2 id="enabling-cgroups-v2">Enabling cgroups v2 <a href="#enabling-cgroups-v2">§</a></h2>
+<p>We can enable cgroups v2 (only) on worker nodes via the following MachineConfig object:</p>
+<div class="sourceCode" id="cb20"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb20-1"><a href="#cb20-1" aria-hidden="true"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> machineconfiguration.openshift.io/v1</span></span>
+<span id="cb20-2"><a href="#cb20-2" aria-hidden="true"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> MachineConfig</span></span>
+<span id="cb20-3"><a href="#cb20-3" aria-hidden="true"></a><span class="fu">metadata</span><span class="kw">:</span></span>
+<span id="cb20-4"><a href="#cb20-4" aria-hidden="true"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> enable-cgroupv2-workers</span></span>
+<span id="cb20-5"><a href="#cb20-5" aria-hidden="true"></a><span class="at">  </span><span class="fu">labels</span><span class="kw">:</span></span>
+<span id="cb20-6"><a href="#cb20-6" aria-hidden="true"></a><span class="at">    </span><span class="fu">machineconfiguration.openshift.io/role</span><span class="kw">:</span><span class="at"> worker</span></span>
+<span id="cb20-7"><a href="#cb20-7" aria-hidden="true"></a><span class="fu">spec</span><span class="kw">:</span></span>
+<span id="cb20-8"><a href="#cb20-8" aria-hidden="true"></a><span class="at">  </span><span class="fu">kernelArguments</span><span class="kw">:</span></span>
+<span id="cb20-9"><a href="#cb20-9" aria-hidden="true"></a><span class="at">    </span><span class="kw">-</span><span class="at"> systemd.unified_cgroup_hierarchy=1</span></span>
+<span id="cb20-10"><a href="#cb20-10" aria-hidden="true"></a><span class="at">    </span><span class="kw">-</span><span class="at"> cgroup_no_v1=&quot;all&quot;</span></span>
+<span id="cb20-11"><a href="#cb20-11" aria-hidden="true"></a><span class="at">    </span><span class="kw">-</span><span class="at"> psi=1</span></span></code></pre></div>
+<p>After creating the MachineConfig, the <em>Machine Config Operator</em> applies the configuration change and restarts each worker node, one by one. This occurs over several minutes.</p>
+<h2 id="running-unprivileged-cgroups-v2">Running (<strong>unprivileged</strong>; <strong>cgroups v2</strong>) <a href="#running-unprivileged-cgroups-v2">§</a></h2>
+<p>After some time, all worker nodes have the updated kernel configuration to enable cgroups v2 and disable cgroups v1. I again created the pod as the unprivileged <code>test</code> user. And again, pod execution failed. But this time the error is different:</p>
+<pre class="shell"><code>% oc --as test create -f pod-nginx.yaml
+pod/nginx created
+
+% oc get pod
+NAME    READY   STATUS   RESTARTS   AGE
+nginx   0/1     Error    1          12s
+
+% oc logs pod/nginx
+systemd v246.10-1.fc33 running in system mode. (+PAM +AUDIT +SELINUX +IMA -APPARMOR +SMACK +SYSVINIT +UTMP +LIBCRYPTSETUP +GCRYPT +GNUTLS +ACL +XZ +LZ4 +ZSTD +SECCOMP +BLKID +ELFUTILS +KMOD +IDN2 -IDN +PCRE2 default-hierarchy=unified)
+Detected virtualization container-other.
+Detected architecture x86-64.
+
+Welcome to Fedora 33 (Container Image)!
+
+Set hostname to &lt;nginx&gt;.
+Failed to write /run/systemd/container, ignoring: Permission denied
+Failed to create /init.scope control group: Permission denied
+Failed to allocate manager object: Permission denied
+[!!!!!!] Failed to allocate manager object.
+Exiting PID 1...</code></pre>
+<p>The error suggests that the container now has its own cgroup namespace. I can confirm it by creating a <em>pod</em> debug container…</p>
+<pre class="shell"><code>% oc debug pod/nginx
+Starting pod/nginx-debug ...
+Pod IP: 10.130.2.10
+If you don&#39;t see a command prompt, try pressing enter.
+sh-5.0$</code></pre>
+<p>…finding out the node and container ID…</p>
+<pre class="shell"><code>% oc get -o json pod/nginx-debug \
+    | jq &#39;.spec.nodeName,
+          .status.containerStatuses[0].containerID&#39;
+&quot;ft-48dev-5-f24l6-worker-0-qv7kq&quot;
+&quot;cri-o://e870d022d1c53adf94e36877312fcfef5ef0431ad9cf1fbe9c9d2ace02bee858&quot;</code></pre>
+<p>…and analysing the container sandbox in a <em>node</em> debug shell:</p>
+<pre><code>sh-4.4# crictl inspect e870d02 \
+        | jq .info.runtimeSpec.linux.namespaces[].type
+&quot;pid&quot;
+&quot;network&quot;
+&quot;ipc&quot;
+&quot;uts&quot;
+&quot;mount&quot;
+&quot;cgroup&quot;</code></pre>
+<p>The output confirms that the pod has a cgroup namespace. Despite this, the unprivileged user running systemd in the container does not have permission to manage the namespace. The <code>oc logs</code> output demonstrates this.</p>
+<h3 id="container_managed_cgroups-selinux-boolean"><code>container_managed_cgroups</code> SELinux boolean <a href="#container_managed_cgroups-selinux-boolean">§</a></h3>
+<p>I have one more thing to try. The <code>container_managed_cgroups</code> SELinux boolean was disabled on the worker nodes (per default configuration). Perhaps it is still needed, even when using cgroups v2. I enabled it on the worker node (directly from the debug shell, for now):</p>
+<pre class="shell"><code>sh-4.4# setsebool container_manage_cgroup on</code></pre>
+<p>I again created the nginx pod as the <code>test</code> user. It failed with the same error as the previous attempt, when <code>container_manage_cgroup</code> was <em>off</em>. So that was not the issue, or at least not the immediate issue.</p>
+<h2 id="next-steps">Next steps <a href="#next-steps">§</a></h2>
+<p>At this point, I have successfully enabled cgroups v2 on worker nodes. Container sandboxes have their own cgroup namespace. But inside the container, systemd fails with permission errors when it attempts some cgroup management.</p>
+<p>The next step is to test the systemd container in OpenShift with cgroups v2 enabled <em>and</em> <a href="2021-03-03-openshift-4.7-user-namespaces.html">user namespaces enabled</a>. Both of these features are necessary for securely running a complex, systemd-based application in OpenShift. My hope is that enabling them <em>together</em> is the last step to getting systemd-based containers working properly in OpenShift. I will investigate and report the results in an upcoming post.</p>]]></summary>
+</entry>
+<entry>
     <title>Multiple users in user namespaces on OpenShift</title>
     <link href="https://frasertweedale.github.io/blog-redhat/posts/2021-03-10-openshift-user-namespace-multi-user.html" />
     <id>https://frasertweedale.github.io/blog-redhat/posts/2021-03-10-openshift-user-namespace-multi-user.html</id>
@@ -1207,99 +1474,6 @@ dr-xr-xr-x. 9 root root 0 Nov  5 05:55 /proc/1381728</code></pre>
 <p>There is a general (albeit unevenly distributed) feeling in the team that in the long run this effort is inevitable. I do hold this view myself, but also recognise that the sooner we can have a working proof of concept, the better. That is the main reason we are initially pursuing the monolithic container approach.</p>
 <h2 id="next-steps">Next steps <a href="#next-steps">§</a></h2>
 <p>My next step will be to install an OpenShift cluster based on the nightly builds (which include CRI-O v1.20) and experiment with the annotation-based user namespace support. It seems to be what we want, or a big step in the right direction, but we need to confirm it. Expect a follow-up to this article with my findings, hopefully in the next week!</p>]]></summary>
-</entry>
-<entry>
-    <title>Issuing certificates for long hostnames</title>
-    <link href="https://frasertweedale.github.io/blog-redhat/posts/2020-10-20-ipa-cert-long-hostname.html" />
-    <id>https://frasertweedale.github.io/blog-redhat/posts/2020-10-20-ipa-cert-long-hostname.html</id>
-    <published>2020-10-20T00:00:00Z</published>
-    <updated>2020-10-20T00:00:00Z</updated>
-    <summary type="html"><![CDATA[<h1 id="issuing-certificates-for-long-hostnames">Issuing certificates for long hostnames</h1>
-<p>X.509, specified in <a href="https://tools.ietf.org/html/rfc5280">RFC 5280</a>, restricts the length of the <em>Common Name (CN)</em> attribute to 64 characters:</p>
-<pre><code>X520CommonName ::= DirectoryName (SIZE (1..ub-common-name))
-ub-common-name-length INTEGER ::= 64</code></pre>
-<p>Although the use of the CN attribute to carry DNS names is deprecated, it is still common practice. Furthermore, FreeIPA still requires the CN to appear in a <em>Certificate Signing Request (CSR)</em> and validates that its value corresponds to the nominated <em>subject principal</em>.</p>
-<p>As a consequence of this restriction, when a host or service has a DNS name longer than 64 characters, that name cannot be used as the CN. But it can still be included in the <em>Subject Alternative Name</em> extension, as a <em>dNSName</em> value.</p>
-<p>How do we issue such a certificate in FreeIPA? The trick is to add a <em>principal alias</em> whose hostname is 64 characters or shorter. This shorter hostname will be the Common Name attribute value. The full hostname will appear in the Subject Alternative Name extension.</p>
-<p>The following sections demonstrate the method. I conclude with an outline of what needs to be done to support certificates with empty Subject DN, which would avoid the problem and this workaround.</p>
-<h2 id="creating-a-principal-with-a-long-hostname">Creating a principal with a long hostname <a href="#creating-a-principal-with-a-long-hostname">§</a></h2>
-<p>To experiment and verify the workaround, I needed a principal with a hostname longer than 64 characters. The initial attempt failed:</p>
-<pre><code>% ipa host-add --force \
-    verylongverylongverylongverylongverylongverylonghostname.ipa.local
-ipa: ERROR: invalid &#39;hostname&#39;: can be at most 64 characters</code></pre>
-<p>FreeIPA has a default maximum hostname length of 64 characters, but this is configurable. After adjusting the limit, adding the host succeeded:</p>
-<pre><code>% ipa config-mod --maxhostname 255
-  Maximum username length: 32
-  Maximum hostname length: 255
-  ...
-
-% ipa host-add --force \
-    verylongverylongverylongverylongverylongverylonghostname.ipa.local
--------------------------------------------------------------------------------
-Added host &quot;verylongverylongverylongverylongverylongverylonghostname.ipa.local&quot;
--------------------------------------------------------------------------------
-  Host name: verylongverylongverylongverylongverylongverylonghostname.ipa.local
-  Principal name: host/verylongverylongverylongverylongverylongverylonghostname.ipa.local@IPA.LOCAL
-  Principal alias: host/verylongverylongverylongverylongverylongverylonghostname.ipa.local@IPA.LOCAL
-  ...</code></pre>
-<h2 id="adding-the-principal-alias">Adding the principal alias <a href="#adding-the-principal-alias">§</a></h2>
-<p>For a host principal, use the <code>ipa host-add-principal</code> command to add a principal alias. The alias must also be a host principal, i.e. must have the form <code>host/$hostname</code>:</p>
-<pre><code>% ipa host-add-principal \
-    verylongverylongverylongverylongverylongverylonghostname.ipa.local \
-    host/longhostname.ipa.local
-----------------------------------------------------------------------------------------------
-Added new aliases to host &quot;verylongverylongverylongverylongverylongverylonghostname.ipa.local&quot;
-----------------------------------------------------------------------------------------------
-Host name: verylongverylongverylongverylongverylongverylonghostname.ipa.local
-Principal alias: host/verylongverylongverylongverylongverylongverylonghostname.ipa.local@IPA.LOCAL,
-                 host/longhostname.ipa.local@IPA.LOCAL</code></pre>
-<p>For a service principal, use the <code>ipa service-add-principal</code> command. Ensure the principal alias has the same service type as the subject principal’s <em>canonical name</em> (i.e. the value its <code>krbcanonicalname</code> attribute). For example, if the canonical principal name is <code>HTTP/$LONGHOSTNAME</code>, then the principal alias should be <code>HTTP/$SHORTHOSTNAME</code>.</p>
-<p>I omitted the realm parts of principal names (the default realm will be added automatically). For the avoidance of doubt, the princpial alias must have the same realm as the canonical principal.</p>
-<h2 id="creating-a-csr">Creating a CSR <a href="#creating-a-csr">§</a></h2>
-<p>There are many different ways to create a CSR. I will give a single example using OpenSSL. The private key already exists (file <code>key.pem</code>).</p>
-<p>The configuration file:</p>
-<pre><code>% cat longhostname.conf
-[ req ]
-prompt = no
-encrypt_key = no
-
-distinguished_name = dn
-req_extensions = exts
-
-[ dn ]
-commonName = &quot;longhostname.ipa.local
-
-[ exts ]
-subjectAltName=DNS:verylongverylongverylongverylongverylongverylonghostname.ipa.local</code></pre>
-<p>Create the CSR:</p>
-<pre><code>% openssl req -new -key key.pem \
-    -config longhostname.conf -extensions exts \
-    &gt; longhostname.csr</code></pre>
-<h2 id="issuing-the-certificate">Issuing the certificate <a href="#issuing-the-certificate">§</a></h2>
-<p>Now we can issue the certificate:</p>
-<pre><code>% ipa cert-request longhostname.csr \
-    --principal host/verylongverylongverylongverylongverylongverylonghostname.ipa.local
-  Issuing CA: ipa
-  Certificate: MIIE...
-  Subject: CN=longhostname.ipa.local,O=IPA.LOCAL 202009291726
-  Subject DNS name: verylongverylongverylongverylongverylongverylonghostname.ipa.local,
-                    longhostname.ipa.local
-  Issuer: CN=Certificate Authority,O=IPA.LOCAL 202009291726
-  Not Before: Mon Oct 19 13:46:16 2020 UTC
-  Not After: Thu Oct 20 13:46:16 2022 UTC
-  Serial number: 11
-  Serial number (hex): 0xB</code></pre>
-<p>The CN attribute contains the shorter host name, and the SAN extension contains both the long and shorter hostnames. (We did not include the short hostname in the CSR SAN extension, but the <code>CommonNameToSANDefault</code> profile component copied it there).</p>
-<h2 id="supporting-san-only-certificates">Supporting SAN-only certificates <a href="#supporting-san-only-certificates">§</a></h2>
-<p>This workaround is straightforward but it is not the ideal solution. A better approach is to enhance FreeIPA and Dogtag to support issuing certificates with an empty Subject DN, using only the Subject Alternative Name extension to carry subject information.</p>
-<p>RFC 5280 allows an empty Subject DN in a certificate, in which case the certificate must include the SAN extension, which must be marked as <em>critical</em>. <a href="https://tools.ietf.org/html/rfc6125#section-2.3">RFC 6125</a> further clarifies that such a certificate is acceptable for use with TLS.</p>
-<p><a href="https://pagure.io/freeipa/issue/5706">Upstream ticket #5706</a> requests support for SAN-only certificates. The work will involve:</p>
-<ul>
-<li>Change the <code>ipa cert-request</code> command to accept empty subjects. When the subject is empty ensure a non-empty SAN extension is present in the CSR, and that it is marked criticial. This is straightforward.</li>
-<li>On the Dogtag side we must implement new behaviour in the request processor to ensure that the certificate to be issued satisfies the X.509 requirements about empty/non-empty Subject DN and the presence and criticality of the SAN extension.</li>
-<li>It may be necessary to define a new profile default or constraint component that allows an empty subject DN.</li>
-<li>It is likely that FreeIPA will need to either modify the default profile (<code>caIPAserviceCert</code>) to allow for an empty Subject DN, or ship a separate profile that is suitable.</li>
-</ul>]]></summary>
 </entry>
 
 </feed>
