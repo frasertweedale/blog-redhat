@@ -278,8 +278,8 @@ sh-5.0$</code></pre>
 &quot;mount&quot;
 &quot;cgroup&quot;</code></pre>
 <p>The output confirms that the pod has a cgroup namespace. Despite this, the unprivileged user running systemd in the container does not have permission to manage the namespace. The <code>oc logs</code> output demonstrates this.</p>
-<h3 id="container_managed_cgroups-selinux-boolean"><code>container_managed_cgroups</code> SELinux boolean <a href="#container_managed_cgroups-selinux-boolean">§</a></h3>
-<p>I have one more thing to try. The <code>container_managed_cgroups</code> SELinux boolean was disabled on the worker nodes (per default configuration). Perhaps it is still needed, even when using cgroups v2. I enabled it on the worker node (directly from the debug shell, for now):</p>
+<h3 id="container_manage_cgroups-selinux-boolean"><code>container_manage_cgroups</code> SELinux boolean <a href="#container_manage_cgroups-selinux-boolean">§</a></h3>
+<p>I have one more thing to try. The <code>container_manage_cgroups</code> SELinux boolean was disabled on the worker nodes (per default configuration). Perhaps it is still needed, even when using cgroups v2. I enabled it on the worker node (directly from the debug shell, for now):</p>
 <pre class="shell"><code>sh-4.4# setsebool container_manage_cgroup on</code></pre>
 <p>I again created the nginx pod as the <code>test</code> user. It failed with the same error as the previous attempt, when <code>container_manage_cgroup</code> was <em>off</em>. So that was not the issue, or at least not the immediate issue.</p>
 <h2 id="next-steps">Next steps <a href="#next-steps">§</a></h2>
