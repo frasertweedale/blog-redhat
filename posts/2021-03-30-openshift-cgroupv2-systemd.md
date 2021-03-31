@@ -452,9 +452,9 @@ this, the unprivileged user running systemd in the container does
 not have permission to manage the namespace.  The `oc logs` output
 demonstrates this.
 
-### `container_managed_cgroups` SELinux boolean
+### `container_manage_cgroups` SELinux boolean
 
-I have one more thing to try.  The `container_managed_cgroups`
+I have one more thing to try.  The `container_manage_cgroups`
 SELinux boolean was disabled on the worker nodes (per default
 configuration).  Perhaps it is still needed, even when using cgroups
 v2.  I enabled it on the worker node (directly from the debug shell,
