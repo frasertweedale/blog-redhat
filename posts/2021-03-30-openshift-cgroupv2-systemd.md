@@ -11,7 +11,7 @@ Times cannot be broken up and rearchitected without a huge cost.
 And so, there is a demand to run containers that run systemd, which
 in turn manages application services.
 
-FreeIPA is one example.  It's traditional environment is a dedicated
+FreeIPA is one example.  Its traditional environment is a dedicated
 Linux server (ignoring replicas).  There are *many* services which
 both interact among themselves, and process requests from external
 clients and other FreeIPA servers.  The engineering effort to
