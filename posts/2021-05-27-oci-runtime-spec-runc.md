@@ -84,7 +84,7 @@ The steps performed by the low-level runtime include:
 
 - Create and and enter required namespaces
 
-- `chroot(2)` (or `pivot_root(2)`) to the specified root filesystem
+- `chroot(2)` or `pivot_root(2)` to the specified root filesystem
   path
 
 - Create requested mounts
@@ -166,13 +166,12 @@ container, then exported the whole container filesystem, via
 
 ```shell
 % podman create --quiet quay.io/ftweedal/test-nginx
-e97930b3e6f7ef3879c5b4e21874fb83a95afa8f224ebfb07d96c0b2a6c7cd1f
-% mkdir
-rootfs
+e97930b3…
+% mkdir rootfs
 % podman export e97930b3 | tar -xC rootfs
 % ls rootfs
-bin   dev  home  lib64       media  opt   root  sbin  sys  usr
-boot  etc  lib   lost+found  mnt    proc  run   srv   tmp  var
+bin  dev home lib64      media opt  root sbin sys usr
+boot etc lib  lost+found mnt   proc run  srv  tmp var
 ```
 
 [image-test-nginx]: https://quay.io/repository/ftweedal/test-nginx
@@ -197,7 +196,8 @@ execute is `sh(1)`.  Let's change that to `/sbin/init`:
 
 ```shell
 % mv config.json config.json.orig
-% jq '.process.args=["/sbin/init"]' config.json.orig > config.json
+% jq '.process.args=["/sbin/init"]' config.json.orig \
+    > config.json
 ```
 
 ::: notes
@@ -266,21 +266,22 @@ following [`jq(1)`][jq] program performs the required modifications:
 
 This program performs the following actions:
 
-- Set the container process to "/sbin/init" (*systemd*).
+- Set the container process to `/sbin/init` (which is *systemd*).
 
-- Set the `$container` environment variable as [required by
+- Set the `$container` environment variable, as [required by
   systemd](https://systemd.io/CONTAINER_INTERFACE/#environment-variables).
 
-- Add UID mappings for UIDs `1`–`65536` in the container's user
-  namespace.  The host range (started at `100000`) is taken from my
-  user account's assigned range in `/etc/subuid`.  **You may need a
-  different number.**  The mapping for the container's UID `0` to my
-  user account already exists in the config.
+- Add UID and GID mappings for IDs `1`–`65536` in the container's
+  user namespace.  The host range (started at `100000`) is taken
+  from my user account's assigned ranges in `/etc/subuid` and
+  `/etc/subgid`.  **You may need a different number.**  The mapping
+  for the container's UID `0` to my user account already exists in
+  the config.
 
 - Set the container's cgroup path.  A non-absolute path is
   interpreted relative to a runtime-determined location.
 
-- Request the runtime to create a network namespace.  Without this,
+- Tell the runtime to create a network namespace.  Without this,
   the container will have no network stack and *nginx* won't run.
 
 - Set the [capabilities][] required by the container.  *systemd*
@@ -309,7 +310,7 @@ Welcome to Fedora 33 (Container Image)!
 [  OK  ] Started The nginx HTTP and reverse proxy server.
 [  OK  ] Reached target Multi-User System.
 [  OK  ] Reached target Graphical Interface.
-         Starting Update UTMP about System Runlevel Changes...
+         Starting Update UTMP about System Runlevel Changes.
 [  OK  ] Finished Update UTMP about System Runlevel Changes.
 
 Fedora 33 (Container Image)
@@ -362,15 +363,13 @@ The mapping of `root` in the container's user namespace to
 `ftweedal` is confirmed by the UID map of the container process:
 
 ```shell
+% id --user ftweedal
+1000
 % ./runc list -f json | jq '.[]|select(.id="test").pid'
 186718
-
 % cat /proc/186718/uid_map
          0       1000          1
          1     100000      65536
-
-% id --user ftweedal
-1000
 ```
 
 ## Next steps
@@ -384,7 +383,7 @@ containers).
 
 User-namespaced containers in OpenShift (via CRI-O annotations) are
 allocated non-overlapping host ID ranges.  All the host IDs are
-essentially anonymous.  I confirmed this in [an earlier blog
+essentially anonymous.  I confirmed this in [a previous blog
 post](2021-03-10-openshift-user-namespace-multi-user.html).  That is
 good!  But the container's cgroup is owned by the *host's* UID 0,
 which is unmapped in the container.  *systemd*-based workloads
