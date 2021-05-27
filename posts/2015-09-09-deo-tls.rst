@@ -239,4 +239,4 @@ protocol is another area being explored.
 
 If you have questions or ideas about other uses for Deo, please
 start a conversation on the ``freeipa-users@lists.fedorahosted.org`` mailing list
-or in ``#freeipa`` on Freenode, or raise an issue on GitHub.
+or in ``#freeipa`` on Libera.Chat, or raise an issue on GitHub.

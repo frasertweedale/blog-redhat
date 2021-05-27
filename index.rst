@@ -7,7 +7,7 @@ This blog is about that, and related topics.
 
 The best places to ask questions about FreeIPA and Dogtag PKI are
 the `freeipa-users`_ and `pki-users`_ mailing lists, or the
-``#freeipa`` and ``#dogtagpki`` IRC channels on Freenode.
+``#freeipa`` and ``#dogtagpki`` IRC channels on Libera.Chat.
 
 If you want to get in touch with me personally my address is
 ``ftweedal@redhat.com`` (`gpg`_).  I am `@hackuador`_ on Twitter.

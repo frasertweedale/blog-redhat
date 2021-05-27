@@ -307,4 +307,4 @@ Dogtag development teams.
 Feedback on my proposal is strongly encouraged!  You can leave
 comments here, send an email to me (``ftweedal@redhat.com``) or the
 FreeIPA development mailing list (``freeipa-devel@lists.fedorahosted.org``) or
-continue the discussion on IRC (``#freeipa`` on Freenode).
+continue the discussion on IRC (``#freeipa`` on Libera.Chat).
