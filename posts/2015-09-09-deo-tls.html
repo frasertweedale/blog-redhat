@@ -99,7 +99,7 @@ allow httpd_passwd_t unreserved_port_t:tcp_socket name_connect;</code></pre>
 <h2 id="concluding-notes">Concluding notes <a href="#concluding-notes">§</a></h2>
 <p>Deo emerged from disk encryption use cases but the protocol is useful in other contexts, including operator-less decryption of secrets used by network servers. We examined a straightforward implementation of Deo-based automatic TLS private key decryption for Apache with mod_ssl and also saw that current versions of mod_nss (for Apache) and nginx don’t support the underlying design. Supporting Deo decryption in a PKCS #11 module is an area for further investigation.</p>
 <p>Future revisions of the Deo protocol may offer better trust characteristics; it could be possible to prevent the server from learning the secret. Use of Deo as a part of a larger escrow protocol is another area being explored.</p>
-<p>If you have questions or ideas about other uses for Deo, please start a conversation on the <code>freeipa-users@lists.fedorahosted.org</code> mailing list or in <code>#freeipa</code> on Freenode, or raise an issue on GitHub.</p>
+<p>If you have questions or ideas about other uses for Deo, please start a conversation on the <code>freeipa-users@lists.fedorahosted.org</code> mailing list or in <code>#freeipa</code> on Libera.Chat, or raise an issue on GitHub.</p>
 </div>
 <div id="postFooter">
     <div id="recent">

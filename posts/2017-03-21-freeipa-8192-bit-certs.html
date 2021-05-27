@@ -38,7 +38,7 @@ ipa: ERROR: Certificate operation cannot be completed:
 <h2 id="deploying-freeipa-with-ipa-ca-signing-key-2048-bits">Deploying FreeIPA with IPA CA signing key &gt; 2048-bits <a href="#deploying-freeipa-with-ipa-ca-signing-key-2048-bits">§</a></h2>
 <p>When you deploy FreeIPA today, the IPA CA has a 2048-bit RSA key. There is currently no way to change this, but Dogtag does support configuring the key size when spawning a CA instance, so it should not be hard to support this in FreeIPA. I created issue <a href="https://pagure.io/freeipa/issue/6790">#6790</a> to track this.</p>
 <p>Looking beyond RSA, there is also issue <a href="https://pagure.io/freeipa/issue/3951">#3951: ECC Support for the CA</a> which concerns supporting a elliptic curve signing key in the FreeIPA CA. Once again, Dogtag supports EC signing algorithms, so supporting this in FreeIPA should be a matter of deciding the <code>ipa-server-install(1)</code> options and mechanically adjusting the <code>pkispawn</code> configuration.</p>
-<p>If you have use cases for large signing keys and/or NIST ECC keys or other algorithms, please do not hesitate to leave comments in the issues linked above, or get in touch with the FreeIPA team on the <code>freeipa-users@lists.fedorahosted.org</code> mailing list or <code>#freeipa</code> on Freenode.</p>
+<p>If you have use cases for large signing keys and/or NIST ECC keys or other algorithms, please do not hesitate to leave comments in the issues linked above, or get in touch with the FreeIPA team on the <code>freeipa-users@lists.fedorahosted.org</code> mailing list or <code>#freeipa</code> on Libera.Chat.</p>
 </div>
 <div id="postFooter">
     <div id="recent">
