@@ -8,8 +8,202 @@
         <name>Fraser Tweedale</name>
         <email>frase@frase.id.au</email>
     </author>
-    <updated>2021-03-30T00:00:00Z</updated>
+    <updated>2021-05-27T00:00:00Z</updated>
     <entry>
+    <title>Using runc to explore the OCI Runtime Specification</title>
+    <link href="https://frasertweedale.github.io/blog-redhat/posts/2021-05-27-oci-runtime-spec-runc.html" />
+    <id>https://frasertweedale.github.io/blog-redhat/posts/2021-05-27-oci-runtime-spec-runc.html</id>
+    <published>2021-05-27T00:00:00Z</published>
+    <updated>2021-05-27T00:00:00Z</updated>
+    <summary type="html"><![CDATA[<h1 id="using-runc-to-explore-the-oci-runtime-specification">Using <code>runc</code> to explore the OCI Runtime Specification</h1>
+<p>In recent posts I explored how to use user namespaces and cgroups v2 on OpenShift. My main objective is to run <em>systemd</em>-based workloads in user namespaces that map to unprivileged users on the host. This is a prerequisite to running <a href="https://www.freeipa.org/page/Main_Page">FreeIPA</a> <em>securely</em> in OpenShift, and supporting multitenancy.</p>
+<p>Independently, user namespaces and cgroups v2 already work well in OpenShift. But for <em>systemd</em> support there is a critical gap: the pod’s cgroup directory (mounted as <code>/sys/fs/cgroup/</code> in the container) is owned by <code>root</code>—the <em>host’s</em> UID 0, which is unmapped in the pod’s user namespace. As a consequence, the container’s main process (<code>/sbin/init</code>, which is <em>systemd</em>) cannot manage cgroups, and terminates.</p>
+<p>To understand how to close this gap, I needed to become familiar with the low-level container runtime behaviour. This post discusses the relationship between various container runtime components and demonstrates how to use <code>runc</code> directly to create and run containers. I also outline some possible approaches to solving the cgroup ownership issue.</p>
+<h2 id="podman-kubernetes-cri-cri-o-runc-oh-my">Podman, Kubernetes, CRI, CRI-O, runc, oh my! <a href="#podman-kubernetes-cri-cri-o-runc-oh-my">§</a></h2>
+<p>What actually happens when you “run a container”. Abstractly, a container runtime sets up a <em>sandbox</em> and runs a process in it. The sandbox consists of a set of namespaces (PID, UTS, mount, cgroup, user, network, etc), and a restricted view of a filesystem (via <code>chroot(2)</code> or similar mechanism).</p>
+<p>There are several different container runtimes in widespread use. In fact, there are several different <em>layers</em> of container runtime with different purposes:</p>
+<ul>
+<li><p>End-user focused container runtimes include <a href="https://podman.io/"><em>Podman</em></a> and <em>Docker</em>.</p></li>
+<li><p>Kubernetes defines the <a href="https://github.com/kubernetes/community/blob/master/contributors/devel/sig-node/container-runtime-interface.md">Container Runtime Interface (CRI)</a>, which it uses to run containers. Compliant implementations include <em>containerd</em> and <a href="https://github.com/cri-o/cri-o"><em>CRI-O</em></a>.</p></li>
+<li><p>The <em>Open Container Initiative (OCI)</em> <a href="https://github.com/opencontainers/runtime-spec">runtime spec</a> defines a low-level container runtime interface. Implementations include <a href="https://github.com/opencontainers/runc"><code>runc</code></a> and <a href="https://github.com/containers/crun"><em>crun</em></a>. OCI runtimes are designed to be used by higher-level container runtimes. They are not friendly for humans to use directly.</p></li>
+</ul>
+<p>Running a container usually involves a higher-level runtime <em>and</em> a low-level runtime. For example, Podman uses an OCI runtime; crun by default on Fedora but <code>runc</code> works fine too. OpenShift (which is built on Kubernetes) uses CRI-O, which in turn uses <code>runc</code> (CRI-O itself can use any OCI runtime).</p>
+<h3 id="division-of-responsibilities">Division of responsibilities <a href="#division-of-responsibilities">§</a></h3>
+<p>So, what are responsibilities of the higher-level runtime compared to the OCI (or other low-level) runtime? In general the high-level runtime is responsible for:</p>
+<ul>
+<li><p>Image management (pulling layers, preparing overlay filesystem)</p></li>
+<li><p>Determining the mounts, environment, namespaces, resource limits and security policies for the container</p></li>
+<li><p>Network setup for the container</p></li>
+<li><p>Metrics, accounting, etc.</p></li>
+</ul>
+<p>The steps performed by the low-level runtime include:</p>
+<ul>
+<li><p>Create and and enter required namespaces</p></li>
+<li><p><code>chroot(2)</code> (or <code>pivot_root(2)</code>) to the specified root filesystem path</p></li>
+<li><p>Create requested mounts</p></li>
+<li><p>Create cgroups and apply resource limits</p></li>
+<li><p>Adjust capabilities and apply seccomp policy</p></li>
+<li><p>Execute the container’s main process</p></li>
+</ul>
+<div class="note">
+<p>I mentioned several features specific to Linux in the list above. The OCI Runtime Specification also specifies Windows, Solaris and VM-based workloads. This post assumes a Linux workload, so many details are Linux-specific.</p>
+</div>
+<p>The above list is just a rough guide and not absolute. Depending on use case the high-level runtime might perform some of the low-level steps. For example, if container networking is required, Podman might create the network namespace, setting up devices and routing. Then, instead of asking the OCI runtime to create a network namespace, it tells the runtime to enter the existing namespace.</p>
+<h2 id="running-containers-via-runc">Running containers via <code>runc</code> <a href="#running-containers-via-runc">§</a></h2>
+<p>Because our effort is targeting OpenShift, the rest of this post mainly deals with <code>runc</code>.</p>
+<div class="note">
+<p>The functions demonstrated in this post were performed using <code>runc</code> version 1.0.0-rc95+dev, which I built from source (commit <code>19d75e1c</code>). The Fedora 33 and 34 repositories offer <code>runc</code> version 1.0.0-rc93, which <strong>does not work</strong>.</p>
+</div>
+<h3 id="clone-and-build">Clone and build <a href="#clone-and-build">§</a></h3>
+<p>Install the Go compiler and <em>libseccomp</em> development headers:</p>
+<pre class="shell"><code>% sudo dnf -y --quiet install libseccomp-devel
+
+Installed:
+  golang-1.16.3-1.fc34.x86_64
+  golang-bin-1.16.3-1.fc34.x86_64
+  golang-src-1.16.3-1.fc34.noarch
+  libseccomp-devel-2.5.0-4.fc34.x86_64</code></pre>
+<p>Clone the <code>runc</code> source code and build the program:</p>
+<pre class="shell"><code>% mkdir -p ~/go/src/github.com/opencontainers
+% cd ~/go/src/github.com/opencontainers
+% git clone --quiet https://github.com/opencontainers/runc
+% cd runc
+% make --quiet
+% ./runc --version
+runc version 1.0.0-rc95+dev
+commit: v1.0.0-rc95-31-g19d75e1c
+spec: 1.0.2-dev
+go: go1.16.3
+libseccomp: 2.5.0</code></pre>
+<h3 id="prepare-root-filesystem">Prepare root filesystem <a href="#prepare-root-filesystem">§</a></h3>
+<p>I want to create a filesystem from my <em>systemd</em> based <a href="https://quay.io/repository/ftweedal/test-nginx"><code>test-nginx</code></a> container image. To avoid configuring overlay filesystems myself, I used Podman to create a container, then exported the whole container filesystem, via <code>tar(1)</code>, to a local directory:</p>
+<pre class="shell"><code>% podman create --quiet quay.io/ftweedal/test-nginx
+e97930b3e6f7ef3879c5b4e21874fb83a95afa8f224ebfb07d96c0b2a6c7cd1f
+% mkdir
+rootfs
+% podman export e97930b3 | tar -xC rootfs
+% ls rootfs
+bin   dev  home  lib64       media  opt   root  sbin  sys  usr
+boot  etc  lib   lost+found  mnt    proc  run   srv   tmp  var</code></pre>
+<h3 id="create-config.json">Create <code>config.json</code> <a href="#create-config.json">§</a></h3>
+<p>OCI runtimes read the container configuration from <code>config.json</code> in the <em>bundle</em> directory. (<code>runc</code> uses the current directory as the default bundle directory). The <code>runc spec</code> command generates a sample <code>config.json</code> which can serve as a starting point:</p>
+<pre class="shell"><code>% ./runc spec --rootless
+% file config.json
+config.json: JSON data
+% jq -c .process.args &lt; config.json
+[&quot;sh&quot;]</code></pre>
+<p>We can see that <code>runc</code> created the sample config. The command to execute is <code>sh(1)</code>. Let’s change that to <code>/sbin/init</code>:</p>
+<pre class="shell"><code>% mv config.json config.json.orig
+% jq &#39;.process.args=[&quot;/sbin/init&quot;]&#39; config.json.orig &gt; config.json</code></pre>
+<div class="notes">
+<p><code>jq(1)</code> cannot operate on JSON files in situ, so you first have to copy or move the input file. The <a href="https://linux.die.net/man/1/sponge"><code>sponge(1)</code></a> command, provided by the <em>moreutils</em> package, offers an alternative approach.</p>
+</div>
+<h3 id="run-container">Run container <a href="#run-container">§</a></h3>
+<p>Now we can try and run the container:</p>
+<pre class="shell"><code>% ./runc --systemd-cgroup run test
+Mount failed for selinuxfs on /sys/fs/selinux:  No such file or directory
+Another IMA custom policy has already been loaded, ignoring: Permission denied
+Failed to mount tmpfs at /run: Operation not permitted
+[!!!!!!] Failed to mount API filesystems.
+Freezing execution.</code></pre>
+<p>That didn’t work. systemd failed to mount a <code>tmpfs</code> (temporary, memory-based filesystem) at <code>/tmp</code>, and halted. The container itself was still running (but frozen). I was able to kill it from another terminal:</p>
+<pre class="shell"><code>% ./runc list --quiet
+test
+% ./runc kill test KILL
+% ./runc list --quiet</code></pre>
+<p>It turned out that in addition to the process to run, the config requires several changes to successfully run a <em>systemd</em>-based container. I will not repeat the whole process here, but I achieved a working config through a combination of trial-and-error, and comparison against OCI configurations produced by Podman. The following <a href="https://stedolan.github.io/jq/manual/"><code>jq(1)</code></a> program performs the required modifications:</p>
+<div class="sourceCode" id="cb8"><pre class="sourceCode numberSource json numberLines"><code class="sourceCode json"><span id="cb8-1"><a href="#cb8-1"></a><span class="er">.process.args</span> <span class="er">=</span> <span class="ot">[</span><span class="st">&quot;/sbin/init&quot;</span><span class="ot">]</span></span>
+<span id="cb8-2"><a href="#cb8-2"></a><span class="er">|</span> <span class="er">.process.env</span> <span class="er">|=</span> <span class="er">.</span> <span class="er">+</span> <span class="ot">[</span><span class="st">&quot;container=oci&quot;</span><span class="ot">]</span></span>
+<span id="cb8-3"><a href="#cb8-3"></a><span class="er">|</span> <span class="ot">[</span><span class="fu">{</span><span class="dt">&quot;containerID&quot;</span><span class="fu">:</span><span class="dv">1</span><span class="fu">,</span><span class="dt">&quot;hostID&quot;</span><span class="fu">:</span><span class="dv">100000</span><span class="fu">,</span><span class="dt">&quot;size&quot;</span><span class="fu">:</span><span class="dv">65536</span><span class="fu">}</span><span class="ot">]</span> <span class="er">as</span> <span class="er">$idmap</span></span>
+<span id="cb8-4"><a href="#cb8-4"></a><span class="er">|</span> <span class="er">.linux.uidMappings</span> <span class="er">|=</span> <span class="er">.</span> <span class="er">+</span> <span class="er">$idmap</span></span>
+<span id="cb8-5"><a href="#cb8-5"></a><span class="er">|</span> <span class="er">.linux.gidMappings</span> <span class="er">|=</span> <span class="er">.</span> <span class="er">+</span> <span class="er">$idmap</span></span>
+<span id="cb8-6"><a href="#cb8-6"></a><span class="er">|</span> <span class="er">.linux.cgroupsPath</span> <span class="er">=</span> <span class="er">&quot;user.slice:runc:test&quot;</span></span>
+<span id="cb8-7"><a href="#cb8-7"></a><span class="er">|</span> <span class="er">.linux.namespaces</span> <span class="er">|=</span> <span class="er">.</span> <span class="er">+</span> <span class="ot">[</span><span class="fu">{</span><span class="dt">&quot;type&quot;</span><span class="fu">:</span><span class="st">&quot;network&quot;</span><span class="fu">}</span><span class="ot">]</span></span>
+<span id="cb8-8"><a href="#cb8-8"></a><span class="er">|</span> <span class="er">.process.capabilities</span><span class="ot">[]</span> <span class="er">=</span></span>
+<span id="cb8-9"><a href="#cb8-9"></a>  <span class="ot">[</span> <span class="st">&quot;CAP_CHOWN&quot;</span><span class="ot">,</span> <span class="st">&quot;CAP_FOWNER&quot;</span><span class="ot">,</span> <span class="st">&quot;CAP_SETUID&quot;</span><span class="ot">,</span> <span class="st">&quot;CAP_SETGID&quot;</span><span class="ot">,</span></span>
+<span id="cb8-10"><a href="#cb8-10"></a>    <span class="st">&quot;CAP_SETPCAP&quot;</span><span class="ot">,</span> <span class="st">&quot;CAP_NET_BIND_SERVICE&quot;</span> <span class="ot">]</span></span>
+<span id="cb8-11"><a href="#cb8-11"></a><span class="er">|</span> <span class="fu">{</span><span class="dt">&quot;type&quot;</span><span class="fu">:</span> <span class="st">&quot;tmpfs&quot;</span><span class="fu">,</span></span>
+<span id="cb8-12"><a href="#cb8-12"></a>   <span class="dt">&quot;source&quot;</span><span class="fu">:</span> <span class="st">&quot;tmpfs&quot;</span><span class="fu">,</span></span>
+<span id="cb8-13"><a href="#cb8-13"></a>   <span class="dt">&quot;options&quot;</span><span class="fu">:</span> <span class="ot">[</span><span class="st">&quot;rw&quot;</span><span class="ot">,</span><span class="st">&quot;rprivate&quot;</span><span class="ot">,</span><span class="st">&quot;nosuid&quot;</span><span class="ot">,</span><span class="st">&quot;nodev&quot;</span><span class="ot">,</span><span class="st">&quot;tmpcopyup&quot;</span><span class="ot">]</span></span>
+<span id="cb8-14"><a href="#cb8-14"></a>  <span class="fu">}</span> <span class="er">as</span> <span class="er">$tmpfs</span></span>
+<span id="cb8-15"><a href="#cb8-15"></a><span class="er">|</span> <span class="er">.mounts</span> <span class="er">|=</span> <span class="ot">[</span><span class="fu">{</span><span class="dt">&quot;destination&quot;</span><span class="fu">:</span><span class="st">&quot;/var/log&quot;</span><span class="fu">}</span> <span class="er">+</span> <span class="er">$tmpfs</span><span class="ot">]</span> <span class="er">+</span> <span class="er">.</span></span>
+<span id="cb8-16"><a href="#cb8-16"></a><span class="er">|</span> <span class="er">.mounts</span> <span class="er">|=</span> <span class="ot">[</span><span class="fu">{</span><span class="dt">&quot;destination&quot;</span><span class="fu">:</span><span class="st">&quot;/tmp&quot;</span><span class="fu">}</span> <span class="er">+</span> <span class="er">$tmpfs</span><span class="ot">]</span> <span class="er">+</span> <span class="er">.</span></span>
+<span id="cb8-17"><a href="#cb8-17"></a><span class="er">|</span> <span class="er">.mounts</span> <span class="er">|=</span> <span class="ot">[</span><span class="fu">{</span><span class="dt">&quot;destination&quot;</span><span class="fu">:</span><span class="st">&quot;/run&quot;</span><span class="fu">}</span> <span class="er">+</span> <span class="er">$tmpfs</span><span class="ot">]</span> <span class="er">+</span> <span class="er">.</span></span></code></pre></div>
+<p>This program performs the following actions:</p>
+<ul>
+<li><p>Set the container process to “/sbin/init” (<em>systemd</em>).</p></li>
+<li><p>Set the <code>$container</code> environment variable as <a href="https://systemd.io/CONTAINER_INTERFACE/#environment-variables">required by systemd</a>.</p></li>
+<li><p>Add UID mappings for UIDs <code>1</code>–<code>65536</code> in the container’s user namespace. The host range (started at <code>100000</code>) is taken from my user account’s assigned range in <code>/etc/subuid</code>. <strong>You may need a different number.</strong> The mapping for the container’s UID <code>0</code> to my user account already exists in the config.</p></li>
+<li><p>Set the container’s cgroup path. A non-absolute path is interpreted relative to a runtime-determined location.</p></li>
+<li><p>Request the runtime to create a network namespace. Without this, the container will have no network stack and <em>nginx</em> won’t run.</p></li>
+<li><p>Set the <a href="https://linux.die.net/man/7/capabilities">capabilities</a> required by the container. <em>systemd</em> requires all of these capabilities, although <code>CAP_NET_BIND_SERVICE</code> is only required for network name resolution (<em>systemd-resolved</em>). And <em>nginx</em>.</p></li>
+<li><p>Tell the runtime to mount <code>tmpfs</code> filesystems at <code>/run</code>, <code>/tmp</code> and <code>/var/log</code>.</p></li>
+</ul>
+<p>I ran the program to modify the config, then started the container:</p>
+<pre class="shell"><code>% jq --from-file filter.jq config.json.orig &gt; config.json
+% ./runc --systemd-cgroup run test
+systemd v246.10-1.fc33 running in system mode. (+PAM …
+Detected virtualization container-other.
+Detected architecture x86-64.
+
+Welcome to Fedora 33 (Container Image)!
+
+…
+
+[  OK  ] Started The nginx HTTP and reverse proxy server.
+[  OK  ] Reached target Multi-User System.
+[  OK  ] Reached target Graphical Interface.
+         Starting Update UTMP about System Runlevel Changes...
+[  OK  ] Finished Update UTMP about System Runlevel Changes.
+
+Fedora 33 (Container Image)
+Kernel 5.11.17-300.fc34.x86_64 on an x86_64 (console)
+
+runc login:</code></pre>
+<p>OK! <em>systemd</em> initialised the system properly and started <em>nginx</em>. We can confirm <em>nginx</em> is running properly by running <code>curl</code> in the container:</p>
+<pre class="shell"><code>% ./runc exec test curl --silent --head localhost:80
+HTTP/1.1 200 OK
+Server: nginx/1.18.0
+Date: Thu, 27 May 2021 02:29:58 GMT
+Content-Type: text/html
+Content-Length: 5564
+Last-Modified: Mon, 27 Jul 2020 22:20:49 GMT
+Connection: keep-alive
+ETag: &quot;5f1f5341-15bc&quot;
+Accept-Ranges: bytes</code></pre>
+<p>At this point we cannot access <em>nginx</em> from outside the container. That’s fine; I don’t need to work out how to do that. Not today, anyhow.</p>
+<h2 id="how-runc-creates-cgroups">How <code>runc</code> creates cgroups <a href="#how-runc-creates-cgroups">§</a></h2>
+<p><code>runc</code> manages container cgroups via the host’s <em>systemd</em> service. Specifically, it communicates with <em>systemd</em> over DBus to create a <a href="https://www.freedesktop.org/wiki/Software/systemd/ControlGroupInterface/">transient scope</a> for the container. Then it binds the container cgroup namespace to this new scope.</p>
+<p>Observe that the inode of <code>/sys/fs/cgroup/</code> in the container is the same as the scope created for the container by <em>systemd</em> on the host:</p>
+<pre class="shell"><code>% ./runc exec test ls -aldi /sys/fs/cgroup
+64977 drwxr-xr-x. 5 root root 0 May 27 02:26 /sys/fs/cgroup
+
+% ls -aldi /sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/user.slice/runc-test.scope 
+64977 drwxr-xr-x. 5 ftweedal ftweedal 0 May 27 12:26 /sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/user.slice/runc-test.scope</code></pre>
+<p>The mapping of <code>root</code> in the container’s user namespace to <code>ftweedal</code> is confirmed by the UID map of the container process:</p>
+<pre class="shell"><code>% ./runc list -f json | jq &#39;.[]|select(.id=&quot;test&quot;).pid&#39;
+186718
+
+% cat /proc/186718/uid_map
+         0       1000          1
+         1     100000      65536
+
+% id --user ftweedal
+1000</code></pre>
+<h2 id="next-steps">Next steps <a href="#next-steps">§</a></h2>
+<p><em>systemd</em> is running properly in the container, but <code>root</code> in the container is mapped to my main user account. The container is not as isolated as I would like it to be. A partial sandbox escape could lead to the containerised process(es) messing with local files, or other processes owned by my user (including other containers).</p>
+<p>User-namespaced containers in OpenShift (via CRI-O annotations) are allocated non-overlapping host ID ranges. All the host IDs are essentially anonymous. I confirmed this in <a href="2021-03-10-openshift-user-namespace-multi-user.html">an earlier blog post</a>. That is good! But the container’s cgroup is owned by the <em>host’s</em> UID 0, which is unmapped in the container. <em>systemd</em>-based workloads cannot run because the container cannot write to its cgroupfs.</p>
+<p>Therefore, the next steps in my investigation are:</p>
+<ol type="1">
+<li><p>Alter the ID mappings to use a single mapping of only “anonymous” users. This is a simple change to the OCI config. The host IDs still have to come from the user’s allocated sub-ID range.</p></li>
+<li><p>Find (or implement) a way to change the ownership of the container’s cgroup scope to the <strong>container’s</strong> UID 0.</p></li>
+</ol>
+<p>When using the <em>systemd</em> cgroup manager, <code>runc</code> uses the <a href="https://www.freedesktop.org/wiki/Software/systemd/ControlGroupInterface/"><em>transient unit API</em></a> to ask <em>systemd</em> to create a new scope for the container. I am still learning about this API. Perhaps there is a way to specify a different ownership for the new scope or service. If so, we should be able to avoid changes to higher-level container runtimes like CRI-O. That would be the best outcome.</p>
+<p>Otherwise, I will investigate whether we could use the OCI <code>createRuntime</code> hook to <code>chown(2)</code> the container’s cgroup scope. Unfortunately, the semantics of <code>createRuntime</code> is currently underspecified. The specification is ambiguous about whether the containers cgroup scope exists when this hook is executed. If this approach is valid, we will have to update CRI-O to add the relevant hook command to the OCI config.</p>
+<p>Another possible approach is for the high-level runtime to perform the ownership change itself. This would be done after it invokes the OCI runtime’s <code>create</code> command, but before it invokes <code>start</code>. (See also the OCI <a href="https://github.com/opencontainers/runtime-spec/blob/master/runtime.md#lifecycle">container lifecycle description</a>). However, on OpenShift CRI-O runs as user <code>containers</code> and the container’s cgroup scope is owned by <code>root</code>. So I have doubts about the viability of this approach, as well as the OCI hook approach.</p>
+<p>Whatever the outcome, there will certainly be more blog posts as I continue this long-running investigation. I still have much to learn as I struggle towards the goal of systemd-based workloads running securely on OpenShift.</p>]]></summary>
+</entry>
+<entry>
     <title>systemd containers on OpenShift with cgroups v2</title>
     <link href="https://frasertweedale.github.io/blog-redhat/posts/2021-03-30-openshift-cgroupv2-systemd.html" />
     <id>https://frasertweedale.github.io/blog-redhat/posts/2021-03-30-openshift-cgroupv2-systemd.html</id>
@@ -1370,110 +1564,6 @@ certbot: error: service discovery failed (see /tmp/tmp6qq8pnks for info)</code><
 <p>I will present and demo this proposal during the <code>acme</code> Working Group meeting at IETF 109 (November 2020). From there I hope that it will be adopted, developed, and shepherded through to become an RFC. I will also seek feedback from Certbot developers about the proposal and my experimental implementation.</p>
 <p>I also intend to submit another Internet-Draft proposing a mechanism for servers to advertise their capabilities in the ACME directory object. This could be useful to help clients choose from multiple servers (regardless of how they find out about the servers). And I think it’s good practice. When a protocol has many possible features that a server may or may not implement, servers should declare their capabilities for the benefit of clients.</p>
 <p>Beyond that, I am starting to think about SRVName support in ACME. This would be useful in enterprise environments and on the open internet for protocols where SRV records are used to locate servers. Such protocols include Kerberos, LDAP, SIP and XMPP.</p>]]></summary>
-</entry>
-<entry>
-    <title>OpenShift and user namespaces</title>
-    <link href="https://frasertweedale.github.io/blog-redhat/posts/2020-11-05-openshift-user-namespace.html" />
-    <id>https://frasertweedale.github.io/blog-redhat/posts/2020-11-05-openshift-user-namespace.html</id>
-    <published>2020-11-05T00:00:00Z</published>
-    <updated>2020-11-05T00:00:00Z</updated>
-    <summary type="html"><![CDATA[<h1 id="openshift-and-user-namespaces">OpenShift and user namespaces</h1>
-<p>FreeIPA in its current form is very much not a “cloud native” application. Likewise the current FreeIPA container, which runs all the required services under systemd. My current team is working on operationalising FreeIPA for the OpenShift container platform. Our initial efforts are focused around this “monolithic” container, trying to get it to run in OpenShift, securely. Although we recognise we may eventually need to split up the container, it will be a major engineering effort to do so. We want to have a working proof of concept as early as possible, so that we (and others) can start the important integration work (e.g. with Keycloak / RHSSO).</p>
-<p>This “lift and shift” of a complex traditional application to OpenShift results in a container that needs to run several processes as a variety of users, including <code>root</code>. OpenShift isolates containers (actually pods, which consist of one or more containers) in their own PID namespace. This is good, but if we are to run container processes as <code>root</code> (in the container), we do not want them to also be <code>root</code> on the host. Rather, they should map to an unprivileged account. If we want secure multitenancy of multiple IDM servers on a single worker node, we want the user accounts in different IDM pods to map to disjoint sets of unprivileged users on the host.</p>
-<p>Linux <code>user_namespaces(7)</code> provide this kind of isolation. To what extent are user namespaces supported in OpenShift? We needed to find out, in order to decide how to proceed with the FreeIPA OpenShift effort. In this blog post I discuss my investigation and findings.</p>
-<h2 id="investigating-current-openshift-behaviour">Investigating current OpenShift behaviour <a href="#investigating-current-openshift-behaviour">§</a></h2>
-<p>To investigate the use (or not) of user namespaces I deployed pods on our team’s OpenShift cluster, running a simple command, and observed the effects on the worker node.</p>
-<p>As cluster admin, I created a new project:</p>
-<pre><code>% oc new-project test
-Now using project &quot;test&quot; on server &quot;https://api.permanent.idmocp.lab.eng.rdu2.redhat.com:6443&quot;.
-...</code></pre>
-<p>To avoid the cluster admin user’s SCC bindings applying to pod creation, I created a user named <code>test</code> and granted it the <em>project</em> (not cluster) <code>admin</code> role. Subsequent pod creation operations were performed as user <code>test</code>.</p>
-<pre><code>% oc create user test
-user.user.openshift.io/test created
-
-% oc adm policy add-role-to-user admin test
-clusterrole.rbac.authorization.k8s.io/admin added: &quot;test&quot;</code></pre>
-<p>Next I deployed a basic pod (as user <code>test</code>) and inspected it to find out which worker node it was scheduled on, and the CRI-O conatiner ID:</p>
-<pre><code>% cat pod-test.yaml
-apiVersion: v1
-kind: Pod
-metadata:
-  name: test
-spec:
-  containers:
-  - name: idm-test
-    image: freeipa/freeipa-server:fedora-31
-    command: [&quot;sleep&quot;, &quot;3600&quot;]
-
-% oc --as test create -f pod-test.yaml
-pod/test created
-
-% oc get -o json pod test \
-    | jq .spec.nodeName
-&quot;permanent-bdd7p-worker-9r4b6&quot;
-
-% oc get -o json pod test \
-    | jq &quot;.status.containerStatuses[0].containerID&quot;
-&quot;cri-o://a9c0cf0ac9c0c352b82a74cccf830dfa8c33aae28138808eb7bdd9d53aae2d1f&quot;</code></pre>
-<p>Next, opening a debug shell on the worker node I inspected the container to find out the PID:</p>
-<pre><code>% oc debug node/permanent-bdd7p-worker-9r4b6
-Starting pod/permanent-bdd7p-worker-9r4b6-debug ...
-To use host binaries, run `chroot /host`
-Pod IP: 10.8.3.215
-If you don&#39;t see a command prompt, try pressing enter.
-sh-4.2# chroot /host
-sh-4.4# crictl inspect a9c0cf0ac | jq .pid
-1311115</code></pre>
-<p>Next I looked at which user the process is running under, and the UID map of the process:</p>
-<pre><code>sh-4.4# ls -l -d /proc/1311115
-dr-xr-xr-x. 9 1000620000 root 0 Nov  5 05:34 /proc/1311115
-
-sh-4.4# cat /proc/1311115/uid_map
-         0          0 4294967295</code></pre>
-<p>The process was running as user <code>1000620000</code>, and UID map has an offset of <code>0</code> and a size of <code>2^32</code>. Which is to say, this process is running in the same user namespace as the host. We can use the <code>lsns</code> command to confirm that everything on this node–including all container processes–shares the single user namespace:</p>
-<pre><code>sh-4.4# lsns -t user
-        NS TYPE  NPROCS PID USER COMMAND
-4026531837 user     296   1 root /usr/lib/systemd/systemd --switched-root --system --deserialize 18</code></pre>
-<p>As a result, if we use <code>runAsUser</code> to specify a different user under which to run the container, the container will run as the specified user both in the container <strong>and on the host</strong>. The following transcript demonstrates this.</p>
-<p>Delete the pod <code>test</code>:</p>
-<pre><code>% oc delete pod test
-pod &quot;test&quot; deleted</code></pre>
-<p>Add the <code>anyuid</code> SCC to user <code>test</code>:</p>
-<pre><code>% oc adm policy add-scc-to-user anyuid test
-securitycontextconstraints.security.openshift.io/anyuid added to: [&quot;test&quot;]</code></pre>
-<p>Create the pod (as user <code>test</code>):</p>
-<pre><code>% oc --as test create -f pod-test.yaml
-pod/test created</code></pre>
-<p>Following the same procedure as earlier, find the PID (it was <code>1381728</code>) and observe that it is running as <code>root</code> (UID <code>0</code>) on the host:</p>
-<pre><code>sh-4.4# ls -l -d /proc/1381728
-dr-xr-xr-x. 9 root root 0 Nov  5 05:55 /proc/1381728</code></pre>
-<h2 id="consequences-for-freeipa">Consequences for FreeIPA <a href="#consequences-for-freeipa">§</a></h2>
-<p>Traditional applications sometimes assume they will run as <code>root</code> or some other “reserved” user. FreeIPA is such a case. Likewise, running systemd in a container means running as UID 0 (from the container’s point of view).</p>
-<p>The lack of user namespace use in OpenShift means that for a process to run under a particular UID in the container, it must run as that user on the host too. If you application needs to be <code>root</code>, it will be <code>root</code> on the host. Other kinds of namespaces (e.g. <code>pid</code>, <code>mnt</code>, <code>uts</code> among others) do mitigate the security risk. But if a rogue process can escalate privileges and escape the other sandbox(es) the result could be catastrophic.</p>
-<p>FreeIPA, being composed of many components, some of which are large complex projects in their own right, and several of which are implemented in C or leverage C libraries, has a large attack surface. In the absense of user namespaces the risk of container host or co-tenant compromise—even by accident—seems high.</p>
-<p>This all assumes that containers do not have user namespace isolation and that FreeIPA continues to require running processes in the FreeIPA container as fixed UIDs (probably including <code>root</code>). I will now discuss possible ways to eliminate these assumptions.</p>
-<h2 id="user-namespace-support-in-kubernetes">User namespace support in Kubernetes <a href="#user-namespace-support-in-kubernetes">§</a></h2>
-<p>OpenShift is built on the Kubernetes container platform. <em>Kubernetes Enhancement Proposal</em> <a href="https://github.com/kubernetes/enhancements/issues/127">KEP-127</a> proposes user namespace support. The ticket has been open for 4 years and has since seen several efforts to formalise the proposal, the most recent of which is <a href="https://github.com/kubernetes/enhancements/pull/2101">kubernetes/enhancements#2101</a> (<a href="https://github.com/kubernetes/enhancements/blob/9726c1a4cc5051d8be7eaf4cb64313df60ae8751/keps/sig-node/127-usernamespaces-support/README.md">rendered</a>). There have also been several experimental implementations (e.g. <a href="https://github.com/kubernetes/kubernetes/pull/55707">#55707</a>, <a href="https://github.com/kubernetes/kubernetes/pull/64005">#64005</a>), none of which was accepted (yet).</p>
-<p>There has been a recent resurgence of activity on this KEP, and related discussions and pull requests. But that has happened before. I believe that every new (or resurrected) discussion or experiment can move you closer to the goal, and that there can be several false starts before things happen. Maybe this time it will happen… or maybe not.</p>
-<p>Right now there is no final proposal and no implementation plan. As a team we cannot proceed on the assumption that Kubernetes will support user namespaces. We will certainly present our case to OpenShift engineering internally at Red Hat, but we have to look at other options.</p>
-<h2 id="user-namespace-support-in-cri-o">User namespace support in CRI-O <a href="#user-namespace-support-in-cri-o">§</a></h2>
-<p>The <a href="https://cri-o.io/">CRI-O</a> container runtime <a href="https://github.com/cri-o/cri-o/pull/3944">recently implemented</a> support for running each pod in a separate user namespace, via <em>annotations</em> on the pod, e.g.:</p>
-<div class="sourceCode" id="cb11"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
-<span id="cb11-2"><a href="#cb11-2" aria-hidden="true"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Pod</span></span>
-<span id="cb11-3"><a href="#cb11-3" aria-hidden="true"></a><span class="fu">metadata</span><span class="kw">:</span></span>
-<span id="cb11-4"><a href="#cb11-4" aria-hidden="true"></a><span class="at">  </span><span class="fu">annotations</span><span class="kw">:</span></span>
-<span id="cb11-5"><a href="#cb11-5" aria-hidden="true"></a><span class="at">    </span><span class="fu">io.kubernetes.cri-o.userns-mode</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;auto&quot;</span></span>
-<span id="cb11-6"><a href="#cb11-6" aria-hidden="true"></a><span class="fu">spec</span><span class="kw">:</span></span>
-<span id="cb11-7"><a href="#cb11-7" aria-hidden="true"></a><span class="at">  ...</span></span></code></pre></div>
-<p>Using annotations means that no explicit support in Kubernetes is required. All that is required is that Kubernetes is using the CRI-O container runtime, and that CRI-O is configured to enable this feature. OpenShift 4.x does use CRI-O, so we’re halfway there. The remaining step is to enable the feature in <code>crio.conf</code>:</p>
-<pre><code>allow_userns_annotation = true</code></pre>
-<p>The developer Giuseppe Scrivano kindly published a <a href="https://asciinema.org/a/351396">screencast showing the feature in action</a> (2 minutes). This feature is not yet in a supported release but is available on the v1.20 branch and is included in OpenShift <a href="">nightly builds</a>.</p>
-<h2 id="splitting-the-freeipa-container">Splitting the FreeIPA container <a href="#splitting-the-freeipa-container">§</a></h2>
-<p>If Kubernetes or CRI-O user namespace support to does not solve our problem (in our desired timeframe) then there is more pressure to abandon the monolithic container and devote our efforts to a “split-service” FreeIPA/IDM application. In this scenario, the various services that make up FreeIPA (LDAP, KDC, HTTP, CA and others) would each run as an unprivileged process in its own container.</p>
-<p>This would be a big engineering effort. Apart from FreeIPA as a whole, most of the constituent services are also “traditional” applications that make assumptions about their environment and execution context—assumptions that do not hold in the OpenShift container paradigm.</p>
-<p>There is a general (albeit unevenly distributed) feeling in the team that in the long run this effort is inevitable. I do hold this view myself, but also recognise that the sooner we can have a working proof of concept, the better. That is the main reason we are initially pursuing the monolithic container approach.</p>
-<h2 id="next-steps">Next steps <a href="#next-steps">§</a></h2>
-<p>My next step will be to install an OpenShift cluster based on the nightly builds (which include CRI-O v1.20) and experiment with the annotation-based user namespace support. It seems to be what we want, or a big step in the right direction, but we need to confirm it. Expect a follow-up to this article with my findings, hopefully in the next week!</p>]]></summary>
 </entry>
 
 </feed>
