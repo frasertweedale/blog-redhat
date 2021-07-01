@@ -2,21 +2,22 @@
 tags: openshift, testing
 ---
 
-# Testing changes on live OpenShift nodes
+# Live-testing changes in OpenShift clusters
 
 I have been hacking on the [`runc`][runc] container runtime.  So how
 do I test my changes in an OpenShift cluster?
 
-One option is to compose a *machine-os-content* release via
+One option is to compose a `machine-os-content` release via
 [*coreos-assembler*](https://github.com/coreos/coreos-assembler).
-Then you can deploy or upgrade a cluster with that release.  This is
-a heavyweight and time consuming option.  I haven't actually tried
-it yet.  But it seems like it could be useful for publishing
-modified versions for others to test.
+Then you can deploy or upgrade a cluster with that release.  Indeed,
+this approach is *necessary* for testing installation and upgrades.
+It also seems useful for publishing modified versions for other
+people to test.  But it is a heavyweight and time consuming option.
 
 For development I want a more lightweight approach.  In this post
-I'll demonstrate how to use `rpm-ostree usroverlay` to test changes
-on a running OpenShift node.
+I'll demonstrate how to use the `rpm-ostree usroverlay` and
+`rpm-ostree override replace` commands to test changes in a live
+OpenShift cluster.
 
 [runc]: https://github.com/opencontainers/runc
 
@@ -34,11 +35,20 @@ So I can't just log onto an OpenShift node and replace
 [references][] to the `rpm-ostree usroverlay` command.  It is
 supposed to provide a writable overlayfs on `/usr`, so that you can
 test modifications.  Changes are lost upon reboot, but that's fine
-for testing.  Let's try it out.
+for testing.
+
+There's also the `rpm-ostree override replace …` command.  This
+command works on the level of RPM packages.  It allows you to
+install new packages or replace or remove packages.  Changes persist
+across reboots, but it is easy to roll back to the *pristine* state
+of the current CoreOS release.
+
+The rest of this article explores how to use these two commands to
+apply changes to the cluster.
 
 [references]: https://github.com/openshift/machine-config-operator/blob/master/docs/HACKING.md#directly-applying-changes-live-to-a-node
 
-## Overlay via node debug container (doesn't work)
+## `usroverlay` via debug container (doesn't work)
 
 I first attempted to use `rpm-ostree usroverlay` in a node debug
 pod.
@@ -71,7 +81,7 @@ Removing debug pod ...
 ```
 
 
-## Overlay via SSH
+## `usroverlay` via SSH
 
 For the next attempt, I logged into the worker node over SSH.  The
 first step was to add the SSH public key to the `core` user's
@@ -200,20 +210,151 @@ binary, then installed my modified version:
     https://ftweedal.fedorapeople.org/runc
 ```
 
+## Digression: use a buildroot
+
+The `runc` executable I installed on the previous step didn't work.
+I had built it on my workstation, against a too-new version of
+*glibc*.  The OpenShift node (which was running RHCOS 4.8, based on
+RHEL 8.4) was unable to link `runc`.  Therefore it could not run
+*any* container workloads.  I was able to SSH in from another node
+and reboot, discarding the transient change in the `usroverlay` and
+restoring the node to a functional state.
+
+All of this is obvious in hindsight.  You have to build the program
+for the environment in which it will be executed.  In my case, it
+was easiest to do this via Brew or Koji.  I cloned the dist-git
+repository (via the `fedpkg` or `rhpkg` tool), created patches and
+updated the `runc.spec` file.  Then I built the SRPM (`.src.rpm`)
+and started a scratch build in Brew.  After the build completed I
+made the resulting `.rpm` publicly available, so that it can be
+fetched from the OpenShift cluster.
+
+## `override replace` via node debug container
+
+I now have my modified `runc` in an RPM package.  So I can use
+`rpm-ostree override replace` to install it.  In a debug node on the
+host:
+
+```shell
+sh-4.4# rpm-ostree override replace \
+  https://ftweedal.fedorapeople.org/runc-1.0.0-98.rhaos4.8.gitcd80260.el8.x86_64.rpm
+Downloading 'https://ftweedal.fedorapeople.org/runc-1.0.0-98.rhaos4.8.gitcd80260.el8.x86_64.rpm'... done!
+Checking out tree eb6dd3b... done
+No enabled rpm-md repositories.
+Importing rpm-md... done
+Resolving dependencies... done
+Applying 1 override
+Processing packages... done
+Running pre scripts... done
+Running post scripts... done
+Running posttrans scripts... done
+Writing rpmdb... done
+Writing OSTree commit... done
+Staging deployment... done
+Upgraded:
+  runc 1.0.0-97.rhaos4.8.gitcd80260.el8 -> 1.0.0-98.rhaos4.8.gitcd80260.el8
+Run "systemctl reboot" to start a reboot
+```
+
+`rpm-ostree` downloaded the package and prepared the updated OS.
+Per the advice, the update is not active yet; I need to reboot:
+
+```shell
+sh-4.4# rpm -q runc
+runc-1.0.0-97.rhaos4.8.gitcd80260.el8.x86_64
+sh-4.4# systemctl reboot
+sh-4.4# exit
+sh-4.2# 
+Removing debug pod ...
+```
+
+After reboot I started a node debug container and verified that the
+modified version of `runc` is visible:
+
+```shell
+% oc debug node/worker-a
+Starting pod/worker-a-debug ...
+To use host binaries, run `chroot /host`
+Pod IP: 10.0.128.2
+If you don't see a command prompt, try pressing enter.
+sh-4.2# chroot /host
+sh-4.4# rpm -q runc
+runc-1.0.0-98.rhaos4.8.gitcd80260.el8.x86_64
+```
+
+And the fact that the debug container is working proves that the
+modified version of runc isn't *completely* broken!  Testing the new
+functionality is a topic for a different post, so I'll leave it at
+that.
+
+### Listing and resetting overrides
+
+`rpm-ostree status --booted` lists the current base image and any
+overrides that have been applied:
+
+```shell
+sh-4.4# rpm-ostree status --booted
+State: idle
+BootedDeployment:
+* pivot://quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:9a23adde268dc8937ae293594f58fc4039b574210f320ebdac85a50ef40220dd
+              CustomOrigin: Managed by machine-config-operator
+                   Version: 48.84.202106231817-0 (2021-06-23T18:21:06Z)
+      ReplacedBasePackages: runc 1.0.0-97.rhaos4.8.gitcd80260.el8 -> 1.0.0-98.rhaos4.8.gitcd80260.el8
+```
+
+To reset an override for a specific package, run `rpm-ostree
+override reset $PKG`:
+
+```shell
+sh-4.4# rpm-ostree override reset runc
+Staging deployment... done
+Freed: 1.1 GB (pkgcache branches: 0)
+Downgraded:
+  runc 1.0.0-98.rhaos4.8.gitcd80260.el8 -> 1.0.0-97.rhaos4.8.gitcd80260.el8
+Run "systemctl reboot" to start a reboot
+```
+
+To reset *all* overrides, execute `rpm-ostree reset`:
+
+```shell
+sh-4.4# rpm-ostree reset
+Staging deployment... done
+Freed: 54.8 MB (pkgcache branches: 0)
+Downgraded:
+  runc 1.0.0-98.rhaos4.8.gitcd80260.el8 -> 1.0.0-97.rhaos4.8.gitcd80260.el8
+Run "systemctl reboot" to start a reboot
+```
+
 ## Discussion
 
-I achieved my goal of applying local file changes to an OpenShift
-node.  The changes are not persistent over reboots.  But I am
-testing container runtime changes, so that not a problem.  Indeed,
-it is desirable, in case I really mess something up!
+I achieved my goal of installed a modified `runc` executable on an
+OpenShift node.  There were two approaches:
 
-To apply changes under `/usr`, I had to log in over SSH.  Because I
-did not have direct network access to the worker nodes, I could only
-manage this in a convoluted way: generating an SSH key in the node
-debug shell, adding the key via a `MachineConfig`, then SSHing from
-the debug shell.  I wish there was a less convoluted way to do it.
-Maybe there is.  Maybe it's obvious, and I will kick myself when
-someone reveals it to me.
+1. `rpm-ostree usroverlay` creates a writable overlay on `/usr`.
+   The overlay disappears at reboot, which is fine for my testing
+   needs.  This technique doesn't work from a node debug container;
+   you have to log in over SSH, which requires additional steps to
+   add SSH keys.
 
-In the meantime, I now have a way to deploy a modified `runc`
-executable onto my worker nodes.  So I will get on with testing it!
+2. `rpm-ostree override replace` overrides a particular package RPM.
+   The change takes effect after reboot and is persistent.  It is
+   easy to rollback or reset the override.  This technique does not
+   require SSH login; it works fine in a node debug container.
+
+Because I needed to build my package in a RHEL 8.4 / RHCOS 4.8
+buildroot, I used Brew.  The build artifacts are RPMs.  Therefore
+`rpm-ostree override replace` is the most convenient option for me.
+
+Both options apply changes *per-node*.  After confirming with CoreOS
+developers, there is currently no way to roll out a package override
+cluster-wide or to a defined group of nodes (e.g. to
+`MachineConfigPool/worker` via a `MachineConfig`).  So for now, you
+either have to apply changes/overrides on specific nodes, or build
+the whole `machine-os-content` image and upgrade the cluster.  As a
+container runtime developer, my sweet spot is in a gulf between the
+existing options.  I can tolerate this mild annoyance on the
+assumption that it discourages messing around in production
+environments.
+
+In the meantime, now that I have worked out how to install my
+modified `runc` onto worker nodes, I will get on with testing it!
