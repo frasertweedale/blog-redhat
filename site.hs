@@ -178,6 +178,6 @@ feedConfiguration = FeedConfiguration
 addSectionLinks :: Pandoc -> Pandoc
 addSectionLinks = walk f where
   f (Header n attr@(idAttr, _, _) inlines) | n > 1 =
-      let link = Link nullAttr [Str "§"] ("#" <> idAttr, "")
+      let link = Link ("", ["section"], []) [Str "§"] ("#" <> idAttr, "")
       in Header n attr (inlines <> [Space, link])
   f x = x
