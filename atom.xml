@@ -8,8 +8,297 @@
         <name>Fraser Tweedale</name>
         <email>frase@frase.id.au</email>
     </author>
-    <updated>2021-07-21T00:00:00Z</updated>
+    <updated>2021-07-22T00:00:00Z</updated>
     <entry>
+    <title>Demo: namespaced systemd workloads on OpenShift</title>
+    <link href="https://frasertweedale.github.io/blog-redhat/posts/2021-07-22-openshift-systemd-workload-demo.html" />
+    <id>https://frasertweedale.github.io/blog-redhat/posts/2021-07-22-openshift-systemd-workload-demo.html</id>
+    <published>2021-07-22T00:00:00Z</published>
+    <updated>2021-07-22T00:00:00Z</updated>
+    <summary type="html"><![CDATA[<h1 id="demo-namespaced-systemd-workloads-on-openshift">Demo: namespaced systemd workloads on OpenShift</h1>
+<p>I have spent much of the last year diving deep into OpenShift’s container runtime. The goal: work out how to run systemd-based workloads in <em>user namespaces</em> on OpenShift nodes. The exploration took many twists and turns. But finally, I have achieved the goal.</p>
+<p>In this post I recap the journey so far, and <a href="#demo"><strong>demonstrate</strong></a> what I have achieved. Then I will summarise the path(s?) forward from here.</p>
+<h2 id="the-journey-so-far">The journey so far <a href="#the-journey-so-far" class="section">§</a></h2>
+<p>My <a href="2021-07-21-freeipa-on-openshift-update.html">previous post</a> gives an overview of the FreeIPA on OpenShift project. In particular, it explains our decision to use a “monolithic” systemd-based container. That implementation approach exposed capability gaps in OpenShift and led to a long running series of investigations. I wrote up the results of these investigations across several blog posts, summarised here:</p>
+<h3 id="openshift-and-user-namespaces"><a href="2020-11-05-openshift-user-namespace.html"><em>OpenShift and user namespaces</em></a> <a href="#openshift-and-user-namespaces" class="section">§</a></h3>
+<p>I observed that OpenShift (4.6 at the time) did not isolate containers in user namespaces. I noted that <a href="https://github.com/kubernetes/enhancements/issues/127">KEP-127</a> proposes user namespace support for Kubernetes (it is <a href="https://github.com/kubernetes/enhancements/pull/2101">still being worked on</a>). CRI-O had also recently <a href="https://github.com/cri-o/cri-o/pull/3944">added support</a> for user namespaces via annotations.</p>
+<h3 id="user-namespaces-in-openshift-via-cri-o-annotations"><a href="2020-12-01-openshift-crio-userns.html"><em>User namespaces in OpenShift via CRI-O annotations</em></a> <a href="#user-namespaces-in-openshift-via-cri-o-annotations" class="section">§</a></h3>
+<p>I tested CRI-O’s annotation-based user namespace support on OpenShift 4.7 nightlies. I found that the runtime creates a sandbox with a user namespace and the expected UID mappings. I also found that it is necessary to override the <code>net.ipv4.ping_group_range</code> sysctl. Also, the SCC enforcement machinery does not know about user namespaces and therefore the account that creates the container requires the <code>anyuid</code> SCC. These deficiencies still exist today.</p>
+<h3 id="user-namespace-support-in-openshift-4.7"><a href="2021-03-03-openshift-4.7-user-namespaces.html"><em>User namespace support in OpenShift 4.7</em></a> <a href="#user-namespace-support-in-openshift-4.7" class="section">§</a></h3>
+<p>I continued my investigation after the release of OpenShift 4.7. With the aforementioned caveats, user namespaces work. I also noted an inconsistent treatment of <code>securityContext</code>: specifying <code>runAsUser</code> in the <code>PodSpec</code> maps the container’s UID <code>0</code> to host UID <code>0</code>—a dangerous configuration.</p>
+<p>More recently, I noticed that the <code>userns-mode</code> annotation I was using included <code>map-to-root=true</code>. I now understand that it is this configuration that causes this mapping behaviour. I no longer consider it particularly serious. Ideally the SCC enforcement should learn about user namespaces, and prevent unprivileged users from creating containers that run as <code>root</code> (or other system accounts) on the host.</p>
+<h3 id="multiple-users-in-user-namespaces-on-openshift"><a href="2021-03-10-openshift-user-namespace-multi-user.html"><em>Multiple users in user namespaces on OpenShift</em></a> <a href="#multiple-users-in-user-namespaces-on-openshift" class="section">§</a></h3>
+<p>I verified that workloads that run processes under a variety of user accounts work as expected in user namespaces. I did not use a <em>systemd</em>-based workload to verify this.</p>
+<h3 id="systemd-containers-on-openshift-with-cgroups-v2"><a href="2021-03-30-openshift-cgroupv2-systemd.html"><em>systemd containers on OpenShift with cgroups v2</em></a> <a href="#systemd-containers-on-openshift-with-cgroups-v2" class="section">§</a></h3>
+<p>I observed that systemd-based workloads run successfully in OpenShift when executed as UID 0 <em>on the host</em>. Such containers can only be created by accounts granted privileged SCCs (e.g. <code>anyuid</code>). When running the container under other UIDs, <em>systemd</em> can’t run because it does not have write permission on the container’s cgroup directory.</p>
+<h3 id="using-runc-to-explore-the-oci-runtime-specification"><a href="2021-05-27-oci-runtime-spec-runc.html"><em>Using <code>runc</code> to explore the OCI Runtime Specification</em></a> <a href="#using-runc-to-explore-the-oci-runtime-specification" class="section">§</a></h3>
+<p>I investigated how <code>runc</code> (the OCI runtime used in OpenShift) operates, and how it creates cgroups. I identified some potential ways to change the ownership of the container cgroup to the <em>container’s</em> UID 0.</p>
+<h3 id="systemd-cgroups-and-subuid-ranges"><a href="2021-06-09-systemd-cgroups-subuid.html"><em>systemd, cgroups and subuid ranges</em></a> <a href="#systemd-cgroups-and-subuid-ranges" class="section">§</a></h3>
+<p>I discovered that the systemd <em>transient unit API</em> (which <code>runc</code> uses to create container cgroups) allows specifying a different owner for the new cgroup. Unfortunately, the user must be “known”, in the form of a <code>passwd</code> entity via NSSwitch. A <a href="https://github.com/systemd/systemd/issues/19781">proposal to relax this requirement</a> was provisionally rejected. Other approaches include writing an NSSwitch module to synthesise <code>passwd</code> entities for subuids, or modifying <code>runc</code> to <code>chown(2)</code> the container cgroup after systemd creates it. I decided to experiment with the latter approach.</p>
+<h2 id="modifying-runc-to-chown-the-container-cgroup">Modifying <code>runc</code> to <code>chown</code> the container cgroup <a href="#modifying-runc-to-chown-the-container-cgroup" class="section">§</a></h2>
+<p>The main challenge in modifying <code>runc</code> was getting my head around the unfamiliar codebase. The actual operations are straightforward. There are two main aspects.</p>
+<p>The first aspect is to compute the appropriate owner UID for the cgroup, and tell it to the cgroup manager object. I <a href="2021-06-09-systemd-cgroups-subuid.html#determining-the-uid">described the algorithm</a> in a previous post. The <code>config.HostRootUID()</code> method already implemented this computation. I was able to use it as-is.</p>
+<p>The second aspect is to actually <code>chown(2)</code> the relevant cgroup files and directories. I previously observed systemd’s behaviour when creating units owned by arbitrary users. systemd <code>chown</code>s the container’s cgroup directory, and the <code>cgroup.procs</code>, <code>cgroup.subtree_control</code> and <code>cgroup.threads</code> files within that directory. <code>runc</code> will do the same. The cgroup manager object already knows the path to the container cgroup. My implementation uses <a href="https://golang.org/pkg/path/filepath/#Walk"><code>filepath.Walk</code></a> to identify and <code>chown</code> these files to the relevant user.</p>
+<h2 id="demo">Demo <a href="#demo" class="section">§</a></h2>
+<p>Following is a step-by-step demonstration starting with a fresh deployment of OpenShift <code>4.7.20</code>.</p>
+<pre class="shell"><code>% oc get clusterversion
+NAME      VERSION   AVAILABLE   PROGRESSING   SINCE   STATUS
+version   4.7.20    True        False         8m52s   Cluster version is 4.7.20</code></pre>
+<div class="note">
+<p>There is a <a href="https://github.com/cri-o/cri-o/issues/5077">regression</a> in OpenShift 4.8 that prevents Pod annotations from being propagated to container OCI configurations. As a consequence, <code>runc</code> does not receive the annotations that trigger the experimental behaviour. I filed a <a href="https://github.com/cri-o/cri-o/pull/5078">pull request</a> that fixes the issue. It should get backported to a future <code>4.8.x</code> release.</p>
+</div>
+<p>The latent credential is the cluster <code>admin</code> user. Where relevant, I use the <code>oc --as USER</code> option to execute commands as other users.</p>
+<pre class="shell"><code>% oc whoami
+system:admin</code></pre>
+<h3 id="install-modified-runc-package">Install modified <code>runc</code> package <a href="#install-modified-runc-package" class="section">§</a></h3>
+<p>List the nodes in the cluster:</p>
+<pre class="shell"><code>% oc get node
+NAME                                       STATUS   ROLES    AGE   VERSION
+ci-ln-jqbnbfk-f76d1-gnkkv-master-0         Ready    master   61m   v1.20.0+01c9f3f
+ci-ln-jqbnbfk-f76d1-gnkkv-master-1         Ready    master   61m   v1.20.0+01c9f3f
+ci-ln-jqbnbfk-f76d1-gnkkv-master-2         Ready    master   61m   v1.20.0+01c9f3f
+ci-ln-jqbnbfk-f76d1-gnkkv-worker-a-vrbnv   Ready    worker   52m   v1.20.0+01c9f3f
+ci-ln-jqbnbfk-f76d1-gnkkv-worker-b-dxk6k   Ready    worker   52m   v1.20.0+01c9f3f
+ci-ln-jqbnbfk-f76d1-gnkkv-worker-c-db89w   Ready    worker   52m   v1.20.0+01c9f3f</code></pre>
+<p>For each worker node, open a node debug shell and use <code>rpm-ostree override replace</code> to install the modified <code>runc</code> (one worker shown):</p>
+<pre class="shell"><code>% oc debug node/ci-ln-jqbnbfk-f76d1-gnkkv-worker-a-vrbnv
+Starting pod/ci-ln-jqbnbfk-f76d1-gnkkv-worker-a-vrbnv-debug ...
+To use host binaries, run `chroot /host`
+Pod IP: 10.0.32.2
+If you don&#39;t see a command prompt, try pressing enter.
+sh-4.2# chroot /host
+sh-4.4# rpm-ostree override replace https://ftweedal.fedorapeople.org/runc-1.0.0-990.rhaos4.8.gitcd80260.el8.x86_64.rpm
+Downloading &#39;https://ftweedal.fedorapeople.org/runc-1.0.0-990.rhaos4.8.gitcd80260.el8.x86_64.rpm&#39;... done!
+Checking out tree 9767154... done
+No enabled rpm-md repositories.
+Importing rpm-md... done
+Resolving dependencies... done
+Applying 1 override
+Processing packages... done
+Running pre scripts... done
+Running post scripts... done
+Running posttrans scripts... done
+Writing rpmdb... done
+Writing OSTree commit... done
+Staging deployment... done
+Upgraded:
+  runc 1.0.0-96.rhaos4.8.gitcd80260.el8 -&gt; 1.0.0-990.rhaos4.8.gitcd80260.el8
+Run &quot;systemctl reboot&quot; to start a reboot</code></pre>
+<div class="note">
+<p>Instead of installing the modified <code>runc</code> on all worker nodes, you could update one node and use <code>.spec.nodeAffinity</code> in the <code>PodSpec</code> to force the pod to run on that node.</p>
+</div>
+<p>Don’t worry about the restart right now (it will happen in the next step). Exit the debug shell:</p>
+<pre class="shell"><code>sh-4.4# exit
+sh-4.2# exit
+
+Removing debug pod ...</code></pre>
+<h3 id="enable-user-namespaces-and-cgroups-v2">Enable user namespaces and cgroups v2 <a href="#enable-user-namespaces-and-cgroups-v2" class="section">§</a></h3>
+<p>The following <code>MachineConfig</code> enables cgroups v2 and CRI-O annotation-based user namespace support:</p>
+<div class="sourceCode" id="cb6"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> machineconfiguration.openshift.io/v1</span></span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> MachineConfig</span></span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true"></a><span class="fu">metadata</span><span class="kw">:</span></span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true"></a><span class="at">  </span><span class="fu">labels</span><span class="kw">:</span></span>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true"></a><span class="at">    </span><span class="fu">machineconfiguration.openshift.io/role</span><span class="kw">:</span><span class="at"> worker</span></span>
+<span id="cb6-6"><a href="#cb6-6" aria-hidden="true"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> userns-cgv2</span></span>
+<span id="cb6-7"><a href="#cb6-7" aria-hidden="true"></a><span class="fu">spec</span><span class="kw">:</span></span>
+<span id="cb6-8"><a href="#cb6-8" aria-hidden="true"></a><span class="at">  </span><span class="fu">kernelArguments</span><span class="kw">:</span></span>
+<span id="cb6-9"><a href="#cb6-9" aria-hidden="true"></a><span class="at">    </span><span class="kw">-</span><span class="at"> systemd.unified_cgroup_hierarchy=1</span></span>
+<span id="cb6-10"><a href="#cb6-10" aria-hidden="true"></a><span class="at">    </span><span class="kw">-</span><span class="at"> cgroup_no_v1=&quot;all&quot;</span></span>
+<span id="cb6-11"><a href="#cb6-11" aria-hidden="true"></a><span class="at">    </span><span class="kw">-</span><span class="at"> psi=1</span></span>
+<span id="cb6-12"><a href="#cb6-12" aria-hidden="true"></a><span class="at">  </span><span class="fu">config</span><span class="kw">:</span></span>
+<span id="cb6-13"><a href="#cb6-13" aria-hidden="true"></a><span class="at">    </span><span class="fu">ignition</span><span class="kw">:</span></span>
+<span id="cb6-14"><a href="#cb6-14" aria-hidden="true"></a><span class="at">      </span><span class="fu">version</span><span class="kw">:</span><span class="at"> </span><span class="fl">3.1.0</span></span>
+<span id="cb6-15"><a href="#cb6-15" aria-hidden="true"></a><span class="at">    </span><span class="fu">storage</span><span class="kw">:</span></span>
+<span id="cb6-16"><a href="#cb6-16" aria-hidden="true"></a><span class="at">      </span><span class="fu">files</span><span class="kw">:</span></span>
+<span id="cb6-17"><a href="#cb6-17" aria-hidden="true"></a><span class="at">      </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> /etc/crio/crio.conf.d/99-crio-userns.conf</span></span>
+<span id="cb6-18"><a href="#cb6-18" aria-hidden="true"></a><span class="at">        </span><span class="fu">overwrite</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb6-19"><a href="#cb6-19" aria-hidden="true"></a><span class="at">        </span><span class="fu">contents</span><span class="kw">:</span></span>
+<span id="cb6-20"><a href="#cb6-20" aria-hidden="true"></a><span class="at">          </span><span class="fu">source</span><span class="kw">:</span><span class="at"> data:text/plain;charset=utf-8;base64,W2NyaW8ucnVudGltZS5ydW50aW1lcy5ydW5jXQphbGxvd2VkX2Fubm90YXRpb25zPVsiaW8ua3ViZXJuZXRlcy5jcmktby51c2VybnMtbW9kZSJdCg==</span></span>
+<span id="cb6-21"><a href="#cb6-21" aria-hidden="true"></a><span class="at">      </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> /etc/subuid</span></span>
+<span id="cb6-22"><a href="#cb6-22" aria-hidden="true"></a><span class="at">        </span><span class="fu">overwrite</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb6-23"><a href="#cb6-23" aria-hidden="true"></a><span class="at">        </span><span class="fu">contents</span><span class="kw">:</span></span>
+<span id="cb6-24"><a href="#cb6-24" aria-hidden="true"></a><span class="at">          </span><span class="fu">source</span><span class="kw">:</span><span class="at"> data:text/plain;charset=utf-8;base64,Y29yZToxMDAwMDA6NjU1MzYKY29udGFpbmVyczoyMDAwMDA6MjY4NDM1NDU2Cg==</span></span>
+<span id="cb6-25"><a href="#cb6-25" aria-hidden="true"></a><span class="at">      </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> /etc/subgid</span></span>
+<span id="cb6-26"><a href="#cb6-26" aria-hidden="true"></a><span class="at">        </span><span class="fu">overwrite</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb6-27"><a href="#cb6-27" aria-hidden="true"></a><span class="at">        </span><span class="fu">contents</span><span class="kw">:</span></span>
+<span id="cb6-28"><a href="#cb6-28" aria-hidden="true"></a><span class="at">          </span><span class="fu">source</span><span class="kw">:</span><span class="at"> data:text/plain;charset=utf-8;base64,Y29yZToxMDAwMDA6NjU1MzYKY29udGFpbmVyczoyMDAwMDA6MjY4NDM1NDU2Cg==</span></span></code></pre></div>
+<p>The file <code>/etc/crio/crio.conf.d/99-crio-userns.conf</code> enables CRI-O’s annotation-based user namespace support. Its content (base64-encoded in the <code>MachineConfig</code>) is:</p>
+<div class="sourceCode" id="cb7"><pre class="sourceCode ini"><code class="sourceCode ini"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true"></a><span class="kw">[crio.runtime.runtimes.runc]</span></span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true"></a><span class="dt">allowed_annotations</span><span class="ot">=</span><span class="st">[&quot;io.kubernetes.cri-o.userns-mode&quot;]</span></span></code></pre></div>
+<p>The <code>MachineConfig</code> also overrides <code>/etc/subuid</code> and <code>/etc/subgid</code>, defining sub-id ranges for user namespaces. The content is the same for both files:</p>
+<pre><code>core:100000:65536
+containers:200000:268435456</code></pre>
+<p>Create the <code>MachineConfig</code>:</p>
+<pre class="shell"><code>% oc create -f machineconfig-userns-cgv2.yaml
+machineconfig.machineconfiguration.openshift.io/userns-cgv2 created</code></pre>
+<p>Wait for the Machine Config Operator to apply the changes and reboot the worker nodes:</p>
+<pre class="shell"><code>% oc wait mcp/worker --for condition=updated --timeout=-1s
+machineconfigpool.machineconfiguration.openshift.io/worker condition met</code></pre>
+<p>It will take several minutes, as worker nodes get rebooted one a time.</p>
+<h3 id="create-project-and-user">Create project and user <a href="#create-project-and-user" class="section">§</a></h3>
+<p>Create a new project called <code>test</code>:</p>
+<pre class="shell"><code>% oc new-project test
+Now using project &quot;test&quot; on server &quot;https://api.ci-ln-jqbnbfk-f76d1.origin-ci-int-gce.dev.openshift.com:6443&quot;.
+
+You can add applications to this project with the &#39;new-app&#39; command. For example, try:
+
+    oc new-app ruby~https://github.com/sclorg/ruby-ex.git
+
+to build a new example application in Python. Or use kubectl to deploy a simple Kubernetes application:
+
+    kubectl create deployment hello-node --image=gcr.io/hello-minikube-zero-install/hello-node</code></pre>
+<p>The output shows the public domain name of this cluster: <code>ci-ln-jqbnbfk-f76d1.origin-ci-int-gce.dev.openshift.com</code>. We need to know this for creating the route in the next step.</p>
+<p>Create a user called <code>test</code>. Grant it <code>admin</code> role on project <code>test</code>, and the <code>anyuid</code> Security Context Constraint (SCC) privilege:</p>
+<pre class="shell"><code>% oc create user test
+user.user.openshift.io/test created
+% oc adm policy add-role-to-user admin test
+clusterrole.rbac.authorization.k8s.io/admin added: &quot;test&quot;
+% oc adm policy add-scc-to-user anyuid test
+securitycontextconstraints.security.openshift.io/anyuid added to: [&quot;test&quot;]</code></pre>
+<h3 id="create-service-and-route">Create service and route <a href="#create-service-and-route" class="section">§</a></h3>
+<p>Create a service to provide HTTP access to pods matching the <code>app: nginx</code> selector:</p>
+<div class="sourceCode" id="cb13"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
+<span id="cb13-2"><a href="#cb13-2" aria-hidden="true"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Service</span></span>
+<span id="cb13-3"><a href="#cb13-3" aria-hidden="true"></a><span class="fu">metadata</span><span class="kw">:</span></span>
+<span id="cb13-4"><a href="#cb13-4" aria-hidden="true"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> nginx</span></span>
+<span id="cb13-5"><a href="#cb13-5" aria-hidden="true"></a><span class="fu">spec</span><span class="kw">:</span></span>
+<span id="cb13-6"><a href="#cb13-6" aria-hidden="true"></a><span class="at">  </span><span class="fu">selector</span><span class="kw">:</span></span>
+<span id="cb13-7"><a href="#cb13-7" aria-hidden="true"></a><span class="at">    </span><span class="fu">app</span><span class="kw">:</span><span class="at"> nginx</span></span>
+<span id="cb13-8"><a href="#cb13-8" aria-hidden="true"></a><span class="at">  </span><span class="fu">ports</span><span class="kw">:</span></span>
+<span id="cb13-9"><a href="#cb13-9" aria-hidden="true"></a><span class="at">    </span><span class="kw">-</span><span class="at"> </span><span class="fu">protocol</span><span class="kw">:</span><span class="at"> TCP</span></span>
+<span id="cb13-10"><a href="#cb13-10" aria-hidden="true"></a><span class="at">      </span><span class="fu">port</span><span class="kw">:</span><span class="at"> </span><span class="dv">80</span></span></code></pre></div>
+<pre class="shell"><code>% oc create -f service-nginx.yaml
+service/nginx created</code></pre>
+<p>The following route definition will provide HTTP ingress from outside the cluster:</p>
+<div class="sourceCode" id="cb15"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
+<span id="cb15-2"><a href="#cb15-2" aria-hidden="true"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Route</span></span>
+<span id="cb15-3"><a href="#cb15-3" aria-hidden="true"></a><span class="fu">metadata</span><span class="kw">:</span></span>
+<span id="cb15-4"><a href="#cb15-4" aria-hidden="true"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> nginx</span></span>
+<span id="cb15-5"><a href="#cb15-5" aria-hidden="true"></a><span class="fu">spec</span><span class="kw">:</span></span>
+<span id="cb15-6"><a href="#cb15-6" aria-hidden="true"></a><span class="at">  </span><span class="fu">host</span><span class="kw">:</span><span class="at"> nginx.apps.ci-ln-jqbnbfk-f76d1.origin-ci-int-gce.dev.openshift.com</span></span>
+<span id="cb15-7"><a href="#cb15-7" aria-hidden="true"></a><span class="at">  </span><span class="fu">to</span><span class="kw">:</span></span>
+<span id="cb15-8"><a href="#cb15-8" aria-hidden="true"></a><span class="at">    </span><span class="fu">kind</span><span class="kw">:</span><span class="at"> Service</span></span>
+<span id="cb15-9"><a href="#cb15-9" aria-hidden="true"></a><span class="at">    </span><span class="fu">name</span><span class="kw">:</span><span class="at"> nginx</span></span></code></pre></div>
+<p>Note the <code>host</code> field. Its value is <code>nginx.apps.$CLUSTER_DOMAIN</code>. Change it to the proper value for your cluster, then create the route:</p>
+<pre class="shell"><code>% oc create -f route-nginx.yaml
+route.route.openshift.io/nginx created</code></pre>
+<p>There is no pod to route the traffic to… yet.</p>
+<h3 id="create-pod">Create pod <a href="#create-pod" class="section">§</a></h3>
+<p>The pod specification is:</p>
+<div class="sourceCode" id="cb17"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
+<span id="cb17-2"><a href="#cb17-2" aria-hidden="true"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Pod</span></span>
+<span id="cb17-3"><a href="#cb17-3" aria-hidden="true"></a><span class="fu">metadata</span><span class="kw">:</span></span>
+<span id="cb17-4"><a href="#cb17-4" aria-hidden="true"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> nginx</span></span>
+<span id="cb17-5"><a href="#cb17-5" aria-hidden="true"></a><span class="at">  </span><span class="fu">labels</span><span class="kw">:</span></span>
+<span id="cb17-6"><a href="#cb17-6" aria-hidden="true"></a><span class="at">    </span><span class="fu">app</span><span class="kw">:</span><span class="at"> nginx</span></span>
+<span id="cb17-7"><a href="#cb17-7" aria-hidden="true"></a><span class="at">  </span><span class="fu">annotations</span><span class="kw">:</span></span>
+<span id="cb17-8"><a href="#cb17-8" aria-hidden="true"></a><span class="at">    </span><span class="fu">openshift.io/scc</span><span class="kw">:</span><span class="at"> restricted</span></span>
+<span id="cb17-9"><a href="#cb17-9" aria-hidden="true"></a><span class="at">    </span><span class="fu">io.kubernetes.cri-o.userns-mode</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;auto:size=65536&quot;</span></span>
+<span id="cb17-10"><a href="#cb17-10" aria-hidden="true"></a><span class="fu">spec</span><span class="kw">:</span></span>
+<span id="cb17-11"><a href="#cb17-11" aria-hidden="true"></a><span class="at">  </span><span class="fu">securityContext</span><span class="kw">:</span></span>
+<span id="cb17-12"><a href="#cb17-12" aria-hidden="true"></a><span class="at">    </span><span class="fu">sysctls</span><span class="kw">:</span></span>
+<span id="cb17-13"><a href="#cb17-13" aria-hidden="true"></a><span class="at">    </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;net.ipv4.ping_group_range&quot;</span></span>
+<span id="cb17-14"><a href="#cb17-14" aria-hidden="true"></a><span class="at">      </span><span class="fu">value</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;0 65535&quot;</span></span>
+<span id="cb17-15"><a href="#cb17-15" aria-hidden="true"></a><span class="at">  </span><span class="fu">containers</span><span class="kw">:</span></span>
+<span id="cb17-16"><a href="#cb17-16" aria-hidden="true"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> nginx</span></span>
+<span id="cb17-17"><a href="#cb17-17" aria-hidden="true"></a><span class="at">    </span><span class="fu">image</span><span class="kw">:</span><span class="at"> quay.io/ftweedal/test-nginx:latest</span></span>
+<span id="cb17-18"><a href="#cb17-18" aria-hidden="true"></a><span class="at">    </span><span class="fu">tty</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span></code></pre></div>
+<p>Create the pod:</p>
+<pre class="shell"><code>% oc --as test create -f pod-nginx.yaml
+pod/nginx created</code></pre>
+<p>After a few seconds, the pod is running:</p>
+<pre class="shell"><code>% oc get -o json pod/nginx | jq .status.phase
+&quot;Running&quot;</code></pre>
+<p>Tail the pod’s log. Observe the final lines of systemd boot output and the login prompt:</p>
+<pre class="shell"><code>% oc logs --tail 10 pod/nginx
+[  OK  ] Started The nginx HTTP and reverse proxy server.
+[  OK  ] Reached target Multi-User System.
+[  OK  ] Reached target Graphical Interface.
+         Starting Update UTMP about System Runlevel Changes...
+[  OK  ] Finished Update UTMP about System Runlevel Changes.
+
+Fedora 33 (Container Image)
+Kernel 4.18.0-305.3.1.el8_4.x86_64 on an x86_64 (console)
+
+nginx login: %</code></pre>
+<div class="note">
+<p>Without <code>tty: true</code> in the <code>Container</code> spec, the pod won’t produce any output and <code>oc logs</code> won’t have anything to show.</p>
+</div>
+<p>The log tail also shows that systemd started the <code>nginx</code> service. We already set up a <code>route</code> in the previous step. Use <code>curl</code> to issue an HTTP request and verify that the service is running properly:</p>
+<pre class="shell"><code>% curl --head \
+    nginx.apps.ci-ln-jqbnbfk-f76d1.origin-ci-int-gce.dev.openshift.com
+HTTP/1.1 200 OK
+Server: nginx/1.18.0
+Date: Wed, 21 Jul 2021 06:55:38 GMT
+Content-Type: text/html
+Content-Length: 5564
+Last-Modified: Mon, 27 Jul 2020 22:20:49 GMT
+ETag: &quot;5f1f5341-15bc&quot;
+Accept-Ranges: bytes
+Set-Cookie: 6cf5f3bc2fa4d24f45018c591d3617c3=f114e839b2eef9cdbe00856f18a06336; path=/; HttpOnly
+Cache-control: private</code></pre>
+<h3 id="verify-sandbox">Verify sandbox <a href="#verify-sandbox" class="section">§</a></h3>
+<p>Now let’s verify that the container is indeed running in a user namespace. Container UIDs must map to unprivileged UIDs on the host. Query the worker node on which the pod is running, and its CRI-O container ID:</p>
+<pre class="shell"><code>% oc get -o json pod/nginx | jq \
+    &#39;.spec.nodeName, .status.containerStatuses[0].containerID&#39;
+&quot;ci-ln-jqbnbfk-f76d1-gnkkv-worker-c-db89w&quot;
+&quot;cri-o://bf2b3d15cbd6944366e29927988ba30bc36d1efee00c28fb4c6d5b2036e462b0&quot;</code></pre>
+<p>Start a debug shell on the node and query the PID of the container init process:</p>
+<pre class="shell"><code>% oc debug node/ci-ln-jqbnbfk-f76d1-gnkkv-worker-c-db89w
+Starting pod/ci-ln-jqbnbfk-f76d1-gnkkv-worker-c-db89w-debug ...
+To use host binaries, run `chroot /host`
+Pod IP: 10.0.32.4
+If you don&#39;t see a command prompt, try pressing enter.
+sh-4.2# chroot /host
+sh-4.4# crictl inspect bf2b3d | jq .info.pid
+7759</code></pre>
+<p>Query the UID map and process tree of the container:</p>
+<pre class="shell"><code>sh-4.4# cat /proc/7759/uid_map
+         0     200000      65536
+sh-4.4# pgrep --ns 7759 | xargs ps -o user,pid,cmd --sort pid
+USER         PID CMD
+200000      7759 /sbin/init
+200000      7796 /usr/lib/systemd/systemd-journald
+200193      7803 /usr/lib/systemd/systemd-resolved
+200000      7806 /usr/lib/systemd/systemd-homed
+200000      7807 /usr/lib/systemd/systemd-logind
+200081      7809 /usr/bin/dbus-broker-launch --scope system --audit
+200000      7812 /sbin/agetty -o -p -- \u --noclear --keep-baud console 115200,38400,9600 xterm
+200081      7813 dbus-broker --log 4 --controller 9 --machine-id 2f2fcc4033c5428996568ca34219c72a --max-bytes 5
+200000      7815 nginx: master process /usr/sbin/nginx
+200999      7816 nginx: worker process
+200999      7817 nginx: worker process
+200999      7818 nginx: worker process
+200999      7819 nginx: worker process</code></pre>
+<p>This confirms that the container has a user namespace. The container’s UID range is <code>0</code>–<code>65535</code>, which maps to the host UID range <code>200000</code>–<code>265535</code>. The <code>ps</code> output shows various services running under systemd, running under unprivileged host UIDs in this range.</p>
+<p>So, everything is running as expected. One last thing: let’s look at the cgroup ownership. Query the container’s <code>cgroupsPath</code>:</p>
+<pre class="shell"><code>sh-4.4# crictl inspect bf2b3d | jq .info.runtimeSpec.linux.cgroupsPath
+&quot;kubepods-besteffort-podc7f11ee7_e178_4dea_9d8c_c005ad648988.slice:crio:bf2b3d15cbd6944366e29927988ba30bc36d1efee00c28fb4c6d5b2036e462b0&quot;</code></pre>
+<p>The value isn’t a filesystem path. <code>runc</code> interprets it relative to an implementation-defined location. We expect the cgroup directory and the three files mentioned earlier to be owned by the user that maps to UID <code>0</code> in the container’s user namespace. In my case, that’s <code>200000</code>. We also expect to see scopes and slices created by systemd <strong>in the container</strong> to be owned by the same user.</p>
+<pre class="shell"><code>sh-4.4# ls -ali /sys/fs/cgroup\
+/kubepods.slice/kubepods-besteffort.slice\
+/kubepods-besteffort-podc7f11ee7_e178_4dea_9d8c_c005ad648988.slice\
+/crio-bf2b3d15cbd6944366e29927988ba30bc36d1efee00c28fb4c6d5b2036e462b0.scope \
+    | grep 200000
+14755 drwxr-xr-x.  5 200000 root   0 Jul 21 06:00 .
+14757 -rw-r--r--.  1 200000 root   0 Jul 21 06:00 cgroup.procs
+14760 -rw-r--r--.  1 200000 root   0 Jul 21 06:00 cgroup.subtree_control
+14758 -rw-r--r--.  1 200000 root   0 Jul 21 06:00 cgroup.threads
+14806 drwxr-xr-x.  2 200000 200000 0 Jul 21 06:00 init.scope
+14835 drwxr-xr-x. 11 200000 200000 0 Jul 21 06:15 system.slice
+14922 drwxr-xr-x.  2 200000 200000 0 Jul 21 06:00 user.slice</code></pre>
+<p>Note the <em>inode</em> of the container cgroup directory: <code>14755</code>. We can query the inode and ownership of <code>/sys/fs/cgroup</code> <em>within the pod</em>:</p>
+<pre class="shell"><code>% oc exec pod/nginx -- ls -ldi /sys/fs/cgroup
+14755 drwxr-xr-x. 5 root nobody 0 Jul 21 06:00 /sys/fs/cgroup</code></pre>
+<p>The inode is the same; this is indeed the same cgroup. But within the container’s user namespace, the owner appears as <code>root</code>.</p>
+<p>This concludes the verification steps. With my modified version of <code>runc</code>, systemd-based workloads are indeed working properly in user namespaces.</p>
+<h2 id="next-steps">Next steps <a href="#next-steps" class="section">§</a></h2>
+<p>I submitted a <a href="https://github.com/opencontainers/runc/pull/3057">pull request</a> with these changes. It remains to be seen if the general approach will be accepted, but initial feedback is positive. Some implementation changes are needed. I might have to hide the behaviour behind a feature gate (e.g. to be activated via an annotation). I also need to write tests and documentation.</p>
+<p>I also need to raise a ticket for the SCC issue. The requirement for <code>RunAsAny</code> (which is granted by the <code>anyuid</code> SCC) should be relaxed when the sandbox has a user namespace. The SCC enforcement machinery needs to be enhanced to understand user namespaces, so that unprivileged OpenShift user accounts can run workloads in them.</p>
+<p>It would be nice to find a way to avoid the sysctl override to allow the container user to use <code>ping</code>. This is a much lower priority.</p>
+<p>Alongside these matters, I can begin testing the FreeIPA container in the test environment. Although systemd is now working, I need to see if the FreeIPA’s constituent services will run properly. I anticipate that I will need to tweak the Pod configuration somewhat. But are there more runtime capability gaps waiting to be discovered? I don’t have a particular suspicion about it, but I do need to know for certain, one way or the other. So expect another blog post soon!</p>]]></summary>
+</entry>
+<entry>
     <title>FreeIPA on OpenShift: July 2021 update</title>
     <link href="https://frasertweedale.github.io/blog-redhat/posts/2021-07-21-freeipa-on-openshift-update.html" />
     <id>https://frasertweedale.github.io/blog-redhat/posts/2021-07-21-freeipa-on-openshift-update.html</id>
@@ -1441,102 +1730,6 @@ ports:
 <p>From a UX perspective I prefer the first approach, because there are no changes or additions to the ServicePort configuration schema. But to maintain compatibility with programs that assume that <code>name</code> is unique (as is currently enforced), it might be necessary to introduce a new field.</p>
 <h2 id="next-steps">Next steps <a href="#next-steps" class="section">§</a></h2>
 <p>I <a href="https://github.com/kubernetes/kubernetes/issues/97149">filed a bug report</a> and submitted a <a href="">proof-of-concept pull request</a> to bring attention to the problem and solicit feedback from Kubernetes and OpenShift DNS experts. It might be necessary to submit a <a href="https://github.com/kubernetes/enhancements/blob/master/keps/README.md">Kubernetes Enhancement Proposal</a> (KEP), but that seems (as a Kubernetes outsider) a long and windy road to landing what is a conceptually small change.</p>]]></summary>
-</entry>
-<entry>
-    <title>Pod hostnames and FQDNs</title>
-    <link href="https://frasertweedale.github.io/blog-redhat/posts/2020-12-05-pod-hostname-fqdn.html" />
-    <id>https://frasertweedale.github.io/blog-redhat/posts/2020-12-05-pod-hostname-fqdn.html</id>
-    <published>2020-12-05T00:00:00Z</published>
-    <updated>2020-12-05T00:00:00Z</updated>
-    <summary type="html"><![CDATA[<h1 id="pod-hostnames-and-fqdns">Pod hostnames and FQDNs</h1>
-<p>Some complex or legacy applications make strict and pervasive assumptions about their execution environment. Relying on the host having a <em>fully qualified domain name (FQDN)</em> is an example of this kind of assumption. Indeed this is a particularly thorny kind of assumption because there are several ways an application can query the hostname, and they don’t always agree!</p>
-<p>It is not surprising that we have hit this particular issue during our effort to containerise FreeIPA and operationalise it for OpenShift. Whereas container runtimes like Podman and Docker offer full control of a container’s FQDN, Kubernetes (and by extension OpenShift) is more strongly opinionated. By default, a Kubernetes pod has only a short name, not a fully qualified domain name. There are limited ways to configure a pod’s hostname and FQDN. Furthermore, there is currently no way to use a pod’s FQDN as the (Kernel) hostname.</p>
-<p>In this post I will outline the challenges and document the attempted workarounds as we try to make FreeIPA run in OpenShift in spite of the Kubernetes hostname restriction.</p>
-<h2 id="querying-the-fqdn">Querying the FQDN <a href="#querying-the-fqdn" class="section">§</a></h2>
-<p>There are several ways an a program can query the host’s hostname.</p>
-<ul>
-<li>Read <code>/etc/hostname</code>. The name in this file may or may not be fully qualified.</li>
-<li>Via the POSIX <code>uname(2)</code> system call. The <code>nodename</code> field in the <code>utsname</code> struct returned by this system call is intended to hold a network node name. Once again, it could be a short name or fully qualified. Furthermore, on most systems it is limited to 64 bytes. From userland you can use the <code>uname(1)</code> program or <code>uname(3)</code> library routine. The <code>gethostname(2)</code> and <code>gethostname(3)</code> are another way to retrieve this datum.</li>
-<li>On systems that use <em>systemd</em> the <code>hostnamectl(1)</code> program can be used to get or set the hostname. Once again, the hostname is not necessarily fully qualified. <code>hostnamectl</code> distinguishes between the <em>static</em> hostname (set at boot by static configuration) and <em>transient</em> hostname (derived from network configuration). These can be queried separately.</li>
-<li>A program could query DNS PTR records for its non-loopback IP addresses. This approach could yield zero, one or multiple FQDNs.</li>
-<li>The <code>getaddrinfo(3)</code> routine when invoked with the <code>AI_CANONNAME</code> flag can return a FQDN for a given hostname (e.g. the name return by <code>gethostname(2)</code>. This allows any <em>Name Service Switch (NSS)</em> plugin to provide a canonical FQDN for a short name. NSS is usually configured to map hostnames using the data from <code>/etc/hosts</code>, but there are other plugins including for <em>systemd-resolved</em>, <em>dns</em> and <em>sss</em> (SSSD). From the command line, <code>hostname --fqdn</code> or <code>hostname --all-fqdns</code> will return result(s) from <code>getaddrinfo(3)</code>.</li>
-</ul>
-<p>Side-note: the “UTS” in <code>utsname</code> stands for <em>Unix Timesharing System</em>. Container runtimes can set a unique UTS hostname in each container because each container (or pod) has a unique <a href="https://www.man7.org/linux/man-pages/man7/uts_namespaces.7.html">UTS namespace</a>.</p>
-<h2 id="auditing-freeipas-fqdn-query-behaviour">Auditing FreeIPA’s FQDN query behaviour <a href="#auditing-freeipas-fqdn-query-behaviour" class="section">§</a></h2>
-<p>In order to decide how to proceed, we first needed to audit both FreeIPA and its dependencies to see how they query the hostname and host FQDN. I have published <a href="https://docs.google.com/document/d/e/2PACX-1vQzxjMw3eqkpuPfqaLbCW-GN8gwS1QvFjrs9TnPM02DMfNqBVSGapqITvAyZyxc2TN9jJShJrbqGayC/pub">the results of this audit</a>. It is perhaps not exhaustive, but hopefully fairly thorough.</p>
-<h2 id="pod-hostname-configuration">Pod hostname configuration <a href="#pod-hostname-configuration" class="section">§</a></h2>
-<p>We assume that the operator (human or machine) will create pods with deterministic FQDN. That is, it knows what the pod’s FQDN should be. Or to be more precise, the operator knows what it wants the application(s) running in the pod to recognise as the host FQDN. These are not necessarily the same thing (more on that in the next section).</p>
-<p>First, let’s investigate how OpenShift configures pod hostnames. I created a standalone pod with no associated services and shelled into it to query the FQDN in various ways. The pod configuration:</p>
-<pre><code>apiVersion: v1
-kind: Pod
-metadata:
-  name: test
-spec:
-  containers:
-  - name: test
-    image: freeipa/freeipa-server:fedora-31
-    command: [&quot;sleep&quot;, &quot;3666&quot;]</code></pre>
-<p>Interactive session:</p>
-<pre><code>$ oc rsh test
-sh-5.0$ uname -n
-test
-sh-5.0$ hostname
-test
-sh-5.0$ hostname --fqdn
-test
-sh-5.0$ cat /etc/hostname
-test
-sh-5.0$ hostnamectl get-hostname
-System has not been booted with systemd as init system (PID 1).
-Can&#39;t operate.
-Failed to create bus connection: Host is down</code></pre>
-<p>All the various ways of querying the hostname return <code>test</code>, except for <code>hostnamectl(1)</code> which fails because the container doesn’t use systemd.</p>
-<p>What other ways can Kubernetes configure the hostname? <a href="">PodSpec</a> has a <code>hostname</code> field for configuring the pod hostname:</p>
-<pre><code>$ grep -C2 hostname pod-test.yaml 
-  name: test
-spec:
-  hostname: test.example.com
-  containers:
-  - name: test</code></pre>
-<p>Unfortunately, <code>hostname</code> only accepts a short name:</p>
-<pre><code>$ oc create -f pod-test.yaml
-The Pod &quot;test&quot; is invalid: spec.hostname: Invalid value:
-&quot;test.example.com&quot;: a DNS-1123 label must consist of lower case
-alphanumeric characters or &#39;-&#39;, and must start and end with an
-alphanumeric character (e.g. &#39;my-name&#39;,  or &#39;123-abc&#39;, regex used
-for validation is &#39;[a-z0-9]([-a-z0-9]*[a-z0-9])?&#39;)</code></pre>
-<p>Some container runtimes (e.g. Podman) do allow full control over the UTS hostname. But it seems Kubernetes is (for the time being) opinionated and only allows a short name.</p>
-<p>Another <code>PodSpec</code> field of interest is <code>subdomain</code>. The documentation says:</p>
-<blockquote>
-<p>If specified, the fully qualified Pod hostname will be “&lt;hostname&gt;.&lt;subdomain&gt;.&lt;pod namespace&gt;.svc.&lt;cluster domain&gt;”. If not specified, the pod will not have a domainname at all.</p>
-</blockquote>
-<p>Sounds promising. Let’s give it a go.</p>
-<pre><code>$ grep -C2 subdomain pod-test.yaml 
-  name: test
-spec:
-  subdomain: subdomain
-  containers:
-  - name: test</code></pre>
-<pre><code>$ oc rsh test
-sh-5.0# uname -n 
-test
-sh-5.0# hostname
-test
-sh-5.0# hostname --fqdn
-test.subdomain.test.svc.cluster.local</code></pre>
-<p><code>hostname --fqdn</code> has returned a fully-qualified name. This works because the FQDN appears in <code>/etc/hosts</code> (associated with the IP address of the pod). My understanding is that <em>kubelet</em> uses a <code>ConfigMap</code> to inject this configuration into the pod.</p>
-<pre><code>sh-5.0# grep subdomain /etc/hosts
-10.129.3.84     test.subdomain.test.svc.cluster.local   test</code></pre>
-<p>The preceding examples involve pods that I created directly. The configurations of pods that are created indirectly are under the (partial) control of the corresponding controllers. For example, pods created by the <code>StatefulSet</code> controller have their <code>subdomain</code> field set to the <code>name</code> of the <code>StatefulSet</code>.</p>
-<h3 id="upcoming-changes">Upcoming changes <a href="#upcoming-changes" class="section">§</a></h3>
-<p>An <a href="https://github.com/kubernetes/enhancements/issues/1797">upcoming Kubernetes enhancement</a> will allow pods to specify that its UTS hostname should be set to the pod FQDN (if the pod has an FQDN). This enhancement will introduces a new <code>setHostnameAsFQDN</code> field to the <code>PodSpec</code>. It is currently scheduled to land as <em>alpha</em> in Kubernetes v1.19, move to <em>beta</em> in v1.20 and become <em>stable</em> in v1.22.</p>
-<h2 id="freeipa-changes">FreeIPA changes <a href="#freeipa-changes" class="section">§</a></h2>
-<p>With sufficient craftiness, or code changes, or network configuration changes, or some combination thereof, it is possible to convince a program that it’s FQDN is a particular value. Although Kubernetes and OpenShift currently offer few ways to configure the pod (UTS) hostname, the operator could use some mechanism (e.g. pod environment variables or a <code>ConfigMap</code>, along with changes to application code) to ensure that each application instance “knows” its correct FQDN.</p>
-<p>The hostname query audit revealed that FreeIPA asks for the host FQDN or the system hostname (in order to check that it is a FQDN) in lots of places and uses different query mechanisms. If we find all those places we can abstract away the check. In practice this means one common interface for FreeIPA’s C code and one for the Python code.</p>
-<p>With hostname query logic abstracted behind these interfaces, we can perform the lookup in whatever way is appropriate for the deployment environment. For a traditional deployment, we use <code>gethostname(3)</code> and <code>getaddrinfo(3)</code> with <code>AI_CANONNAME</code>. But in an OpenShift deployment we can instead return a value supplied via a <code>ConfigMap</code> or other appropriate mechanism.</p>
-<p>Upstream pull request <a href="https://github.com/freeipa/freeipa/pull/5107">#5107</a> implemented this change. It consolidated the hostname query behaviour into new C and Python routines. It did not implement alternative behaviour for other environments such as OpenShift, but abstracting the query behind a single interface (for each language) makes it easy to do this later. Whether we would use an environment variable, <code>ConfigMap</code>, or some other mechanism does not need to be decided at this time.</p>
-<h2 id="next-steps">Next steps <a href="#next-steps" class="section">§</a></h2>
-<p>The investigation into hostname/FQDN query behaviour of FreeIPA’s dependencies continues. In particular, we have not yet undertaken a thorough investigation of Samba, which is used for Active Directory trust support. Also, there are open questions about some other dependencies including Dogtag and Certmonger. It is possible that configuration or code changes will be required to make these programs work in environments</p>]]></summary>
 </entry>
 
 </feed>
