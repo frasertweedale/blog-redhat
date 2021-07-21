@@ -29,12 +29,12 @@
 <p>In recent times I have seen some support cases and sales inquiries about getting certificates on Linux systems that are enrolled in Active Directory (AD). Linux hosts can be directly enrolled in AD via <code>realmd</code> or <code>adcli</code>. On AD-enrolled machines, SSSD can provide authentication services, access control and some Group Policy enforcement (see <code>sssd-ad(5)</code>). At Red Hat we call this approach <em>direct integration</em>. The alternative approach is to enrol hosts in a FreeIPA / IDM realm, and use <em>cross-realm trusts</em> to allow AD users/principals to authenticate to FreeIPA services, or vice-versa.</p>
 <p>Unfortunately when it comes to getting certificates from AD-CS (the Active Directory certificate authority component) we don’t have a good story yet. Certmonger lacks an out-of-the-box capability to talk to AD-CS (except via SCEP, but that is not what we want). I do not know how much work would be involved in writing an AD-CS request helper for Certmonger. It might be a large effort or small; the little AD-CS enrolment documentation I have found is hard to penetrate. But even if we could write the AD-CS helper and ship it tomorrow, it would not help users and customers on older releases.</p>
 <p>For now the best solution is to deploy FreeIPA / IDM, and use the IPA CA to issue certificates to AD-enrolled hosts. In this HOWTO-style post I walk through this scenario with a RHEL 6 client.</p>
-<h2 id="environment">Environment <a href="#environment">§</a></h2>
+<h2 id="environment">Environment <a href="#environment" class="section">§</a></h2>
 <p>My local Windows Server 2012 R2 server defines the <code>AD.LOCAL</code> Active Directory (AD) realm. The DNS zone is <code>ad.local</code>. I configured a DNS <em>Conditional Forwarder</em> for <code>ipa.local</code>, delegating that namespace to the FreeIPA DNS server.</p>
 <p>The FreeIPA server is <code>rhel76-0.ipa.local</code>. There is no AD trust. The integrated DNS is in use so KDC discovery will work.</p>
 <p>In a typical scenario the IPA CA might be a subordinate of the AD CA. In my setup the IPA CA is self-signed. Operationally there is one additional step when the IPA CA is not subordinate to the AD CA: the IPA CA certificate has to be explicitly trusted. To trust the certificate copy it to a file under <code>/etc/pki/ca-trust/source/anchors/</code> then execute <code>update-ca-trust</code>.</p>
 <p>The RHEL 6 host is named <code>rhel610-0.ipa.local</code> The packages required were <code>adcli</code> and <code>ipa-client</code>. On RHEL 7 and later or Fedora the <code>realm</code> command, which is provided by the <code>realmd</code> package, is a better choice than <code>adcli</code>. <code>/etc/resolv.conf</code> points to the Windows Server.</p>
-<h2 id="active-directory-enrolment">Active Directory enrolment <a href="#active-directory-enrolment">§</a></h2>
+<h2 id="active-directory-enrolment">Active Directory enrolment <a href="#active-directory-enrolment" class="section">§</a></h2>
 <p>I used the <code>adcli</code> command to enrol <code>rhel610-0</code> in Active Directory:</p>
 <pre><code>[root@rhel610-0 ~]# adcli join ad.local --show-details
 Password for Administrator@AD.LOCAL: XXXXXXXX
@@ -91,7 +91,7 @@ slot KVNO Principal
   29    2 RestrictedKrbHost/rhel610-0.ipa.local@AD.LOCAL
   30    2 RestrictedKrbHost/rhel610-0.ipa.local@AD.LOCAL
 ktutil:  quit</code></pre>
-<h2 id="freeipa-enrolment">FreeIPA “enrolment” <a href="#freeipa-enrolment">§</a></h2>
+<h2 id="freeipa-enrolment">FreeIPA “enrolment” <a href="#freeipa-enrolment" class="section">§</a></h2>
 <p>Next I created a host princpial for <code>rhel610-0.ipa.local</code> in the FreeIPA realm:</p>
 <pre><code>[root@rhel76-0 ~]# ipa host-add rhel610-0.ipa.local
 --------------------------------
@@ -137,12 +137,12 @@ slot KVNO Principal
   33    1       host/rhel610-0.ipa.local@IPA.LOCAL
   34    1       host/rhel610-0.ipa.local@IPA.LOCAL
 ktutil:  quit</code></pre>
-<h2 id="selinux-considerations">SELinux considerations <a href="#selinux-considerations">§</a></h2>
+<h2 id="selinux-considerations">SELinux considerations <a href="#selinux-considerations" class="section">§</a></h2>
 <p>I will store certificates and keys under <code>/etc/pki/tls/private/</code> because this directory has the correct SELinux context (and default context rules) for Certmonger to use it:</p>
 <pre><code>[root@rhel610-0 ~]# ls -l -d -Z /etc/pki/tls/private/
 drwxr-xr-x. root root system_u:object_r:cert_t:s0 /etc/pki/tls/private/</code></pre>
 <p>If you want Certmonger to manage keys and certificates in other directories you need to ensure the files/directory have the <code>cert_t</code> type label. This can be achieved via the <code>semanage(8)</code> and <code>restorecon(8)</code>, but I will not go into further detail here.</p>
-<h2 id="certmonger-ipa-configuration">Certmonger IPA configuration <a href="#certmonger-ipa-configuration">§</a></h2>
+<h2 id="certmonger-ipa-configuration">Certmonger IPA configuration <a href="#certmonger-ipa-configuration" class="section">§</a></h2>
 <p>Certmonger comes out of the box with a request/renewal helper for an IPA CA. But it assumes that the client is an IPA-enrolled server, i.e. per <code>ipa-client-install</code>. In particular there are two files that must be manually set up. First, the IPA CA (and chain) must be present in <code>/etc/ipa/ca.crt</code>. It can be copied from the IPA server without changes. I have filed a ticket to <a href="https://pagure.io/certmonger/issue/132">make Certmonger use the system CA trust store</a>.</p>
 <p>The other file is <code>/etc/ipa/default.conf</code>. The Certmonger IPA helper reads several fields from this file to locate the IPA server and work out how to initialise Kerberos credentials. I used the following configuration:</p>
 <pre><code>[global]
@@ -152,7 +152,7 @@ realm = IPA.LOCAL
 domain = ipa.local
 xmlrpc_uri = https://rhel76-0.ipa.local/ipa/xml
 ldap_uri = ldaps://rhel76-0.ipa.local</code></pre>
-<h2 id="requesting-the-certificate">Requesting the certificate <a href="#requesting-the-certificate">§</a></h2>
+<h2 id="requesting-the-certificate">Requesting the certificate <a href="#requesting-the-certificate" class="section">§</a></h2>
 <p>Now we can tell Certmonger to request a certificate using the IPA CA:</p>
 <pre><code>[root@rhel610-0 ~]# getcert request \
     -c IPA \
@@ -247,7 +247,7 @@ Certificate:
     Signature Algorithm: sha256WithRSAEncryption
          5e:36:e3:21:c3:14:7f:d9:1c:c1:ac:7e:12:3e:6b:34:76:a6:
          ... &lt;snip&gt;</code></pre>
-<h2 id="conclusion">Conclusion <a href="#conclusion">§</a></h2>
+<h2 id="conclusion">Conclusion <a href="#conclusion" class="section">§</a></h2>
 <p>I have shown how AD-enrolled Linux hosts can request certificates from FreeIPA. Reviewing the major considerations and steps:</p>
 <ol type="1">
 <li>Create a host principal in the FreeIPA realm</li>
@@ -279,6 +279,10 @@ Recent posts:
 <ul>
     
         <li>
+            <a href="../posts/2021-07-21-freeipa-on-openshift-update.html">FreeIPA on OpenShift: July 2021 update</a>
+        </li>
+    
+        <li>
             <a href="../posts/2021-06-29-openshift-live-changes.html">Live-testing changes in OpenShift clusters</a>
         </li>
     
@@ -292,10 +296,6 @@ Recent posts:
     
         <li>
             <a href="../posts/2021-03-30-openshift-cgroupv2-systemd.html">systemd containers on OpenShift with cgroups v2</a>
-        </li>
-    
-        <li>
-            <a href="../posts/2021-03-10-openshift-user-namespace-multi-user.html">Multiple users in user namespaces on OpenShift</a>
         </li>
     
 </ul>

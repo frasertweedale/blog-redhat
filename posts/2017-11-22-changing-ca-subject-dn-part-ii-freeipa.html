@@ -29,7 +29,7 @@
 <p>In the <a href="2017-11-20-changing-ca-subject-dn-part-i.html">previous post</a> I explained how the CA Subject DN is an integral part of X.509 any why you should not change it. Doing so can break path validation, CRLs and OCSP, and many programs will not copye with the change. I proposed some alternative approaches that avoid these problems: re-chaining the CA, and creating subordinate CAs.</p>
 <p>If you were thinking of changing your CA’s Subject DN, I hope that I dissuaded you. But if I failed, or you absolutely do need to change the Subject DN of your CA, where there’s a will there’s way. The purpose of this post is to explore how to do this in FreeIPA, and discuss the implications.</p>
 <p>This is a <strong>long post</strong>. If you are really changing the CA subject DN, don’t skip anything. Otherwise don’t feel bad about skimming or jumping straight to the <a href="#discussion">discussion</a>. Even skimming the article will give you an idea of the steps involved, and how to repair the ensuing breakage.</p>
-<h2 id="changing-the-freeipa-cas-subject-dn">Changing the FreeIPA CA’s Subject DN <a href="#changing-the-freeipa-cas-subject-dn">§</a></h2>
+<h2 id="changing-the-freeipa-cas-subject-dn">Changing the FreeIPA CA’s Subject DN <a href="#changing-the-freeipa-cas-subject-dn" class="section">§</a></h2>
 <p>Before writing this post, I had never even attempted to do this. I am unaware of anyone else trying or whether they were successful. But the question of how to do it has come up several times, so I decided to investigate. The format of this post follows my exploration of the topic as I poked and prodded a FreeIPA deployment, working towards the goal.</p>
 <p>What was the goal? Let me state the goal, and some assumptions:</p>
 <ul>
@@ -40,7 +40,7 @@
 <li>It’s okay to have manual steps that the administrator must perform.</li>
 </ul>
 <p>Let’s begin on the deployment’s <em>CA renewal master</em>.</p>
-<h3 id="certmonger-first-attempt">Certmonger (first attempt) <a href="#certmonger-first-attempt">§</a></h3>
+<h3 id="certmonger-first-attempt">Certmonger (first attempt) <a href="#certmonger-first-attempt" class="section">§</a></h3>
 <p>There is a Certmonger tracking request for the FreeIPA CA, which uses the <code>dogtag-ipa-ca-renew-agent</code> CA helper. The <code>getcert resubmit</code> command lets you change the Subject DN when you resubmit a request, via the <code>-N</code> option. I know the internals of the CA helper and I can see that there will be problems <em>after</em> renewing the certificate this way. Storing the certificate in the <code>ca_renewal</code> LDAP container will fail. But the renewal itself <em>might</em> succeed so I’ll try it and see what happens:</p>
 <pre><code>[root@f27-2 ~]# getcert resubmit -i 20171106062742 \
   -N 'CN=IPA.LOCAL CA 2017.11.09'
@@ -55,7 +55,7 @@ Request ID '20171106062742':
   expires: 2037-11-06 17:26:21 AEDT
   ... (various fields omitted)</code></pre>
 <p>The <code>status</code> and <code>expires</code> fields show that renewal succeeded, but the certificate still has the old Subject DN. This happened because the <code>dogtag-ipa-ca-renew-agent</code> helper doesn’t think it is renewing the CA certificate (which is true!)</p>
-<h3 id="modifying-the-ipa-ca-entry">Modifying the IPA CA entry <a href="#modifying-the-ipa-ca-entry">§</a></h3>
+<h3 id="modifying-the-ipa-ca-entry">Modifying the IPA CA entry <a href="#modifying-the-ipa-ca-entry" class="section">§</a></h3>
 <p>So let’s trick the Certmonger renewal helper. <code>dogtag-ipa-ca-renew-agent</code> looks up the CA Subject DN in the <code>ipaCaSubjectDn</code> attribute of the <code>ipa</code> CA entry (<code>cn=ipa,cn=cas,cn=ca,{basedn}</code>). This attribute is not writeable via the IPA framework but you can change it using regular LDAP tools (details out of scope). If the certificate is self-signed you should also change the <code>ipaCaIssuerDn</code> attribute. After modifying the entry run <code>ipa ca-show</code> to verify that these attributes have the desired values:</p>
 <pre><code>[root@f27-2 ~]# ipa ca-show ipa
   Name: ipa
@@ -64,7 +64,7 @@ Request ID '20171106062742':
   Subject DN: CN=IPA.LOCAL CA 2017.11.09
   Issuer DN: CN=IPA.LOCAL CA 2017.11.09
   Certificate: MIIDnzCCAoegAwIBAgIBCTANBgkqhkiG9w0...</code></pre>
-<h3 id="certmonger-second-attempt">Certmonger (second attempt) <a href="#certmonger-second-attempt">§</a></h3>
+<h3 id="certmonger-second-attempt">Certmonger (second attempt) <a href="#certmonger-second-attempt" class="section">§</a></h3>
 <p>Now let’s try and renew the CA certificate via Certmonger again:</p>
 <pre><code>[root@f27-2 ~]# getcert resubmit -i 20171106062742 \
   -N 'CN=IPA.LOCAL CA 2017.11.09'
@@ -79,7 +79,7 @@ Request ID '20171106062742':
   expires: 2037-11-09 16:11:12 AEDT
   ... (various fields omitted)</code></pre>
 <p>Progress! We now have a CA certificate with the desired Subject DN. The new certificate has the old (current) issuer DN. We’ll ignore that for now.</p>
-<h3 id="checking-server-health">Checking server health <a href="#checking-server-health">§</a></h3>
+<h3 id="checking-server-health">Checking server health <a href="#checking-server-health" class="section">§</a></h3>
 <p>Now I need to check the state of the deployment. Did anything go wrong during renewal? Is everything working?</p>
 <p>First, I checked the Certmonger journal output to see if there were any problems. The journal contained the following messages (some fields omitted for brevity):</p>
 <pre><code>16:11:17 /dogtag-ipa-ca-renew-agent-submit[1662]: Forwarding request to dogtag-ipa-renew-agent
@@ -159,7 +159,7 @@ authorityKeyNickname: caSigningCert cert-pki-ca
 authorityEnabled: TRUE
 description: Host authority</code></pre>
 <p>And the operations that were failing before (e.g. <code>ipa ca-show ipa</code>) now succeed. So we’ve confirmed, or restored, the basic functionality on this server.</p>
-<h3 id="ldap-certificate-stores">LDAP certificate stores <a href="#ldap-certificate-stores">§</a></h3>
+<h3 id="ldap-certificate-stores">LDAP certificate stores <a href="#ldap-certificate-stores" class="section">§</a></h3>
 <p>There are two LDAP certificate stores in FreeIPA. The first is <code>cn=ca_renewal,cn=ipa,cn=etc,{basedn}</code>. It is only used for replicating Dogtag CA and system certificates from the CA renewal master to CA replicas. The <code>dogtag-ipa-ca-renew-agent</code> Certmonger helper should update the <code>cn=caSigningCert cert-pki-ca,cn=ca_renewal,cn=ipa,cn=etc,{basedn}</code> entry after renewing the CA certificate. A quick <code>ldapsearch</code> shows that this succeeded, so there is nothing else to do here.</p>
 <p>The other certificate store is <code>cn=certificates,cn=ipa,cn=etc,{basedn}</code>. This store contains trusted CA certificates. FreeIPA clients and servers retrieve certificates from this directory when updating their certificate trust stores. Certificates are stored in this container with a <code>cn</code> based on the Subject DN, except for the IPA CA which is stored with <code>cn={REALM-NAME} IPA CA</code>. (In my case, this is <code>cn=IPA.LOCAL IPA CA</code>.)</p>
 <p>We discovered the failure to update this certificate store earlier (in the Certmonger journal). Now we must fix it up. We still want to trust certificates with the old Issuer DN, otherwise we would have to reissue <em>all of them</em>. So we need to keep the old CA certificate in the store, alongside the new.</p>
@@ -177,7 +177,7 @@ The ipa-cacert-manage command was successful</code></pre></li>
 <li><p>Rename the new CA certificate entry. The current <code>cn</code> is the new Subject DN. Rename it to <code>cn={REALM-NAME} IPA CA</code>. I encountered a 389DS attribute uniqueness error when I attempted to do this as a <code>modrdn</code> operation. I’m not sure why it happened. To work around the problem I deleted the entry and added it back with the new <code>cn</code>.</p></li>
 </ol>
 <p>At the end of this procedure the certificate store is as it should be. The CA certificate with new Subject DN is installed as <code>{REALM-NAME} IPA CA</code> and the old CA certificate has been preserved under a different RDN.</p>
-<h3 id="updating-certificate-databases">Updating certificate databases <a href="#updating-certificate-databases">§</a></h3>
+<h3 id="updating-certificate-databases">Updating certificate databases <a href="#updating-certificate-databases" class="section">§</a></h3>
 <p>The LDAP certificate stores have the new CA certificate. Now we need to update the other certificate databases so that the programs that use them will trust certificates with the new Issuer DN. These databases include:</p>
 <dl>
 <dt><code>/etc/ipa/ca.crt</code></dt>
@@ -263,7 +263,7 @@ Certificate:
         Subject: &quot;CN=IPA.LOCAL CA 2017.11.09&quot;
         ...</code></pre>
 <p>I also confirmed that the old and new CA certificates are present in the <code>/etc/ipa/ca.crt</code> and <code>/etc/pki/ca-trust/source/ipa.p11-kit</code> files. So all the certificate databases now include the new CA certificate.</p>
-<h3 id="renewing-the-ca-certificate-again">Renewing the CA certificate (again) <a href="#renewing-the-ca-certificate-again">§</a></h3>
+<h3 id="renewing-the-ca-certificate-again">Renewing the CA certificate (again) <a href="#renewing-the-ca-certificate-again" class="section">§</a></h3>
 <p>Observe that (in the self-signed FreeIPA CA case) the Issuer DN of the new CA certificate is the Subject DN of the old CA certificate. So we have not quite reached out goal. The original CA certificate was self-signed, so we want a self-signed certificate with the new Subject.</p>
 <p>Renewing the CA certificate one more time should result in a self-signed certificate. The current situation is not likely to result in operational issues. So you can consider this an optional step. Anyhow, let’s give it a go:</p>
 <pre><code>[root@f27-2 ~]# getcert list -i 20171106062742 | egrep 'status|issuer|subject'
@@ -278,7 +278,7 @@ Resubmitting &quot;20171106062742&quot; to &quot;dogtag-ipa-ca-renew-agent&quot;
         issuer: CN=IPA.LOCAL CA 2017.11.09
         subject: CN=IPA.LOCAL CA 2017.11.09</code></pre>
 <p>Now we have a self-signed CA cert with the new Subject DN. This step has also confirmed that that the certificate issuance is working fine with the new CA subject.</p>
-<h3 id="renewing-freeipa-service-certificates">Renewing FreeIPA service certificates <a href="#renewing-freeipa-service-certificates">§</a></h3>
+<h3 id="renewing-freeipa-service-certificates">Renewing FreeIPA service certificates <a href="#renewing-freeipa-service-certificates" class="section">§</a></h3>
 <p>This is another optional step, because we have kept the old CA certificate in the trust store. I want to check that certificate renewals via the FreeIPA framework are working, and this is a fine way to do that.</p>
 <p>I’ll renew the HTTP service certificate. This deployment is using an externally-signed HTTP certificate so first I had to track it:</p>
 <pre><code>[root@f27-2 ~]# getcert start-tracking \
@@ -298,7 +298,7 @@ Resubmitting &quot;20171121073608&quot; to &quot;IPA&quot;.
       issuer: CN=IPA.LOCAL CA 2017.11.09
       subject: CN=f27-2.ipa.local,O=IPA.LOCAL 201711061603</code></pre>
 <p>The renewal succeeded, proving that certificate issuance via the FreeIPA framework is working.</p>
-<h2 id="checking-replica-health">Checking replica health <a href="#checking-replica-health">§</a></h2>
+<h2 id="checking-replica-health">Checking replica health <a href="#checking-replica-health" class="section">§</a></h2>
 <p>At this point, I’m happy with the state of the FreeIPA server. But so far I have only dealt with one server in the topology (the renewal master, whose hostname is <code>f27-2.ipa.local</code>). What about other CA replicas?</p>
 <p>I log onto <code>f27-1.ipa.local</code> (a CA replica). As a first step I execute <code>ipa-certupdate</code>. This failed in the same was as on the renewal master, and the steps to resolve were the same.</p>
 <p>Next I tell Certmonger to renew the CA certificate. This should not renew the CA certificate, only retrieve the certificate from the LDAP certificate store:</p>
@@ -352,7 +352,7 @@ Systemwide CA database updated.
 The ipa-certupdate command was successful
 [root@f27-1 ~]# systemctl start pki-tomcatd@pki-tomcat</code></pre>
 <p>Dogtag started without issue and I was able to issue a certificate via the <code>ipa cert-request</code> command on this replica.</p>
-<h2 id="discussion">Discussion <a href="#discussion">§</a></h2>
+<h2 id="discussion">Discussion <a href="#discussion" class="section">§</a></h2>
 <p>It took a while and required a lot of manual effort, but I reached the goal of changing the CA Subject DN. The deployment seems to be operational, although my testing was not exhaustive and there may be breakage that I did not find.</p>
 <p>One of the goals was to define the process for both self-signed and externally-signed CAs. I did not deal with the externally-signed CA case. This article (and the process of writing it) was long enough without it! But much of the process, and problems encountered, will be the same.</p>
 <p>There are some important concerns and caveats to be aware of.</p>
@@ -365,6 +365,10 @@ The ipa-certupdate command was successful
     <div id="recent">
 Recent posts:
 <ul>
+    
+        <li>
+            <a href="../posts/2021-07-21-freeipa-on-openshift-update.html">FreeIPA on OpenShift: July 2021 update</a>
+        </li>
     
         <li>
             <a href="../posts/2021-06-29-openshift-live-changes.html">Live-testing changes in OpenShift clusters</a>
@@ -380,10 +384,6 @@ Recent posts:
     
         <li>
             <a href="../posts/2021-03-30-openshift-cgroupv2-systemd.html">systemd containers on OpenShift with cgroups v2</a>
-        </li>
-    
-        <li>
-            <a href="../posts/2021-03-10-openshift-user-namespace-multi-user.html">Multiple users in user namespaces on OpenShift</a>
         </li>
     
 </ul>

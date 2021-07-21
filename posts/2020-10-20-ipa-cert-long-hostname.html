@@ -33,7 +33,7 @@ ub-common-name-length INTEGER ::= 64</code></pre>
 <p>As a consequence of this restriction, when a host or service has a DNS name longer than 64 characters, that name cannot be used as the CN. But it can still be included in the <em>Subject Alternative Name</em> extension, as a <em>dNSName</em> value.</p>
 <p>How do we issue such a certificate in FreeIPA? The trick is to add a <em>principal alias</em> whose hostname is 64 characters or shorter. This shorter hostname will be the Common Name attribute value. The full hostname will appear in the Subject Alternative Name extension.</p>
 <p>The following sections demonstrate the method. I conclude with an outline of what needs to be done to support certificates with empty Subject DN, which would avoid the problem and this workaround.</p>
-<h2 id="creating-a-principal-with-a-long-hostname">Creating a principal with a long hostname <a href="#creating-a-principal-with-a-long-hostname">§</a></h2>
+<h2 id="creating-a-principal-with-a-long-hostname">Creating a principal with a long hostname <a href="#creating-a-principal-with-a-long-hostname" class="section">§</a></h2>
 <p>To experiment and verify the workaround, I needed a principal with a hostname longer than 64 characters. The initial attempt failed:</p>
 <pre><code>% ipa host-add --force \
     verylongverylongverylongverylongverylongverylonghostname.ipa.local
@@ -53,7 +53,7 @@ Added host &quot;verylongverylongverylongverylongverylongverylonghostname.ipa.lo
   Principal name: host/verylongverylongverylongverylongverylongverylonghostname.ipa.local@IPA.LOCAL
   Principal alias: host/verylongverylongverylongverylongverylongverylonghostname.ipa.local@IPA.LOCAL
   ...</code></pre>
-<h2 id="adding-the-principal-alias">Adding the principal alias <a href="#adding-the-principal-alias">§</a></h2>
+<h2 id="adding-the-principal-alias">Adding the principal alias <a href="#adding-the-principal-alias" class="section">§</a></h2>
 <p>For a host principal, use the <code>ipa host-add-principal</code> command to add a principal alias. The alias must also be a host principal, i.e. must have the form <code>host/$hostname</code>:</p>
 <pre><code>% ipa host-add-principal \
     verylongverylongverylongverylongverylongverylonghostname.ipa.local \
@@ -66,7 +66,7 @@ Principal alias: host/verylongverylongverylongverylongverylongverylonghostname.i
                  host/longhostname.ipa.local@IPA.LOCAL</code></pre>
 <p>For a service principal, use the <code>ipa service-add-principal</code> command. Ensure the principal alias has the same service type as the subject principal’s <em>canonical name</em> (i.e. the value its <code>krbcanonicalname</code> attribute). For example, if the canonical principal name is <code>HTTP/$LONGHOSTNAME</code>, then the principal alias should be <code>HTTP/$SHORTHOSTNAME</code>.</p>
 <p>I omitted the realm parts of principal names (the default realm will be added automatically). For the avoidance of doubt, the princpial alias must have the same realm as the canonical principal.</p>
-<h2 id="creating-a-csr">Creating a CSR <a href="#creating-a-csr">§</a></h2>
+<h2 id="creating-a-csr">Creating a CSR <a href="#creating-a-csr" class="section">§</a></h2>
 <p>There are many different ways to create a CSR. I will give a single example using OpenSSL. The private key already exists (file <code>key.pem</code>).</p>
 <p>The configuration file:</p>
 <pre><code>% cat longhostname.conf
@@ -86,7 +86,7 @@ subjectAltName=DNS:verylongverylongverylongverylongverylongverylonghostname.ipa.
 <pre><code>% openssl req -new -key key.pem \
     -config longhostname.conf -extensions exts \
     &gt; longhostname.csr</code></pre>
-<h2 id="issuing-the-certificate">Issuing the certificate <a href="#issuing-the-certificate">§</a></h2>
+<h2 id="issuing-the-certificate">Issuing the certificate <a href="#issuing-the-certificate" class="section">§</a></h2>
 <p>Now we can issue the certificate:</p>
 <pre><code>% ipa cert-request longhostname.csr \
     --principal host/verylongverylongverylongverylongverylongverylonghostname.ipa.local
@@ -101,7 +101,7 @@ subjectAltName=DNS:verylongverylongverylongverylongverylongverylonghostname.ipa.
   Serial number: 11
   Serial number (hex): 0xB</code></pre>
 <p>The CN attribute contains the shorter host name, and the SAN extension contains both the long and shorter hostnames. (We did not include the short hostname in the CSR SAN extension, but the <code>CommonNameToSANDefault</code> profile component copied it there).</p>
-<h2 id="supporting-san-only-certificates">Supporting SAN-only certificates <a href="#supporting-san-only-certificates">§</a></h2>
+<h2 id="supporting-san-only-certificates">Supporting SAN-only certificates <a href="#supporting-san-only-certificates" class="section">§</a></h2>
 <p>This workaround is straightforward but it is not the ideal solution. A better approach is to enhance FreeIPA and Dogtag to support issuing certificates with an empty Subject DN, using only the Subject Alternative Name extension to carry subject information.</p>
 <p>RFC 5280 allows an empty Subject DN in a certificate, in which case the certificate must include the SAN extension, which must be marked as <em>critical</em>. <a href="https://tools.ietf.org/html/rfc6125#section-2.3">RFC 6125</a> further clarifies that such a certificate is acceptable for use with TLS.</p>
 <p><a href="https://pagure.io/freeipa/issue/5706">Upstream ticket #5706</a> requests support for SAN-only certificates. The work will involve:</p>
@@ -118,6 +118,10 @@ Recent posts:
 <ul>
     
         <li>
+            <a href="../posts/2021-07-21-freeipa-on-openshift-update.html">FreeIPA on OpenShift: July 2021 update</a>
+        </li>
+    
+        <li>
             <a href="../posts/2021-06-29-openshift-live-changes.html">Live-testing changes in OpenShift clusters</a>
         </li>
     
@@ -131,10 +135,6 @@ Recent posts:
     
         <li>
             <a href="../posts/2021-03-30-openshift-cgroupv2-systemd.html">systemd containers on OpenShift with cgroups v2</a>
-        </li>
-    
-        <li>
-            <a href="../posts/2021-03-10-openshift-user-namespace-multi-user.html">Multiple users in user namespaces on OpenShift</a>
         </li>
     
 </ul>

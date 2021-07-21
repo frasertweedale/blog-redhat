@@ -29,12 +29,12 @@
 <p>I have been hacking on the <a href="https://github.com/opencontainers/runc"><code>runc</code></a> container runtime. So how do I test my changes in an OpenShift cluster?</p>
 <p>One option is to compose a <code>machine-os-content</code> release via <a href="https://github.com/coreos/coreos-assembler"><em>coreos-assembler</em></a>. Then you can deploy or upgrade a cluster with that release. Indeed, this approach is <em>necessary</em> for testing installation and upgrades. It also seems useful for publishing modified versions for other people to test. But it is a heavyweight and time consuming option.</p>
 <p>For development I want a more lightweight approach. In this post I’ll demonstrate how to use the <code>rpm-ostree usroverlay</code> and <code>rpm-ostree override replace</code> commands to test changes in a live OpenShift cluster.</p>
-<h2 id="background">Background <a href="#background">§</a></h2>
+<h2 id="background">Background <a href="#background" class="section">§</a></h2>
 <p>OpenShift runs on CoreOS. CoreOS uses <a href="https://en.wikipedia.org/wiki/OSTree"><em>OSTree</em></a> to manage the filesystem. Most of the filesystem is immutable. When upgrading, a new filesystem is prepared before rebooting the system. The old filesystem is preserved, so it is easy to roll back.</p>
 <p>So I can’t just log onto an OpenShift node and replace <code>/usr/bin/runc</code> with my modified version. Nevertheless, I have seen <a href="https://github.com/openshift/machine-config-operator/blob/master/docs/HACKING.md#directly-applying-changes-live-to-a-node">references</a> to the <code>rpm-ostree usroverlay</code> command. It is supposed to provide a writable overlayfs on <code>/usr</code>, so that you can test modifications. Changes are lost upon reboot, but that’s fine for testing.</p>
 <p>There’s also the <code>rpm-ostree override replace …</code> command. This command works on the level of RPM packages. It allows you to install new packages or replace or remove packages. Changes persist across reboots, but it is easy to roll back to the <em>pristine</em> state of the current CoreOS release.</p>
 <p>The rest of this article explores how to use these two commands to apply changes to the cluster.</p>
-<h2 id="usroverlay-via-debug-container-doesnt-work"><code>usroverlay</code> via debug container (doesn’t work) <a href="#usroverlay-via-debug-container-doesnt-work">§</a></h2>
+<h2 id="usroverlay-via-debug-container-doesnt-work"><code>usroverlay</code> via debug container (doesn’t work) <a href="#usroverlay-via-debug-container-doesnt-work" class="section">§</a></h2>
 <p>I first attempted to use <code>rpm-ostree usroverlay</code> in a node debug pod.</p>
 <pre class="shell"><code>% oc debug node/worker-a
 Starting pod/worker-a-debug ...
@@ -51,7 +51,7 @@ touch: cannot touch '/usr/bin/foo': Read-only file system</code></pre>
 <pre class="shell"><code>sh-4.4# reboot
 
 Removing debug pod ...</code></pre>
-<h2 id="usroverlay-via-ssh"><code>usroverlay</code> via SSH <a href="#usroverlay-via-ssh">§</a></h2>
+<h2 id="usroverlay-via-ssh"><code>usroverlay</code> via SSH <a href="#usroverlay-via-ssh" class="section">§</a></h2>
 <p>For the next attempt, I logged into the worker node over SSH. The first step was to add the SSH public key to the <code>core</code> user’s <code>authorized_keys</code> file. Roberto Carratalá’s <a href="https://rcarrata.com/openshift/update-workers-ssh/">helpful blog post</a> explains how to do this. I will recap the critical bits.</p>
 <p>SSH keys can be added via <code>MachineConfig</code> objects, which must also specify the machine role (e.g. <code>worker</code>). The Machine Config Operator will only add keys to the <code>core</code> user. Multiple keys can be specified, across multiple <code>MachineConfig</code> objects—all the keys in matching objects will be included.</p>
 <div class="note">
@@ -126,10 +126,10 @@ overlay on /usr type overlay (rw,relatime,seclabel,lowerdir=usr,upperdir=/var/tm
 <pre class="shell"><code>[core@worker-a ~]$ sudo cp /usr/bin/runc /usr/bin/runc.orig
 [core@worker-a ~]$ sudo curl -Ss -o /usr/bin/runc \
     https://ftweedal.fedorapeople.org/runc</code></pre>
-<h2 id="digression-use-a-buildroot">Digression: use a buildroot <a href="#digression-use-a-buildroot">§</a></h2>
+<h2 id="digression-use-a-buildroot">Digression: use a buildroot <a href="#digression-use-a-buildroot" class="section">§</a></h2>
 <p>The <code>runc</code> executable I installed on the previous step didn’t work. I had built it on my workstation, against a too-new version of <em>glibc</em>. The OpenShift node (which was running RHCOS 4.8, based on RHEL 8.4) was unable to link <code>runc</code>. Therefore it could not run <em>any</em> container workloads. I was able to SSH in from another node and reboot, discarding the transient change in the <code>usroverlay</code> and restoring the node to a functional state.</p>
 <p>All of this is obvious in hindsight. You have to build the program for the environment in which it will be executed. In my case, it was easiest to do this via Brew or Koji. I cloned the dist-git repository (via the <code>fedpkg</code> or <code>rhpkg</code> tool), created patches and updated the <code>runc.spec</code> file. Then I built the SRPM (<code>.src.rpm</code>) and started a scratch build in Brew. After the build completed I made the resulting <code>.rpm</code> publicly available, so that it can be fetched from the OpenShift cluster.</p>
-<h2 id="override-replace-via-node-debug-container"><code>override replace</code> via node debug container <a href="#override-replace-via-node-debug-container">§</a></h2>
+<h2 id="override-replace-via-node-debug-container"><code>override replace</code> via node debug container <a href="#override-replace-via-node-debug-container" class="section">§</a></h2>
 <p>I now have my modified <code>runc</code> in an RPM package. So I can use <code>rpm-ostree override replace</code> to install it. In a debug node on the host:</p>
 <pre class="shell"><code>sh-4.4# rpm-ostree override replace \
   https://ftweedal.fedorapeople.org/runc-1.0.0-98.rhaos4.8.gitcd80260.el8.x86_64.rpm
@@ -166,7 +166,7 @@ sh-4.2# chroot /host
 sh-4.4# rpm -q runc
 runc-1.0.0-98.rhaos4.8.gitcd80260.el8.x86_64</code></pre>
 <p>And the fact that the debug container is working proves that the modified version of runc isn’t <em>completely</em> broken! Testing the new functionality is a topic for a different post, so I’ll leave it at that.</p>
-<h3 id="listing-and-resetting-overrides">Listing and resetting overrides <a href="#listing-and-resetting-overrides">§</a></h3>
+<h3 id="listing-and-resetting-overrides">Listing and resetting overrides <a href="#listing-and-resetting-overrides" class="section">§</a></h3>
 <p><code>rpm-ostree status --booted</code> lists the current base image and any overrides that have been applied:</p>
 <pre class="shell"><code>sh-4.4# rpm-ostree status --booted
 State: idle
@@ -189,7 +189,7 @@ Freed: 54.8 MB (pkgcache branches: 0)
 Downgraded:
   runc 1.0.0-98.rhaos4.8.gitcd80260.el8 -&gt; 1.0.0-97.rhaos4.8.gitcd80260.el8
 Run &quot;systemctl reboot&quot; to start a reboot</code></pre>
-<h2 id="discussion">Discussion <a href="#discussion">§</a></h2>
+<h2 id="discussion">Discussion <a href="#discussion" class="section">§</a></h2>
 <p>I achieved my goal of installed a modified <code>runc</code> executable on an OpenShift node. There were two approaches:</p>
 <ol type="1">
 <li><p><code>rpm-ostree usroverlay</code> creates a writable overlay on <code>/usr</code>. The overlay disappears at reboot, which is fine for my testing needs. This technique doesn’t work from a node debug container; you have to log in over SSH, which requires additional steps to add SSH keys.</p></li>
@@ -205,6 +205,10 @@ Recent posts:
 <ul>
     
         <li>
+            <a href="../posts/2021-07-21-freeipa-on-openshift-update.html">FreeIPA on OpenShift: July 2021 update</a>
+        </li>
+    
+        <li>
             <a href="../posts/2021-06-29-openshift-live-changes.html">Live-testing changes in OpenShift clusters</a>
         </li>
     
@@ -218,10 +222,6 @@ Recent posts:
     
         <li>
             <a href="../posts/2021-03-30-openshift-cgroupv2-systemd.html">systemd containers on OpenShift with cgroups v2</a>
-        </li>
-    
-        <li>
-            <a href="../posts/2021-03-10-openshift-user-namespace-multi-user.html">Multiple users in user namespaces on OpenShift</a>
         </li>
     
 </ul>

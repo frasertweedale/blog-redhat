@@ -29,9 +29,9 @@
 <p>At PyCon Australia in August I gave a presentation about federated and social identity. I demonstrated concepts using <a href="http://www.keycloak.org/">Keycloak</a>, an Open Source, feature rich <em>identity broker</em>. Keycloak is deployed in JBoss, so I wasn’t excited about the prospect of setting up Keycloak from scratch. Fortunately there is an <a href="https://hub.docker.com/r/jboss/keycloak/">official Docker image</a> for Keycloak, so with that as the starting point I took an opportunity to finally learn about OpenShift v3, too.</p>
 <p>This post is simply a recounting of how I ran Keycloak on OpenShift. Along the way we will look at how to get the containerised Keycloak to trust a private certificate authority (CA).</p>
 <p>One thing that is not discussed is how to get Keycloak to persist configuration and user records to a database. This was not required for my demo, but it will be important in a production deployment. Nevertheless I hope this article is a useful starting point for someone wishing to deploy Keycloak on OpenShift.</p>
-<h2 id="bringing-up-a-local-openshift-cluster">Bringing up a local OpenShift cluster <a href="#bringing-up-a-local-openshift-cluster">§</a></h2>
+<h2 id="bringing-up-a-local-openshift-cluster">Bringing up a local OpenShift cluster <a href="#bringing-up-a-local-openshift-cluster" class="section">§</a></h2>
 <p>To deploy Keycloak on OpenShift, one must first have an OpenShift. <a href="https://www.openshift.com/">OpenShift Online</a> is Red Hat’s public PaaS offering. Although running the demo on a public PaaS was my first choice, OpenShift Online was experiencing issues at the time I was setting up my demo. So I sought a local solution. This approach would have the additional benefit of not being subject to the whims of conference networks (or, it was supposed to - but that is a story for another day!)</p>
-<h3 id="oc-cluster-up"><code>oc cluster up</code> <a href="#oc-cluster-up">§</a></h3>
+<h3 id="oc-cluster-up"><code>oc cluster up</code> <a href="#oc-cluster-up" class="section">§</a></h3>
 <p>Next I tried <code>oc cluster up</code>. <code>oc</code> is the official OpenShift client program. On Fedora, it is provided by the <code>origin-clients</code> package. <code>oc cluster up</code> command pulls required images and brings up an OpenShift cluster running on the system’s Docker infrastructure. The command takes no further arguments; it really is that simple! Or is it…?</p>
 <pre><code>% oc cluster up
 -- Checking OpenShift client ... OK
@@ -90,7 +90,7 @@
    To login as administrator:
        oc login -u system:admin</code></pre>
 <p>Success! Unfortunately, on my machine with several virtual network, <code>oc cluster up</code> messed a bit too much with the routing tables, and when I deployed Keycloak on this cluster it was unable to communicate with my VMs. No doubt these issues could have been solved, but being short on time and with other approaches to try, I abandoned this approach.</p>
-<h3 id="minishift"><em>Minishift</em> <a href="#minishift">§</a></h3>
+<h3 id="minishift"><em>Minishift</em> <a href="#minishift" class="section">§</a></h3>
 <p><a href="https://www.openshift.org/minishift/">Minishift</a> is a tool that launches a single-node OpenShift cluster in a VM. It supports a variety of operating systems and hypervisors. On GNU+Linux it supports KVM and VirtualBox.</p>
 <p>First install <a href="https://github.com/docker/machine/releases">docker-machine</a> and <a href="https://github.com/dhiltgen/docker-machine-kvm/releases">docker-machine-driver-kvm</a>. (follow the instructions at the preceding links). Unfortunately these are not yet packaged for Fedora.</p>
 <p>Download and extract the Minishift release for your OS from <a href="https://github.com/minishift/minishift/releases">https://github.com/minishift/minishift/releases</a>.</p>
@@ -103,7 +103,7 @@ Downloading ISO 'https://github.com/minishift/minishift-b2d-iso/releases/downloa
 ... wait a while ...</code></pre>
 <p>It downloads a <a href="http://boot2docker.io/">boot2docker</a> VM image containing the openshift cluster, boots the VM, and the console output then resembles the output of <code>oc cluster up</code>. I deduce that <code>oc cluster up</code> is being executed on the VM.</p>
 <p>At this point, we’re ready to go. Before I continue, it is important to note that once you have access to an OpenShift cluster, the user experience of creating and managing applications is essentially the same. The commands in the following sections are relevant, regardless whether you are running your app on OpenShift online, on a cluster running on your workstation, or anything in between.</p>
-<h2 id="preparing-the-keycloak-image">Preparing the Keycloak image <a href="#preparing-the-keycloak-image">§</a></h2>
+<h2 id="preparing-the-keycloak-image">Preparing the Keycloak image <a href="#preparing-the-keycloak-image" class="section">§</a></h2>
 <p>The JBoss project provides official Docker images, including an <a href="https://hub.docker.com/r/jboss/keycloak/">official Docker image</a> for Keycloak. This image runs fine in plain Docker but the directory permissions are not correct for running in OpenShift.</p>
 <p>The <code>Dockerfile</code> for this image is found in the <a href="https://github.com/jboss-dockerfiles/keycloak">jboss-dockerfiles/keycloak repository</a> on GitHub. Although they do not publish an official image for it, this repository also contains a <code>Dockerfile</code> for Keycloak on OpenShift! I was able to build that image myself and upload it to <a href="https://hub.docker.com/r/frasertweedale/keycloak-openshift/">my Docker Hub account</a>. The steps were as follows.</p>
 <p>First clone the <code>jboss-dockerfiles</code> repo:</p>
@@ -143,7 +143,7 @@ Login Succeeded
 % docker push registry.hub.docker.com/frasertweedale/keycloak-openshift
 ... wait for upload ...
 latest: digest: sha256:c82c3cc8e3edc05cfd1dae044c5687dc7ebd9a51aefb86a4bb1a3ebee16f341c size: 2623</code></pre>
-<h3 id="adding-ca-trust">Adding CA trust <a href="#adding-ca-trust">§</a></h3>
+<h3 id="adding-ca-trust">Adding CA trust <a href="#adding-ca-trust" class="section">§</a></h3>
 <p>For my demo, I used a local FreeIPA installation to issue TLS certificates for the the Keycloak app. I was also going to carry out a scenario where I configure Keycloak to use that FreeIPA installation’s LDAP server to authenticate users. I wanted to use TLS everywhere (eat your own dog food!) I needed the Keycloak application to trust the CA of one of my local FreeIPA installations. This made it necessary to build another Docker image based on the <code>keycloak-openshift</code> image, with the appropriate CA trust built in.</p>
 <p>The content of the <code>Dockerfile</code> is:</p>
 <pre><code>FROM frasertweedale/keycloak-openshift:latest
@@ -153,7 +153,7 @@ RUN update-ca-trust
 USER jboss</code></pre>
 <p>The file <code>ca.pem</code> contains the CA certificate to add. It must be in the same directory as the <code>Dockerfile</code>. The build copies the CA certificate to the appropriate location and executes <code>update-ca-trust</code> to ensure that applications - including Java programs - will trust the CA.</p>
 <p>Following the <code>docker build</code> I tagged the new image into my <code>hub.docker.com</code> repository (tag: <code>f25-ca</code>) and pushed it. And with that, we are ready to deploy Keycloak on OpenShift.</p>
-<h2 id="creating-the-keycloak-application-in-openshift">Creating the Keycloak application in OpenShift <a href="#creating-the-keycloak-application-in-openshift">§</a></h2>
+<h2 id="creating-the-keycloak-application-in-openshift">Creating the Keycloak application in OpenShift <a href="#creating-the-keycloak-application-in-openshift" class="section">§</a></h2>
 <p>At this point we have a local OpenShift cluster (via <em>Minishift</em>) and a Keycloak image (<code>frasertweedale/keycloak-openshift:f25-ca</code>) to deploy. When deploying the app we need to set some environment variables:</p>
 <dl>
 <dt><code>KEYCLOAK_USER=admin</code></dt>
@@ -195,7 +195,7 @@ svc/keycloak-openshift - 172.30.198.217:8080
 
 View details with 'oc describe &lt;resource&gt;/&lt;name&gt;' or list everything with 'oc get all'.</code></pre>
 <p>(In my case, the first deployment failed because the 10-minute timeout elapsed before the image download completed; hence <code>deployment #2</code> in the output above.)</p>
-<h3 id="creating-a-secure-route">Creating a secure route <a href="#creating-a-secure-route">§</a></h3>
+<h3 id="creating-a-secure-route">Creating a secure route <a href="#creating-a-secure-route" class="section">§</a></h3>
 <p>Now the Keycloak application is running, but we cannot reach it from outside the Keycloak project itself. In order to be able to reach it there must be a <em>route</em>. The <code>oc create route</code> command lets us create a route that uses TLS (so clients can authenticate the service). We will use the domain name <code>keycloak.ipa.local</code>. The public/private keypair and certificate have already been generated (how to do that is outside the scope of this article). The certificate was signed by the CA we added to the image earlier. The service name - visible in the <code>oc status</code> output above - is <code>svc/keycloak-openshift</code>.</p>
 <pre><code>% oc create route edge \
   --service svc/keycloak-openshift \
@@ -236,7 +236,7 @@ route &quot;keycloak-openshift&quot; created</code></pre>
 &lt;/body&gt;
 &lt;/html&gt;</code></pre>
 <p>If you visit in a browser, you will be able to log in using the admin account credentials specified in the <code>KEYCLOAK_USER</code> and <code>KEYCLOAK_PASSWORD</code> environment variables specified when the app was created. And from there you can create and manage authentication realms, but that is beyond the scope of this article.</p>
-<h2 id="conclusion">Conclusion <a href="#conclusion">§</a></h2>
+<h2 id="conclusion">Conclusion <a href="#conclusion" class="section">§</a></h2>
 <p>In this post I discussed how to run Keycloak in OpenShift, from bringing up an OpenShift cluster to building the Docker image and creating the application and route in OpenShift. I recounted that I found <em>OpenShift Online</em> unstable at the time I tried it, and that although <code>oc cluster up</code> did successfully bring up a cluster I had trouble getting the Docker and VM networks to talk to each other. Eventually I tried <em>Minishift</em> which worked well.</p>
 <p>We saw that although there is no official Docker image for Keycloak in OpenShift, there is a <code>Dockerfile</code> that builds a working image. It is easy to further extend the image to add trust for private CAs.</p>
 <p>Creating the Keycloak app in OpenShift, and adding the routes, is straightforward. There are a few important environment variables that must be set. The <code>oc create route</code> command was used to create a secure route to access the application from the outside.</p>
@@ -246,6 +246,10 @@ route &quot;keycloak-openshift&quot; created</code></pre>
     <div id="recent">
 Recent posts:
 <ul>
+    
+        <li>
+            <a href="../posts/2021-07-21-freeipa-on-openshift-update.html">FreeIPA on OpenShift: July 2021 update</a>
+        </li>
     
         <li>
             <a href="../posts/2021-06-29-openshift-live-changes.html">Live-testing changes in OpenShift clusters</a>
@@ -261,10 +265,6 @@ Recent posts:
     
         <li>
             <a href="../posts/2021-03-30-openshift-cgroupv2-systemd.html">systemd containers on OpenShift with cgroups v2</a>
-        </li>
-    
-        <li>
-            <a href="../posts/2021-03-10-openshift-user-namespace-multi-user.html">Multiple users in user namespaces on OpenShift</a>
         </li>
     
 </ul>

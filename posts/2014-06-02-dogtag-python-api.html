@@ -28,7 +28,7 @@
     <h1 id="introduction-to-the-dogtag-python-api">Introduction to the Dogtag Python API</h1>
 <p>There is a Python binding to the Dogtag REST API under active development by Abhishek Koneru. I will be using this API to add support for Dogtag profiles in FreeIPA. This post serves as an introduction to the API, with a particular focus on the profile-related parts.</p>
 <p>Because it’s still in development, the API is subject to change. I think the overall structure of the API is fine so hopefully any changes will be minor. The API is well documented so if in doubt, check the docstrings (calling <code>help(&lt;module|class|object&gt;)</code> is a handy way to read the docs in the interactive Python interpreter).</p>
-<h2 id="pkiconnection">PKIConnection <a href="#pkiconnection">§</a></h2>
+<h2 id="pkiconnection">PKIConnection <a href="#pkiconnection" class="section">§</a></h2>
 <p>The <code>pki.client.PKIConnection</code> class connects to a Dogtag instance and executes REST verbs on behalf of clients. Internally, it uses the excellent <a href="http://docs.python-requests.org/en/latest/">Requests</a> library.</p>
 <div class="sourceCode" id="cb1"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true"></a><span class="im">import</span> pki.client</span>
 <span id="cb1-2"><a href="#cb1-2" aria-hidden="true"></a></span>
@@ -41,7 +41,7 @@
 <pre><code>$ openssl pkcs12 -nodes -in cl_cert.p12 -out cl_cert.pem</code></pre>
 <p>After telling the <code>PKIConnection</code> where to find the client certificate, the connection object will be ready to use:</p>
 <div class="sourceCode" id="cb3"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true"></a>conn.set_authentication_cert(<span class="st">&quot;/path/to/cl_cert.pem&quot;</span>)</span></code></pre></div>
-<h2 id="profileclient">ProfileClient <a href="#profileclient">§</a></h2>
+<h2 id="profileclient">ProfileClient <a href="#profileclient" class="section">§</a></h2>
 <p>The <code>pki.profile.ProfileClient</code> class proxies the profiles-related REST resources.</p>
 <div class="sourceCode" id="cb4"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true"></a><span class="im">import</span> pki.profile</span>
 <span id="cb4-2"><a href="#cb4-2" aria-hidden="true"></a></span>
@@ -76,7 +76,7 @@ enrolling server certificates.'}}
 'policy _sets', 'profile_id', 'renewal', 'visible', 'xml_output']</code></pre>
 <p>The relevant attributes can be gleaned from above. At the moment, there’s not a whole lot you can do with a profile object, besides look at it. It contains some metadata about the profile and lists of its inputs, outputs and policies (defaults and constraints).</p>
 <p>There’s not much else to the profiles aspect of the API at this time. You can list profiles, inspect profiles, and enable/disable profiles, but you aren’t yet able to create new profiles or perform more advanced profile administration. Future work will (hopefully) add these capabilities.</p>
-<h2 id="certclient">CertClient <a href="#certclient">§</a></h2>
+<h2 id="certclient">CertClient <a href="#certclient" class="section">§</a></h2>
 <p>Although <code>pki.profile</code> on its own doesn’t currently offer a lot to the API end-user, some other modules do leverage the provided classes and methods in their own behaviours. <code>pki.cert</code> is one such module.</p>
 <div class="sourceCode" id="cb7"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true"></a><span class="im">import</span> pki.cert</span>
 <span id="cb7-2"><a href="#cb7-2" aria-hidden="true"></a></span>
@@ -123,7 +123,7 @@ enrolling server certificates.'}}
 u'-----BEGIN CERTIFICATE-----\nMIIDFjCCA... (a PEM-encoded certificate)'</code></pre>
 <p>It has all the things you’d expect a data type representing a digital certificate to have.</p>
 <p>As you might expect, enrolling new certificates is not the only way to get at a <code>CertData</code> object. The <code>CertClient</code> API supports listing and searching certificates, revocation and more. It also supports the whole gamut of CA agent operations with respect to pending certificate requests. In addition to approving requests, requests can be reviewed, rejected, assigned to another agent, and so on.</p>
-<h2 id="conclusion">Conclusion <a href="#conclusion">§</a></h2>
+<h2 id="conclusion">Conclusion <a href="#conclusion" class="section">§</a></h2>
 <p>There are many details and features of the Dogtag Python API that were not covered in this post, but the most important details have been covered, and I hope I have conveyed a comprehension of the high-level organisation of the API and the common idioms.</p>
 <p>As mentioned at the beginning of this post, the API is not yet released and is subject to change, but feel free to <a href="https://git.fedorahosted.org/cgit/pki.git">have a look at the code</a> or begin experimenting with it. The Dogtag developers welcome feedback and <a href="http://www.redhat.com/mailman/listinfo/pki-devel">pki-devel mailing list</a> is the place to provide it.</p>
 </div>
@@ -131,6 +131,10 @@ u'-----BEGIN CERTIFICATE-----\nMIIDFjCCA... (a PEM-encoded certificate)'</code><
     <div id="recent">
 Recent posts:
 <ul>
+    
+        <li>
+            <a href="../posts/2021-07-21-freeipa-on-openshift-update.html">FreeIPA on OpenShift: July 2021 update</a>
+        </li>
     
         <li>
             <a href="../posts/2021-06-29-openshift-live-changes.html">Live-testing changes in OpenShift clusters</a>
@@ -146,10 +150,6 @@ Recent posts:
     
         <li>
             <a href="../posts/2021-03-30-openshift-cgroupv2-systemd.html">systemd containers on OpenShift with cgroups v2</a>
-        </li>
-    
-        <li>
-            <a href="../posts/2021-03-10-openshift-user-namespace-multi-user.html">Multiple users in user namespaces on OpenShift</a>
         </li>
     
 </ul>

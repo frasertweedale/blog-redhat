@@ -30,7 +30,7 @@
 <p>In this blog post we will discuss the state of wildcard certificates in FreeIPA, but before proceeding it is fitting to point out that <a href="https://tools.ietf.org/html/rfc6125#section-7.2">wildcard certificates are deprecated</a>, and for good reason. While the compromise of any TLS private key is a serious matter, the attacker can only impersonate the entities whose names appear on the certificate (typically one or a handful of DNS addresses). But a wildcard certificate can impersonate <em>any</em> host whose name happens to match the wildcard value.</p>
 <p>In time, validation of wildcard domains will be disabled by default and (hopefully) eventually removed from TLS libraries. The emergence of protocols like ACME that allow automated domain validation and certificate issuance mean that there is no real need for wildcard certificates anymore, but a lot of programs are yet to implement ACME or similar; therefore there is still a perceived need for wildcard certificates. In my opinion some of this boils down to lack of awareness of novel solutions like ACME, but there can also be a lack of willingness to spend the time and money to implement them, or a desire to avoid changing deployed systems, or taking a “wait and see” approach when it comes to new, security-related protocols or technologies. So for the time being, some organisations have good reasons to want wildcard certificates.</p>
 <p>FreeIPA currently has no special support for wildcard certificates, but with support for custom certificate profiles, we can create and use a profile for issuing wildcard certificates.</p>
-<h2 id="creating-a-wildcard-certificate-profile-in-freeipa">Creating a wildcard certificate profile in FreeIPA <a href="#creating-a-wildcard-certificate-profile-in-freeipa">§</a></h2>
+<h2 id="creating-a-wildcard-certificate-profile-in-freeipa">Creating a wildcard certificate profile in FreeIPA <a href="#creating-a-wildcard-certificate-profile-in-freeipa" class="section">§</a></h2>
 <p>This procedure works on FreeIPA 4.2 (RHEL 7.2) and later.</p>
 <p>First, <code>kinit admin</code> and export an existing service certificate profile configuration to a file:</p>
 <pre><code>ftweedal% ipa certprofile-show caIPAserviceCert --out wildcard.cfg
@@ -112,7 +112,7 @@ Number of members added 1
   -n wildcardCert \
   -T wildcard</code></pre>
 <p>This will request a certificate for the current host. The <code>-T</code> option specifies the profile to use.</p>
-<h2 id="discussion">Discussion <a href="#discussion">§</a></h2>
+<h2 id="discussion">Discussion <a href="#discussion" class="section">§</a></h2>
 <p>Observe that the subject common name (CN) in the CSR <em>does not contain the wildcard</em>. FreeIPA requires naming information in the CSR to perfectly match the subject principal. As mentioned in the introduction, FreeIPA has no specific support for wildcard certificates, so if a wildcard were included in the CSR, it would not match the subject principal and the request would be rejected.</p>
 <p>When constructing the certificate, Dogtag performs a variable substitution into a subject name string. That string contains the literal wildcard and the period to its right, and the common name (CN) from the CSR gets substituted in after that. The relevant line in the profile configuration is:</p>
 <pre><code>policyset.serverCertSet.1.default.params.name=CN=*.$request.req_subject_name.cn$, o=EXAMPLE.COM</code></pre>
@@ -123,6 +123,10 @@ Number of members added 1
     <div id="recent">
 Recent posts:
 <ul>
+    
+        <li>
+            <a href="../posts/2021-07-21-freeipa-on-openshift-update.html">FreeIPA on OpenShift: July 2021 update</a>
+        </li>
     
         <li>
             <a href="../posts/2021-06-29-openshift-live-changes.html">Live-testing changes in OpenShift clusters</a>
@@ -138,10 +142,6 @@ Recent posts:
     
         <li>
             <a href="../posts/2021-03-30-openshift-cgroupv2-systemd.html">systemd containers on OpenShift with cgroups v2</a>
-        </li>
-    
-        <li>
-            <a href="../posts/2021-03-10-openshift-user-namespace-multi-user.html">Multiple users in user namespaces on OpenShift</a>
         </li>
     
 </ul>

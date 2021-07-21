@@ -29,7 +29,7 @@
 <p>Some complex or legacy applications make strict and pervasive assumptions about their execution environment. Relying on the host having a <em>fully qualified domain name (FQDN)</em> is an example of this kind of assumption. Indeed this is a particularly thorny kind of assumption because there are several ways an application can query the hostname, and they don’t always agree!</p>
 <p>It is not surprising that we have hit this particular issue during our effort to containerise FreeIPA and operationalise it for OpenShift. Whereas container runtimes like Podman and Docker offer full control of a container’s FQDN, Kubernetes (and by extension OpenShift) is more strongly opinionated. By default, a Kubernetes pod has only a short name, not a fully qualified domain name. There are limited ways to configure a pod’s hostname and FQDN. Furthermore, there is currently no way to use a pod’s FQDN as the (Kernel) hostname.</p>
 <p>In this post I will outline the challenges and document the attempted workarounds as we try to make FreeIPA run in OpenShift in spite of the Kubernetes hostname restriction.</p>
-<h2 id="querying-the-fqdn">Querying the FQDN <a href="#querying-the-fqdn">§</a></h2>
+<h2 id="querying-the-fqdn">Querying the FQDN <a href="#querying-the-fqdn" class="section">§</a></h2>
 <p>There are several ways an a program can query the host’s hostname.</p>
 <ul>
 <li>Read <code>/etc/hostname</code>. The name in this file may or may not be fully qualified.</li>
@@ -39,9 +39,9 @@
 <li>The <code>getaddrinfo(3)</code> routine when invoked with the <code>AI_CANONNAME</code> flag can return a FQDN for a given hostname (e.g. the name return by <code>gethostname(2)</code>. This allows any <em>Name Service Switch (NSS)</em> plugin to provide a canonical FQDN for a short name. NSS is usually configured to map hostnames using the data from <code>/etc/hosts</code>, but there are other plugins including for <em>systemd-resolved</em>, <em>dns</em> and <em>sss</em> (SSSD). From the command line, <code>hostname --fqdn</code> or <code>hostname --all-fqdns</code> will return result(s) from <code>getaddrinfo(3)</code>.</li>
 </ul>
 <p>Side-note: the “UTS” in <code>utsname</code> stands for <em>Unix Timesharing System</em>. Container runtimes can set a unique UTS hostname in each container because each container (or pod) has a unique <a href="https://www.man7.org/linux/man-pages/man7/uts_namespaces.7.html">UTS namespace</a>.</p>
-<h2 id="auditing-freeipas-fqdn-query-behaviour">Auditing FreeIPA’s FQDN query behaviour <a href="#auditing-freeipas-fqdn-query-behaviour">§</a></h2>
+<h2 id="auditing-freeipas-fqdn-query-behaviour">Auditing FreeIPA’s FQDN query behaviour <a href="#auditing-freeipas-fqdn-query-behaviour" class="section">§</a></h2>
 <p>In order to decide how to proceed, we first needed to audit both FreeIPA and its dependencies to see how they query the hostname and host FQDN. I have published <a href="https://docs.google.com/document/d/e/2PACX-1vQzxjMw3eqkpuPfqaLbCW-GN8gwS1QvFjrs9TnPM02DMfNqBVSGapqITvAyZyxc2TN9jJShJrbqGayC/pub">the results of this audit</a>. It is perhaps not exhaustive, but hopefully fairly thorough.</p>
-<h2 id="pod-hostname-configuration">Pod hostname configuration <a href="#pod-hostname-configuration">§</a></h2>
+<h2 id="pod-hostname-configuration">Pod hostname configuration <a href="#pod-hostname-configuration" class="section">§</a></h2>
 <p>We assume that the operator (human or machine) will create pods with deterministic FQDN. That is, it knows what the pod’s FQDN should be. Or to be more precise, the operator knows what it wants the application(s) running in the pod to recognise as the host FQDN. These are not necessarily the same thing (more on that in the next section).</p>
 <p>First, let’s investigate how OpenShift configures pod hostnames. I created a standalone pod with no associated services and shelled into it to query the FQDN in various ways. The pod configuration:</p>
 <pre><code>apiVersion: v1
@@ -105,20 +105,24 @@ test.subdomain.test.svc.cluster.local</code></pre>
 <pre><code>sh-5.0# grep subdomain /etc/hosts
 10.129.3.84     test.subdomain.test.svc.cluster.local   test</code></pre>
 <p>The preceding examples involve pods that I created directly. The configurations of pods that are created indirectly are under the (partial) control of the corresponding controllers. For example, pods created by the <code>StatefulSet</code> controller have their <code>subdomain</code> field set to the <code>name</code> of the <code>StatefulSet</code>.</p>
-<h3 id="upcoming-changes">Upcoming changes <a href="#upcoming-changes">§</a></h3>
+<h3 id="upcoming-changes">Upcoming changes <a href="#upcoming-changes" class="section">§</a></h3>
 <p>An <a href="https://github.com/kubernetes/enhancements/issues/1797">upcoming Kubernetes enhancement</a> will allow pods to specify that its UTS hostname should be set to the pod FQDN (if the pod has an FQDN). This enhancement will introduces a new <code>setHostnameAsFQDN</code> field to the <code>PodSpec</code>. It is currently scheduled to land as <em>alpha</em> in Kubernetes v1.19, move to <em>beta</em> in v1.20 and become <em>stable</em> in v1.22.</p>
-<h2 id="freeipa-changes">FreeIPA changes <a href="#freeipa-changes">§</a></h2>
+<h2 id="freeipa-changes">FreeIPA changes <a href="#freeipa-changes" class="section">§</a></h2>
 <p>With sufficient craftiness, or code changes, or network configuration changes, or some combination thereof, it is possible to convince a program that it’s FQDN is a particular value. Although Kubernetes and OpenShift currently offer few ways to configure the pod (UTS) hostname, the operator could use some mechanism (e.g. pod environment variables or a <code>ConfigMap</code>, along with changes to application code) to ensure that each application instance “knows” its correct FQDN.</p>
 <p>The hostname query audit revealed that FreeIPA asks for the host FQDN or the system hostname (in order to check that it is a FQDN) in lots of places and uses different query mechanisms. If we find all those places we can abstract away the check. In practice this means one common interface for FreeIPA’s C code and one for the Python code.</p>
 <p>With hostname query logic abstracted behind these interfaces, we can perform the lookup in whatever way is appropriate for the deployment environment. For a traditional deployment, we use <code>gethostname(3)</code> and <code>getaddrinfo(3)</code> with <code>AI_CANONNAME</code>. But in an OpenShift deployment we can instead return a value supplied via a <code>ConfigMap</code> or other appropriate mechanism.</p>
 <p>Upstream pull request <a href="https://github.com/freeipa/freeipa/pull/5107">#5107</a> implemented this change. It consolidated the hostname query behaviour into new C and Python routines. It did not implement alternative behaviour for other environments such as OpenShift, but abstracting the query behind a single interface (for each language) makes it easy to do this later. Whether we would use an environment variable, <code>ConfigMap</code>, or some other mechanism does not need to be decided at this time.</p>
-<h2 id="next-steps">Next steps <a href="#next-steps">§</a></h2>
+<h2 id="next-steps">Next steps <a href="#next-steps" class="section">§</a></h2>
 <p>The investigation into hostname/FQDN query behaviour of FreeIPA’s dependencies continues. In particular, we have not yet undertaken a thorough investigation of Samba, which is used for Active Directory trust support. Also, there are open questions about some other dependencies including Dogtag and Certmonger. It is possible that configuration or code changes will be required to make these programs work in environments</p>
 </div>
 <div id="postFooter">
     <div id="recent">
 Recent posts:
 <ul>
+    
+        <li>
+            <a href="../posts/2021-07-21-freeipa-on-openshift-update.html">FreeIPA on OpenShift: July 2021 update</a>
+        </li>
     
         <li>
             <a href="../posts/2021-06-29-openshift-live-changes.html">Live-testing changes in OpenShift clusters</a>
@@ -134,10 +138,6 @@ Recent posts:
     
         <li>
             <a href="../posts/2021-03-30-openshift-cgroupv2-systemd.html">systemd containers on OpenShift with cgroups v2</a>
-        </li>
-    
-        <li>
-            <a href="../posts/2021-03-10-openshift-user-namespace-multi-user.html">Multiple users in user namespaces on OpenShift</a>
         </li>
     
 </ul>

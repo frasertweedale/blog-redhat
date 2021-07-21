@@ -29,7 +29,7 @@
 <p><em>systemd</em> in a container is a practical reality of migrating nontrivial applications to container infrastructure. It is not the “cloud native” way, but many applications written in The Before Times cannot be broken up and rearchitected without a huge cost. And so, there is a demand to run containers that run systemd, which in turn manages application services.</p>
 <p>FreeIPA is one example. Its traditional environment is a dedicated Linux server (ignoring replicas). There are <em>many</em> services which both interact among themselves, and process requests from external clients and other FreeIPA servers. The engineering effort to redesign FreeIPA as a suite of several containerised services is expected to be very high. Therefore our small team focused on bringing FreeIPA to OpenShift therefore decided to pursue the “monolithic container” approach.</p>
 <p>Support for systemd containers in OpenShift, <em>without hacks</em>, is a prerequisite for this approach to viable. In this post I experiment with systemd containers in OpenShift and share my results.</p>
-<h2 id="test-application-http-server">Test application: HTTP server <a href="#test-application-http-server">§</a></h2>
+<h2 id="test-application-http-server">Test application: HTTP server <a href="#test-application-http-server" class="section">§</a></h2>
 <p>To test systemd containers on OpenShift, I created a Fedora-based container running the <em>nginx</em> HTTP server. I enable the <code>nginx</code> systemd and set the default command to <code>/sbin/init</code>, which is systemd. The server doesn’t host any interesting content, but if it responds to requests we know that systemd is working.</p>
 <p>The <code>Containerfile</code> definition is:</p>
 <div class="sourceCode" id="cb1"><pre class="sourceCode dockerfile"><code class="sourceCode dockerfile"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true"></a><span class="kw">FROM</span> fedora:33-x86_64</span>
@@ -54,7 +54,7 @@ Accept-Ranges: bytes
 % podman kill 2d8059e5
 2d8059e555c821d9ffcccd84bee88996207794957696c54e8d29787e8c33fab3</code></pre>
 <p>The container works properly in <code>podman</code>. I proceed to testing it on OpenShift.</p>
-<h2 id="running-privileged-user">Running (<strong>privileged</strong> user) <a href="#running-privileged-user">§</a></h2>
+<h2 id="running-privileged-user">Running (<strong>privileged</strong> user) <a href="#running-privileged-user" class="section">§</a></h2>
 <p>I performed my testing on an OpenShift 4.8 nightly cluster. The exact build is <code>4.8.0-0.nightly-2021-03-26-010831</code>. As far as I’m aware, with respect to systemd and cgroups there are no major differences between OpenShift 4.7 (which is Generally Available) and the build I’m using. So results should be similar on OpenShift 4.7.</p>
 <p>The Pod definition for my test service is:</p>
 <div class="sourceCode" id="cb3"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
@@ -73,7 +73,7 @@ pod/nginx created
 
 % oc get -o json pod/nginx | jq .status.phase
 &quot;Running&quot;</code></pre>
-<h3 id="verifying-that-the-service-is-working">Verifying that the service is working <a href="#verifying-that-the-service-is-working">§</a></h3>
+<h3 id="verifying-that-the-service-is-working">Verifying that the service is working <a href="#verifying-that-the-service-is-working" class="section">§</a></h3>
 <p><code>pod/nginx</code> is running, but it is not exposed to other pods in the cluster, or to the outside world. To test that the server is working, I will expose it on the hostname <code>nginx.apps.ft-48dev-5.idmocp.lab.eng.rdu2.redhat.com</code>. First, observe that performing an HTTP request from my workstation fails because the service is not available:</p>
 <pre class="shell"><code>% curl --head nginx.apps.ft-48dev-5.idmocp.lab.eng.rdu2.redhat.com
 HTTP/1.0 503 Service Unavailable
@@ -120,7 +120,7 @@ accept-ranges: bytes
 set-cookie: 6cf5f3bc2fa4d24f45018c591d3617c3=6f2f093d36d535f1dde195e08a311bda; path=/; HttpOnly
 cache-control: private</code></pre>
 <p>This confirms that the systemd container is running properly on OpenShift 4.8.</p>
-<h3 id="low-level-details">Low-level details <a href="#low-level-details">§</a></h3>
+<h3 id="low-level-details">Low-level details <a href="#low-level-details" class="section">§</a></h3>
 <p>Now I will inspect some low-level details of the container. I’ll do that in a debug shell on the worker node. So first, I query the pod’s worker node name and container ID:</p>
 <pre class="shell"><code>% oc get -o json pod/nginx \
     | jq '.spec.nodeName,
@@ -172,7 +172,7 @@ polkitd    14661 nginx: worker process
 polkitd    14662 nginx: worker process</code></pre>
 <p>The <code>PID</code> column shows the PIDs from the point of view of the host’s PID namespace. The first process (PID 1 <em>inside</em> the container) is systemd (<code>/sbin/init</code>). systemd has started other system services, and also nginx.</p>
 <p>systemd is running as <code>root</code> <strong>on the host</strong>. The other processes run under various system accounts. The container does not have its own user namespace. This pod was created by a privileged account, which allows it to run as <code>root</code> on the host.</p>
-<h2 id="running-unprivileged-user">Running (<strong>unprivileged</strong> user) <a href="#running-unprivileged-user">§</a></h2>
+<h2 id="running-unprivileged-user">Running (<strong>unprivileged</strong> user) <a href="#running-unprivileged-user" class="section">§</a></h2>
 <p>I created an unprivileged user called <code>test</code>, and granted it admin privileges (so it can create pods).</p>
 <pre class="shell"><code>% oc create user test
 user.user.openshift.io/test created 
@@ -220,7 +220,7 @@ Exiting PID 1...</code></pre>
 <div class="note">
 <p>Set the <a href="https://www.freedesktop.org/software/systemd/man/systemd.html#%24SYSTEMD_LOG_LEVEL"><code>SYSTEMD_LOG_LEVEL</code></a> environment variable to <code>info</code> or <code>debug</code> to get more detail in the systemd log output.</p>
 </div>
-<h2 id="enabling-cgroups-v2">Enabling cgroups v2 <a href="#enabling-cgroups-v2">§</a></h2>
+<h2 id="enabling-cgroups-v2">Enabling cgroups v2 <a href="#enabling-cgroups-v2" class="section">§</a></h2>
 <p>We can enable cgroups v2 (only) on worker nodes via the following MachineConfig object:</p>
 <div class="sourceCode" id="cb20"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb20-1"><a href="#cb20-1" aria-hidden="true"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> machineconfiguration.openshift.io/v1</span></span>
 <span id="cb20-2"><a href="#cb20-2" aria-hidden="true"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> MachineConfig</span></span>
@@ -234,7 +234,7 @@ Exiting PID 1...</code></pre>
 <span id="cb20-10"><a href="#cb20-10" aria-hidden="true"></a><span class="at">    </span><span class="kw">-</span><span class="at"> cgroup_no_v1=&quot;all&quot;</span></span>
 <span id="cb20-11"><a href="#cb20-11" aria-hidden="true"></a><span class="at">    </span><span class="kw">-</span><span class="at"> psi=1</span></span></code></pre></div>
 <p>After creating the MachineConfig, the <em>Machine Config Operator</em> applies the configuration change and restarts each worker node, one by one. This occurs over several minutes.</p>
-<h2 id="running-unprivileged-cgroups-v2">Running (<strong>unprivileged</strong>; <strong>cgroups v2</strong>) <a href="#running-unprivileged-cgroups-v2">§</a></h2>
+<h2 id="running-unprivileged-cgroups-v2">Running (<strong>unprivileged</strong>; <strong>cgroups v2</strong>) <a href="#running-unprivileged-cgroups-v2" class="section">§</a></h2>
 <p>After some time, all worker nodes have the updated kernel configuration to enable cgroups v2 and disable cgroups v1. I again created the pod as the unprivileged <code>test</code> user. And again, pod execution failed. But this time the error is different:</p>
 <pre class="shell"><code>% oc --as test create -f pod-nginx.yaml
 pod/nginx created
@@ -278,11 +278,11 @@ sh-5.0$</code></pre>
 &quot;mount&quot;
 &quot;cgroup&quot;</code></pre>
 <p>The output confirms that the pod has a cgroup namespace. Despite this, the unprivileged user running systemd in the container does not have permission to manage the namespace. The <code>oc logs</code> output demonstrates this.</p>
-<h3 id="container_manage_cgroups-selinux-boolean"><code>container_manage_cgroups</code> SELinux boolean <a href="#container_manage_cgroups-selinux-boolean">§</a></h3>
+<h3 id="container_manage_cgroups-selinux-boolean"><code>container_manage_cgroups</code> SELinux boolean <a href="#container_manage_cgroups-selinux-boolean" class="section">§</a></h3>
 <p>I have one more thing to try. The <code>container_manage_cgroups</code> SELinux boolean was disabled on the worker nodes (per default configuration). Perhaps it is still needed, even when using cgroups v2. I enabled it on the worker node (directly from the debug shell, for now):</p>
 <pre class="shell"><code>sh-4.4# setsebool container_manage_cgroup on</code></pre>
 <p>I again created the nginx pod as the <code>test</code> user. It failed with the same error as the previous attempt, when <code>container_manage_cgroup</code> was <em>off</em>. So that was not the issue, or at least not the immediate issue.</p>
-<h2 id="next-steps">Next steps <a href="#next-steps">§</a></h2>
+<h2 id="next-steps">Next steps <a href="#next-steps" class="section">§</a></h2>
 <p>At this point, I have successfully enabled cgroups v2 on worker nodes. Container sandboxes have their own cgroup namespace. But inside the container, systemd fails with permission errors when it attempts some cgroup management.</p>
 <p>The next step is to test the systemd container in OpenShift with cgroups v2 enabled <em>and</em> <a href="2021-03-03-openshift-4.7-user-namespaces.html">user namespaces enabled</a>. Both of these features are necessary for securely running a complex, systemd-based application in OpenShift. My hope is that enabling them <em>together</em> is the last step to getting systemd-based containers working properly in OpenShift. I will investigate and report the results in an upcoming post.</p>
 </div>
@@ -290,6 +290,10 @@ sh-5.0$</code></pre>
     <div id="recent">
 Recent posts:
 <ul>
+    
+        <li>
+            <a href="../posts/2021-07-21-freeipa-on-openshift-update.html">FreeIPA on OpenShift: July 2021 update</a>
+        </li>
     
         <li>
             <a href="../posts/2021-06-29-openshift-live-changes.html">Live-testing changes in OpenShift clusters</a>
@@ -305,10 +309,6 @@ Recent posts:
     
         <li>
             <a href="../posts/2021-03-30-openshift-cgroupv2-systemd.html">systemd containers on OpenShift with cgroups v2</a>
-        </li>
-    
-        <li>
-            <a href="../posts/2021-03-10-openshift-user-namespace-multi-user.html">Multiple users in user namespaces on OpenShift</a>
         </li>
     
 </ul>

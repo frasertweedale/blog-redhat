@@ -28,7 +28,7 @@
     <h1 id="kubernetes-dns-service-discovery-limitations">Kubernetes DNS Service Discovery limitations</h1>
 <p>Kubernetes <em>Service</em> objects expose applications running in Pods as network services. For each combination of service name, port and associated Pod, the Kubernetes DNS system creates a DNS <code>SRV</code> record that can be used for service discovery.</p>
 <p>In this post I demonstrate a deficiency in this system that obstructs important, real-world use cases, and sketch potential solutions.</p>
-<h2 id="overview-of-kubernetes-services-and-dns">Overview of Kubernetes Services and DNS <a href="#overview-of-kubernetes-services-and-dns">§</a></h2>
+<h2 id="overview-of-kubernetes-services-and-dns">Overview of Kubernetes Services and DNS <a href="#overview-of-kubernetes-services-and-dns" class="section">§</a></h2>
 <p>The following Service definition defines an LDAP service:</p>
 <pre><code>$ oc create -f service-test.yaml 
 apiVersion: v1
@@ -109,7 +109,7 @@ sh-5.0# dig +short A \
     10-129-2-13.service-test.test.svc.cluster.local
 10.129.2.13</code></pre>
 <p>For more information above DNS <code>SRV</code> records, see <a href="https://tools.ietf.org/html/rfc2782">RFC 2782</a>.</p>
-<h2 id="kubernetes-srv-limitation">Kubernetes SRV limitation <a href="#kubernetes-srv-limitation">§</a></h2>
+<h2 id="kubernetes-srv-limitation">Kubernetes SRV limitation <a href="#kubernetes-srv-limitation" class="section">§</a></h2>
 <p>Some services operate over TCP, some over UDP. And some operate over <em>both</em> TCP and UDP. Two examples are DNS and Kerberos. <code>SRV</code> records are of particular importance for Kerberos; they are used (<a href="https://web.mit.edu/kerberos/krb5-devel/doc/admin/realm_config.html#hostnames-for-kdcs">widely</a>, by <a href="https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-adts/7fcdce70-5205-44d6-9c3a-260e616a2f04">multiple</a> <a href="https://www.freeipa.org/page/V4/DNS_Location_Mechanism">implementations</a>) for KDC discovery.</p>
 <p>So to host a Kerberos KDC in Kubernetes and enable service discovery, we need two sets of SRV records: <code>_kerberos._tcp</code> and <code>_kerberos._udp</code>. And likewise for the <code>kpasswd</code> and <code>kerberos-master</code> service names. There could be (probably are) other protocols where a similar arrangement is required.</p>
 <p>So, let’s update the Service object and add the <code>kerberos</code> ServicePort specs:</p>
@@ -139,7 +139,7 @@ $ oc replace -f service-test.yaml
 The Service &quot;service-test&quot; is invalid:
 spec.ports[2].name: Duplicate value: &quot;kerberos&quot;</code></pre>
 <p>Well, that’s a shame. Kerberos does not admit this important use case.</p>
-<h3 id="endpoints-do-not-have-the-limitation">Endpoints do not have the limitation <a href="#endpoints-do-not-have-the-limitation">§</a></h3>
+<h3 id="endpoints-do-not-have-the-limitation">Endpoints do not have the limitation <a href="#endpoints-do-not-have-the-limitation" class="section">§</a></h3>
 <p>Interestingly, the Endpoints type does not have this limitation. The Service controller automatically creates Endpoints objects for Services. The ServicePorts are (as far as I can tell) copied across to the Endpoints object.</p>
 <p>I can manually replace the <code>endpoints/service-test</code> object (see above) with the following spec that includes the “duplicate” <code>kerberos</code> port:</p>
 <pre><code>$ cat endpoints.yaml
@@ -185,7 +185,7 @@ sh-5.0# dig +short SRV \
     _kerberos._udp.service-test.test.svc.cluster.local
 0 100 88 10-129-2-13.service-test.test.svc.cluster.local.</code></pre>
 <p>Therefore it seems the scope of this problem is limited to validation and processing of the <code>Service</code> object. Other components of Kubernetes (Endpoint validation and the Cluster DNS Operator, at least) can already handle this use case.</p>
-<h2 id="possible-resolutions">Possible resolutions <a href="#possible-resolutions">§</a></h2>
+<h2 id="possible-resolutions">Possible resolutions <a href="#possible-resolutions" class="section">§</a></h2>
 <p>Besides manually fiddling with the Endpoints (eww) I am not aware of any workarounds, but I see two possible approaches to resolving this issue.</p>
 <p>One approach is to relax the uniqueness check. Instead of checking for uniqueness of ServicePort <code>name</code>, check for the uniqueness of the <code>name</code>/<code>protocol</code> pair. This is conceptually simple but I am not familiar enough with Kubernetes internals to judge the feasibility or technical tradeoffs of this approach. For users, nothing changes (except the example above would work!)</p>
 <p>Another approach is to add a new ServicePort field to specify the actual DNS service label to use. For the sake of discussion I’ll call it <code>serviceName</code>. It would be optional, defaulting to the value of <code>name</code>. This means <code>name</code> can still be the “primary key”, but the approach requires <em>another</em> uniqueness check on the <code>serviceName</code>/<code>protocol</code> pair. In our use case the configuration would look like:</p>
@@ -203,13 +203,17 @@ ports:
   protocol: UDP
   port: 88</code></pre>
 <p>From a UX perspective I prefer the first approach, because there are no changes or additions to the ServicePort configuration schema. But to maintain compatibility with programs that assume that <code>name</code> is unique (as is currently enforced), it might be necessary to introduce a new field.</p>
-<h2 id="next-steps">Next steps <a href="#next-steps">§</a></h2>
+<h2 id="next-steps">Next steps <a href="#next-steps" class="section">§</a></h2>
 <p>I <a href="https://github.com/kubernetes/kubernetes/issues/97149">filed a bug report</a> and submitted a <a href>proof-of-concept pull request</a> to bring attention to the problem and solicit feedback from Kubernetes and OpenShift DNS experts. It might be necessary to submit a <a href="https://github.com/kubernetes/enhancements/blob/master/keps/README.md">Kubernetes Enhancement Proposal</a> (KEP), but that seems (as a Kubernetes outsider) a long and windy road to landing what is a conceptually small change.</p>
 </div>
 <div id="postFooter">
     <div id="recent">
 Recent posts:
 <ul>
+    
+        <li>
+            <a href="../posts/2021-07-21-freeipa-on-openshift-update.html">FreeIPA on OpenShift: July 2021 update</a>
+        </li>
     
         <li>
             <a href="../posts/2021-06-29-openshift-live-changes.html">Live-testing changes in OpenShift clusters</a>
@@ -225,10 +229,6 @@ Recent posts:
     
         <li>
             <a href="../posts/2021-03-30-openshift-cgroupv2-systemd.html">systemd containers on OpenShift with cgroups v2</a>
-        </li>
-    
-        <li>
-            <a href="../posts/2021-03-10-openshift-user-namespace-multi-user.html">Multiple users in user namespaces on OpenShift</a>
         </li>
     
 </ul>

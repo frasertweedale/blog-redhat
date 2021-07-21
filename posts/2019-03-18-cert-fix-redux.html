@@ -28,7 +28,7 @@
     <h1 id="cert-fix-redux"><code>cert-fix</code> redux</h1>
 <p><a href="2019-02-28-dogtag-cert-fix.html">A few weeks ago I analysed</a> the Dogtag <code>pki-server cert-fix</code> tool, which is intended to assist with recovery in scenarios where expired certificates inhibit Dogtag’s normal operation. Unfortunately, there were some flawed assumptions and feature gaps that limited the usefulness of the tool, especially in FreeIPA contexts.</p>
 <p>In this post, I provide an update on changes that are being made to the tool to address those shortcomings.</p>
-<h2 id="recap">Recap <a href="#recap">§</a></h2>
+<h2 id="recap">Recap <a href="#recap" class="section">§</a></h2>
 <p>Recapping the shortcomings in brief:</p>
 <ol type="1">
 <li>When TLS client certificate authentication is used to authenticate to Dogtag (the default for FreeIPA), and expired <code>subsystem</code> certificate causes authentication failure and Dogtag cannot start.</li>
@@ -37,19 +37,19 @@
 <li>Expired CA certificate is not handled. Due to longer validity periods, and externally-signed CA certificates expiring at different times from Dogtag system certificates, this scenario is less common, but it still occurs.</li>
 <li>The need to renew non-system certificates. Apart from system certificates, in order for correct operation of Dogtag it may be necessary to renew some other certificates, such as an expired LDAP service certificate, or an expired agent certificate (e.g. <code>IPA RA</code>). <code>cert-fix</code> did not provide a way to do this.</li>
 </ol>
-<h2 id="resolving-the-ldap-related-issues-issues-1-and-2">Resolving the LDAP-related issues (issues #1 and #2) <a href="#resolving-the-ldap-related-issues-issues-1-and-2">§</a></h2>
+<h2 id="resolving-the-ldap-related-issues-issues-1-and-2">Resolving the LDAP-related issues (issues #1 and #2) <a href="#resolving-the-ldap-related-issues-issues-1-and-2" class="section">§</a></h2>
 <p><code>cert-fix</code> now switches the deployment to use password authentication to LDAP, over an insecure connection on port 389. The original database configuration is restored when <code>cert-fix</code> finishes.</p>
 <p>The <code>subsystem</code> certificate is used by Dogtag to authenticate to LDAP. Switching to password authentication works around the expired <code>subsystem</code> certificate. Furthermore if the <code>subsystem</code> certificate gets renewed, the new certificate gets imported into the <code>pkidbuser</code> LDAP entry so that authentication will work (389 DS requires an exact certificate match in the <code>userCertificate</code> attribute of the user).</p>
 <p>If the LDAP service certificate is expired, this procedure works around that but <em>does not renew it</em>. This is problem #3, and is addressed separately.</p>
 <p>Switching Dogtag to password authentication to LDAP means resetting the <code>pkidbuser</code> account password. We use the <code>ldappasswd</code> program to do this. The LDAP <em>password modify</em> extended operation requires confientiality (i.e. TLS or STARTTLS); an expired LDAP service certificate inhibits this. Therefore we use LDAPI and autobind. The LDAPI socket is specified via the <code>--ldapi-socket</code> option.</p>
 <p>FreeIPA always configures LDAP and <code>root</code> autobind to the <code>cn=Directory Manager</code> LDAP account. For standalone Dogtag installations these may need to be configured before runnning <code>cert-fix</code>.</p>
-<h2 id="resolving-expired-agent-certificate-issue-3">Resolving expired agent certificate (issue #3) <a href="#resolving-expired-agent-certificate-issue-3">§</a></h2>
+<h2 id="resolving-expired-agent-certificate-issue-3">Resolving expired agent certificate (issue #3) <a href="#resolving-expired-agent-certificate-issue-3" class="section">§</a></h2>
 <p>Instead of using the certificate to authenticate the agent, reset the password of the agent account and use that password to authenticate the agent. The password is randomly generated and forgotten after <code>cert-fix</code> terminates.</p>
 <p>The agent account to use is now specified via the <code>--agent-uid</code> option. NSSDB-related options for specifying the agent certificate and NSSDB passphrase have been removed.</p>
-<h2 id="renewing-other-certificates-issue-5">Renewing other certificates (issue #5) <a href="#renewing-other-certificates-issue-5">§</a></h2>
+<h2 id="renewing-other-certificates-issue-5">Renewing other certificates (issue #5) <a href="#renewing-other-certificates-issue-5" class="section">§</a></h2>
 <p><code>cert-fix</code> learned the <code>--extra-cert</code> option, which gives the serial number of an extra certificate to renew. The option can be given multiple times to specify multiple certificates. Each certificate gets renewed and output in <code>/etc/pki/&lt;instance-dir&gt;/certs/&lt;serial&gt;-renewed.crt</code>. If a non-existing serial number is specified, an error is printed but processing continues.</p>
 <p>This facility allows operators (or wrapper tools) to renew other essential certificates alongside the Dogtag system certificates. Further actions are needed to put those new certificates in the right places. But it is fair, in order to keep to keep the <code>cert-fix</code> tool simple, to put this burden back on the operator. In any case, we intend to write a supplementary tool for FreeIPA that wraps <code>cert-fix</code> and takes care of working out which extra certificates to renew, and putting them in the right places.</p>
-<h2 id="new-or-changed-assumptions">New or changed assumptions <a href="#new-or-changed-assumptions">§</a></h2>
+<h2 id="new-or-changed-assumptions">New or changed assumptions <a href="#new-or-changed-assumptions" class="section">§</a></h2>
 <p>The changes dicsussed above abolish some assumptions that were previously made by <code>cert-fix</code>, and establish some new assumptions.</p>
 <p>Absolished:</p>
 <ul>
@@ -65,7 +65,7 @@
 <li>If Dogtag was configured to use TLS certificate authentication to bind to LDAP, the password on the <code>pkidbuser</code> account will be reset. (If password authentication was already used, the password does not get reset).</li>
 <li>LDAPI (ldappasswd) and need to be root</li>
 </ul>
-<h2 id="demo">Demo <a href="#demo">§</a></h2>
+<h2 id="demo">Demo <a href="#demo" class="section">§</a></h2>
 <p>Here I’ll put the full command and command output for an execution of the <code>cert-fix</code> tool, and break it up with commentary. I will renew the <code>subsystem</code> certificate, and additionally the certificate with serial number 29 (which happens to be the LDAP certificate):</p>
 <pre><code>[root@f27-1 ~]# pki-server cert-fix \
     --agent-uid admin \
@@ -132,7 +132,7 @@ INFO: Restoring previous LDAP configuration
 INFO: Starting the instance with renewed certs</code></pre>
 <p>Self-tests are re-enabled and the previous LDAP configuration restored. Python <em>context managers</em> are used to ensure that these steps are performed even when a fatal error occurs.</p>
 <p>The end.</p>
-<h2 id="conclusion">Conclusion <a href="#conclusion">§</a></h2>
+<h2 id="conclusion">Conclusion <a href="#conclusion" class="section">§</a></h2>
 <p>The problem of an expired CA certificate (issue <strong>#4</strong>) has not yet been addressed. It is not the highest priority but it would be nice to have. It is still believed to be a low-effort change so it is likely to be implemented at some stage.</p>
 <p>More extensive testing of the tool is needed for renewing system certificates for other Dogtag subsystems—in particular the KRA subsystem.</p>
 <p>The enhancements discussed in this post make the <code>cert-fix</code> tool a viable MVP for expired certificate recovery without time-travel. The enhancements are still in review, yet to be merged. That will hopefully happen soon (within a day or so of this post). We are also making a significant effort to backport <code>cert-fix</code> to some earlier branches and make it available on older releases.</p>
@@ -142,6 +142,10 @@ INFO: Starting the instance with renewed certs</code></pre>
     <div id="recent">
 Recent posts:
 <ul>
+    
+        <li>
+            <a href="../posts/2021-07-21-freeipa-on-openshift-update.html">FreeIPA on OpenShift: July 2021 update</a>
+        </li>
     
         <li>
             <a href="../posts/2021-06-29-openshift-live-changes.html">Live-testing changes in OpenShift clusters</a>
@@ -157,10 +161,6 @@ Recent posts:
     
         <li>
             <a href="../posts/2021-03-30-openshift-cgroupv2-systemd.html">systemd containers on OpenShift with cgroups v2</a>
-        </li>
-    
-        <li>
-            <a href="../posts/2021-03-10-openshift-user-namespace-multi-user.html">Multiple users in user namespaces on OpenShift</a>
         </li>
     
 </ul>

@@ -28,14 +28,14 @@
     <h1 id="designing-revocation-self-service-for-freeipa">Designing revocation self-service for FreeIPA</h1>
 <p>The FreeIPA team recently received a <a href="https://bugzilla.redhat.com/show_bug.cgi?id=1730363">feature request</a> for self-service certificate revocation. At the moment, revocation must be performed by a privileged user with the <code>Revoke Certificate</code> permission. The one exception to this is that a host principal can revoke certificates for the same hostname. There are no expections when it comes to user certificates.</p>
 <p>In this post I’ll discuss revocation self-service and how it might work in FreeIPA.</p>
-<h2 id="requirements-and-approaches-for-self-service">Requirements and approaches for self-service <a href="#requirements-and-approaches-for-self-service">§</a></h2>
+<h2 id="requirements-and-approaches-for-self-service">Requirements and approaches for self-service <a href="#requirements-and-approaches-for-self-service" class="section">§</a></h2>
 <p>It is critical to avoid scenarios where a user could revoke a certificate they should not be able to revoke; this would constitute a Denial-of-Service (DoS) vulnerability. Therefore FreeIPA must establish that the principal issuing the revocation request has authority to revoke the nominated certificate. Conceptually, there are several ways we might establish that authority. Each scenario has trade-offs, either fundamental to the scenario or specific to FreeIPA.</p>
-<h3 id="proof-of-possession">Proof of possession <a href="#proof-of-possession">§</a></h3>
+<h3 id="proof-of-possession">Proof of possession <a href="#proof-of-possession" class="section">§</a></h3>
 <p>Proof of possession (PoP) establishes a cryptographic proof that the operator possess the private key for the certificate to be revoked. Either they are rightful subject of the certificate, in which case it is reasonable to service their revocation request. Or they have compromised the subject’s key, in which case it is reasonable to revoke it anyway.</p>
 <p>A PoP-based revocation system must defeat replay attacks. Using a nonce would complicate the client-server interaction—the client would first have to request the nonce, and the server would have to remember it. Instead of a nonce, it would be sufficient for the client to sign a timestamped statement of intent to revoke.</p>
 <p>The main issue with PoP-based revocation is that the user interface must consider how to access the key. The UI must learn options related to key or certificate database paths, passphrases, and so on. This is a significant burden for users.</p>
 <p>Finally, there is an important use case this scenario does not handle: when the user no longer has control of their private key (they deleted it, forgot the passphrase, etc.)</p>
-<h3 id="certificate-inspection">Certificate inspection <a href="#certificate-inspection">§</a></h3>
+<h3 id="certificate-inspection">Certificate inspection <a href="#certificate-inspection" class="section">§</a></h3>
 <p>The revocation command could inspect the certificate and decide if it “belongs to” the requestor. This must be done with extreme care, because a false-positive is equivalent to a DoS vulnerability. For example, merely checking that the UID or CN attribute in the certificate Subject DN corresponds to the requestor is inadequate.</p>
 <p>It is hard to attain 100% certainty, especially considering administrators can create custom certificate profiles. But there are some options that seem safe enough to implement. It should be reasonable to authorise the revocation if:</p>
 <ul>
@@ -49,16 +49,20 @@
 </ul>
 <p>The CSR caveat presents a burden to users: they must lovingly handcraft their CSR to include the relevant data. To say the tools have poor usability in this area is an understatement. But the SAN options are supported out of the box by the default user certificate profile <code>IECUserRoles</code> (don’t ask about the name).</p>
 <p>On the other hand, the Subject DN approach requires a custom profile but nothing special needs to go in the CSR. A Subject DN of <code>CN=username</code> will suffice.</p>
-<h3 id="audit-based-approach">Audit-based approach <a href="#audit-based-approach">§</a></h3>
+<h3 id="audit-based-approach">Audit-based approach <a href="#audit-based-approach" class="section">§</a></h3>
 <p>When issuing a certificate via <code>ipa cert-request</code>, there are two principals at play: the <em>operator</em> who is performing the request, and the <em>subject</em> principal who the certificate is for. (These could be the same principal). Subject to organisational security policy, it may be reasonable to revoke a certificate if <em>either</em> of these principals requests it.</p>
 <p>Unfortunately, in FreeIPA today we do not record these data in a way that is useful to make a revocation authorisation decision. In the future, when FreeIPA authenticates to Dogtag using GSS-API and a Kerberos proxy credential for the operator (instead of the IPA RA agent credential we use today), we will be able to store the needed data. Then it may be feasible to implement this approach. Until then, forget about it.</p>
-<h2 id="the-way-forward">The way forward <a href="#the-way-forward">§</a></h2>
+<h2 id="the-way-forward">The way forward <a href="#the-way-forward" class="section">§</a></h2>
 <p>So, which way will we go? Nothing is decided yet (including <em>whether to implement this at all</em>). If we go ahead, I would like to implement the <em>certificate inspection</em> approach. Proof of possession is tractable, but a lot of extra complexity and probably a usability nightmare for users. The audit-based approach is infeasible at this time, though it is a solid option if/when the right pieces are in place. Certificate inspection carries a risk of DoS exposure through revocation of inappropriate certificates, but if we carefully choose which data to inspect and match, the risk is minimised while achieving satisfactory usability.</p>
 </div>
 <div id="postFooter">
     <div id="recent">
 Recent posts:
 <ul>
+    
+        <li>
+            <a href="../posts/2021-07-21-freeipa-on-openshift-update.html">FreeIPA on OpenShift: July 2021 update</a>
+        </li>
     
         <li>
             <a href="../posts/2021-06-29-openshift-live-changes.html">Live-testing changes in OpenShift clusters</a>
@@ -74,10 +78,6 @@ Recent posts:
     
         <li>
             <a href="../posts/2021-03-30-openshift-cgroupv2-systemd.html">systemd containers on OpenShift with cgroups v2</a>
-        </li>
-    
-        <li>
-            <a href="../posts/2021-03-10-openshift-user-namespace-multi-user.html">Multiple users in user namespaces on OpenShift</a>
         </li>
     
 </ul>

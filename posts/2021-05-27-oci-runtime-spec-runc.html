@@ -29,7 +29,7 @@
 <p>In recent posts I explored how to use user namespaces and cgroups v2 on OpenShift. My main objective is to run <em>systemd</em>-based workloads in user namespaces that map to unprivileged users on the host. This is a prerequisite to running <a href="https://www.freeipa.org/page/Main_Page">FreeIPA</a> <em>securely</em> in OpenShift, and supporting multitenancy.</p>
 <p>Independently, user namespaces and cgroups v2 already work well in OpenShift. But for <em>systemd</em> support there is a critical gap: the pod’s cgroup directory (mounted as <code>/sys/fs/cgroup/</code> in the container) is owned by <code>root</code>—the <em>host’s</em> UID 0, which is unmapped in the pod’s user namespace. As a consequence, the container’s main process (<code>/sbin/init</code>, which is <em>systemd</em>) cannot manage cgroups, and terminates.</p>
 <p>To understand how to close this gap, I needed to become familiar with the low-level container runtime behaviour. This post discusses the relationship between various container runtime components and demonstrates how to use <code>runc</code> directly to create and run containers. I also outline some possible approaches to solving the cgroup ownership issue.</p>
-<h2 id="podman-kubernetes-cri-cri-o-runc-oh-my">Podman, Kubernetes, CRI, CRI-O, runc, oh my! <a href="#podman-kubernetes-cri-cri-o-runc-oh-my">§</a></h2>
+<h2 id="podman-kubernetes-cri-cri-o-runc-oh-my">Podman, Kubernetes, CRI, CRI-O, runc, oh my! <a href="#podman-kubernetes-cri-cri-o-runc-oh-my" class="section">§</a></h2>
 <p>What actually happens when you “run a container”. Abstractly, a container runtime sets up a <em>sandbox</em> and runs a process in it. The sandbox consists of a set of namespaces (PID, UTS, mount, cgroup, user, network, etc), and a restricted view of a filesystem (via <code>chroot(2)</code> or similar mechanism).</p>
 <p>There are several different container runtimes in widespread use. In fact, there are several different <em>layers</em> of container runtime with different purposes:</p>
 <ul>
@@ -38,7 +38,7 @@
 <li><p>The <em>Open Container Initiative (OCI)</em> <a href="https://github.com/opencontainers/runtime-spec">runtime spec</a> defines a low-level container runtime interface. Implementations include <a href="https://github.com/opencontainers/runc"><code>runc</code></a> and <a href="https://github.com/containers/crun"><em>crun</em></a>. OCI runtimes are designed to be used by higher-level container runtimes. They are not friendly for humans to use directly.</p></li>
 </ul>
 <p>Running a container usually involves a higher-level runtime <em>and</em> a low-level runtime. For example, Podman uses an OCI runtime; crun by default on Fedora but <code>runc</code> works fine too. OpenShift (which is built on Kubernetes) uses CRI-O, which in turn uses <code>runc</code> (CRI-O itself can use any OCI runtime).</p>
-<h3 id="division-of-responsibilities">Division of responsibilities <a href="#division-of-responsibilities">§</a></h3>
+<h3 id="division-of-responsibilities">Division of responsibilities <a href="#division-of-responsibilities" class="section">§</a></h3>
 <p>So, what are responsibilities of the higher-level runtime compared to the OCI (or other low-level) runtime? In general the high-level runtime is responsible for:</p>
 <ul>
 <li><p>Image management (pulling layers, preparing overlay filesystem)</p></li>
@@ -59,12 +59,12 @@
 <p>I mentioned several features specific to Linux in the list above. The OCI Runtime Specification also specifies Windows, Solaris and VM-based workloads. This post assumes a Linux workload, so many details are Linux-specific.</p>
 </div>
 <p>The above list is just a rough guide and not absolute. Depending on use case the high-level runtime might perform some of the low-level steps. For example, if container networking is required, Podman might create the network namespace, setting up devices and routing. Then, instead of asking the OCI runtime to create a network namespace, it tells the runtime to enter the existing namespace.</p>
-<h2 id="running-containers-via-runc">Running containers via <code>runc</code> <a href="#running-containers-via-runc">§</a></h2>
+<h2 id="running-containers-via-runc">Running containers via <code>runc</code> <a href="#running-containers-via-runc" class="section">§</a></h2>
 <p>Because our effort is targeting OpenShift, the rest of this post mainly deals with <code>runc</code>.</p>
 <div class="note">
 <p>The functions demonstrated in this post were performed using <code>runc</code> version 1.0.0-rc95+dev, which I built from source (commit <code>19d75e1c</code>). The Fedora 33 and 34 repositories offer <code>runc</code> version 1.0.0-rc93, which <strong>does not work</strong>.</p>
 </div>
-<h3 id="clone-and-build">Clone and build <a href="#clone-and-build">§</a></h3>
+<h3 id="clone-and-build">Clone and build <a href="#clone-and-build" class="section">§</a></h3>
 <p>Install the Go compiler and <em>libseccomp</em> development headers:</p>
 <pre class="shell"><code>% sudo dnf -y --quiet install libseccomp-devel
 
@@ -85,7 +85,7 @@ commit: v1.0.0-rc95-31-g19d75e1c
 spec: 1.0.2-dev
 go: go1.16.3
 libseccomp: 2.5.0</code></pre>
-<h3 id="prepare-root-filesystem">Prepare root filesystem <a href="#prepare-root-filesystem">§</a></h3>
+<h3 id="prepare-root-filesystem">Prepare root filesystem <a href="#prepare-root-filesystem" class="section">§</a></h3>
 <p>I want to create a filesystem from my <em>systemd</em> based <a href="https://quay.io/repository/ftweedal/test-nginx"><code>test-nginx</code></a> container image. To avoid configuring overlay filesystems myself, I used Podman to create a container, then exported the whole container filesystem, via <code>tar(1)</code>, to a local directory:</p>
 <pre class="shell"><code>% podman create --quiet quay.io/ftweedal/test-nginx
 e97930b3…
@@ -94,7 +94,7 @@ e97930b3…
 % ls rootfs
 bin  dev home lib64      media opt  root sbin sys usr
 boot etc lib  lost+found mnt   proc run  srv  tmp var</code></pre>
-<h3 id="create-config.json">Create <code>config.json</code> <a href="#create-config.json">§</a></h3>
+<h3 id="create-config.json">Create <code>config.json</code> <a href="#create-config.json" class="section">§</a></h3>
 <p>OCI runtimes read the container configuration from <code>config.json</code> in the <em>bundle</em> directory. (<code>runc</code> uses the current directory as the default bundle directory). The <code>runc spec</code> command generates a sample <code>config.json</code> which can serve as a starting point:</p>
 <pre class="shell"><code>% ./runc spec --rootless
 % file config.json
@@ -108,7 +108,7 @@ config.json: JSON data
 <div class="notes">
 <p><code>jq(1)</code> cannot operate on JSON files in situ, so you first have to copy or move the input file. The <a href="https://linux.die.net/man/1/sponge"><code>sponge(1)</code></a> command, provided by the <em>moreutils</em> package, offers an alternative approach.</p>
 </div>
-<h3 id="run-container">Run container <a href="#run-container">§</a></h3>
+<h3 id="run-container">Run container <a href="#run-container" class="section">§</a></h3>
 <p>Now we can try and run the container:</p>
 <pre class="shell"><code>% ./runc --systemd-cgroup run test
 Mount failed for selinuxfs on /sys/fs/selinux:  No such file or directory
@@ -182,7 +182,7 @@ Connection: keep-alive
 ETag: &quot;5f1f5341-15bc&quot;
 Accept-Ranges: bytes</code></pre>
 <p>At this point we cannot access <em>nginx</em> from outside the container. That’s fine; I don’t need to work out how to do that. Not today, anyhow.</p>
-<h2 id="how-runc-creates-cgroups">How <code>runc</code> creates cgroups <a href="#how-runc-creates-cgroups">§</a></h2>
+<h2 id="how-runc-creates-cgroups">How <code>runc</code> creates cgroups <a href="#how-runc-creates-cgroups" class="section">§</a></h2>
 <p><code>runc</code> manages container cgroups via the host’s <em>systemd</em> service. Specifically, it communicates with <em>systemd</em> over DBus to create a <a href="https://www.freedesktop.org/wiki/Software/systemd/ControlGroupInterface/">transient scope</a> for the container. Then it binds the container cgroup namespace to this new scope.</p>
 <p>Observe that the inode of <code>/sys/fs/cgroup/</code> in the container is the same as the scope created for the container by <em>systemd</em> on the host:</p>
 <pre class="shell"><code>% ./runc exec test ls -aldi /sys/fs/cgroup
@@ -198,7 +198,7 @@ Accept-Ranges: bytes</code></pre>
 % cat /proc/186718/uid_map
          0       1000          1
          1     100000      65536</code></pre>
-<h2 id="next-steps">Next steps <a href="#next-steps">§</a></h2>
+<h2 id="next-steps">Next steps <a href="#next-steps" class="section">§</a></h2>
 <p><em>systemd</em> is running properly in the container, but <code>root</code> in the container is mapped to my main user account. The container is not as isolated as I would like it to be. A partial sandbox escape could lead to the containerised process(es) messing with local files, or other processes owned by my user (including other containers).</p>
 <p>User-namespaced containers in OpenShift (via CRI-O annotations) are allocated non-overlapping host ID ranges. All the host IDs are essentially anonymous. I confirmed this in <a href="2021-03-10-openshift-user-namespace-multi-user.html">a previous blog post</a>. That is good! But the container’s cgroup is owned by the <em>host’s</em> UID 0, which is unmapped in the container. <em>systemd</em>-based workloads cannot run because the container cannot write to its cgroupfs.</p>
 <p>Therefore, the next steps in my investigation are:</p>
@@ -217,6 +217,10 @@ Recent posts:
 <ul>
     
         <li>
+            <a href="../posts/2021-07-21-freeipa-on-openshift-update.html">FreeIPA on OpenShift: July 2021 update</a>
+        </li>
+    
+        <li>
             <a href="../posts/2021-06-29-openshift-live-changes.html">Live-testing changes in OpenShift clusters</a>
         </li>
     
@@ -230,10 +234,6 @@ Recent posts:
     
         <li>
             <a href="../posts/2021-03-30-openshift-cgroupv2-systemd.html">systemd containers on OpenShift with cgroups v2</a>
-        </li>
-    
-        <li>
-            <a href="../posts/2021-03-10-openshift-user-namespace-multi-user.html">Multiple users in user namespaces on OpenShift</a>
         </li>
     
 </ul>

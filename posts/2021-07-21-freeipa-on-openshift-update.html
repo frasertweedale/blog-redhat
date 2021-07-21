@@ -1,0 +1,114 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+    <head>
+        <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+        <title>Fraser's IdM Blog - FreeIPA on OpenShift: July 2021 update</title>
+        <link rel="stylesheet" type="text/css" href="../css/default.css" />
+    </head>
+    <body>
+        <div id="header">
+            <div id="logo">
+                <a href="../">Fraser's IdM Blog</a>
+            </div>
+            <div id="navigation">
+                <a href="../">Home</a>
+                <a href="../archive.html">Archive</a>
+            </div>
+        </div>
+
+        <div id="content">
+            <div class="info">
+    
+    Tags: <a title="All pages tagged 'openshift'." href="../tags/openshift.html">openshift</a>, <a title="All pages tagged 'freeipa'." href="../tags/freeipa.html">freeipa</a>, <a title="All pages tagged 'containers'." href="../tags/containers.html">containers</a>
+    
+</div>
+
+<div id="postContent">
+    <h1 id="freeipa-on-openshift-july-2021-update">FreeIPA on OpenShift: July 2021 update</h1>
+<p>Over the last year I’ve done a lot of investigations into OpenShift, and container runtimes more generally. The driver of this work is the FreeIPA on OpenShift project (known within Red Hat as IDMOCP). I published the results of my investigations in numerous blog posts, but I have not yet written much about <em>why</em> we are doing this at all.</p>
+<p>So it’s time to fix that. In this short post I discuss why we want FreeIPA on OpenShift, and the major decision that put us on our current implementation path.</p>
+<p>FreeIPA is a centralised identity management system for the enterprise. You enrol users, hosts and services, and configure access policies and other security mechanisms. The system provides authentication and policy enforcement mechanisms. It is similar to Microsoft Active Directory (and indeed can integrate with AD). FreeIPA is a complex system with lots of components including:</p>
+<ul>
+<li>LDAP server (389 DS / RHDS)</li>
+<li>Kerberos KDC (MIT Kerberos)</li>
+<li>Certificate authority (Dogtag / RHCS)</li>
+<li>HTTP API (Apache httpd and a lot of Python code)</li>
+<li>Host client daemon (SSSD)</li>
+<li>several smaller supporting services</li>
+<li>installation and administration tools</li>
+</ul>
+<p>FreeIPA is available on Fedora and RHEL. You install the RPMs and the installation program configures the system. It is intended to be deployed on a dedicated machine (VM or bare metal).</p>
+<p>We are motivated to support FreeIPA on OpenShift for several reasons, including:</p>
+<ul>
+<li><p>Easily providing identity services to applications running on OpenShift.</p></li>
+<li><p>Leveraging OpenShift and Kubernetes orchestration, scalaing and management features to improve robustness and reduce management overhead of FreeIPA deployments.</p></li>
+<li><p>Offering FreeIPA, hosted on OpenShift, as a managed service.</p></li>
+</ul>
+<p>Understandably, moving such an application to OpenShift is a non-trivial task. At the beginning of this effort, we had to decide the main implementation approach. There were three options:</p>
+<ol type="1">
+<li><p>Put the whole system in a single “monolithic container”, with systemd as the init process. At the time (and still today) OpenShift only supports running systemd workloads in privileged containers, which is not acceptable. The runtime needs to evolve to support this use case. Work on <em>some</em> of the missing features (such as user namespaces and cgroups v2) was already underway.</p></li>
+<li><p>Deploy different parts of the FreeIPA system in different containers, running unprivileged. This is a fundamental shift from the current architecture and a huge up-front engineering effort. Also, the current architecture has to be maintained and supported for a long time (&gt;10 years). So this approach brings a substantial ongoing cost in maintaining two architectures of the same application. On a technical level, this approach is feasible today.</p></li>
+<li><p>Use a VM-based workload (Kata / OpenShift Sandboxed Containers). This option probably has the lowest up-front and ongoing engineering costs. But it requires a bare metal cluster or nested virtualisation, which is not available from most cloud providers. By extension, <a href="https://www.openshift.com/products/dedicated/">OpenShift Dedicated (OSD)</a> also does not supported it. Red Hat managed services run on OSD. Offering a managed service is one of the motivators of our effort. So at this time, VM-based workloads are not an option for us.</p></li>
+</ol>
+<p>As a small team, and considering the business reality of the existing offering as part of RHEL, we decided to pursue the “monolithic container” approach. We are depending on the OpenShift runtime evolving to a point where it can support fully isolated systemd-based workloads. And that is why I have invested much of the last 12 months in understanding container runtimes and pushing their limits.</p>
+<p>Our approach is not “cloud native” and indeed many people have expressed alarm or confusion when we tell them what we are doing. Certainly, if we were designing FreeIPA from the ground up in today’s world, it would look very different from the current architecture. But this is the reality: if you want customers to bring their mature, complex applications onto OpenShift, don’t expect them to spend big money and assume big risk to rearchitect the application to fit the new environment.</p>
+<p>What customers actually need is to be able to bring the application across more or less as-is. Then they can realise the benefits (automation, monitoring, scaling, etc) <em>incrementally</em>, with lower up-front costs and less risk.</p>
+<p>If my claims are correct, then proper systemd workload support in OpenShift will be a Very Big Deal. But even if I’m wrong, it is still critical for our FreeIPA on OpenShift effort. And it is achievable. In my next post I’ll demonstrate my working proof of concept for user-namespaced systemd workloads on OpenShift.</p>
+</div>
+<div id="postFooter">
+    <div id="recent">
+Recent posts:
+<ul>
+    
+        <li>
+            <a href="../posts/2021-07-21-freeipa-on-openshift-update.html">FreeIPA on OpenShift: July 2021 update</a>
+        </li>
+    
+        <li>
+            <a href="../posts/2021-06-29-openshift-live-changes.html">Live-testing changes in OpenShift clusters</a>
+        </li>
+    
+        <li>
+            <a href="../posts/2021-06-09-systemd-cgroups-subuid.html">systemd, cgroups and subuid ranges</a>
+        </li>
+    
+        <li>
+            <a href="../posts/2021-05-27-oci-runtime-spec-runc.html">Using <code>runc</code> to explore the OCI Runtime Specification</a>
+        </li>
+    
+        <li>
+            <a href="../posts/2021-03-30-openshift-cgroupv2-systemd.html">systemd containers on OpenShift with cgroups v2</a>
+        </li>
+    
+</ul>
+
+<div id="recentLinks">
+    <a type="application/atom+xml" href="../atom.xml">Atom feed</a>
+     <!-- em space -->
+    <a href="../archive.html">All posts…</a>
+</div>
+
+</div>
+
+    <div id="license">
+    <a rel="license" href="https://creativecommons.org/licenses/by/4.0/">
+        <img alt="Creative Commons License" style="border-width:0" src="https://licensebuttons.net/l/by/4.0/88x31.png">
+    </a>
+    <br />
+    Except where otherwise noted, this work is licensed under a
+    <a rel="license" href="https://creativecommons.org/licenses/by/4.0/">
+        Creative Commons Attribution 4.0 International License
+    </a>.
+</div>
+
+</div>
+
+        </div>
+        <div class="clear"></div>
+        <div id="footer">
+            Generated by
+            <a href="https://jaspervdj.be/hakyll">Hakyll</a>
+        </div>
+    </body>
+</html>

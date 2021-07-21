@@ -29,7 +29,7 @@
 <p>For containerised applications that require persistent storage, the Kubernetes <code>PersistentVolumeClaim</code> (PVC) object provides the link between a <code>PersistentVolume</code> (PV) and the pod. When scaling such an application or even deploying it the first time, the operator (human or otherwise) has to create the PVC; the pod specification can then refer to it.</p>
 <p>For example, a <code>StatefulSet</code> object can optionally specify <code>volumeClaimTemplates</code> alongside the pod <code>template</code>. As the application creates pods, so will it create the associated PVCs according to the defined templates.</p>
 <p>But PVCs need PVs to bind to. Can these also be created on the fly? And if so, how can we abstract over the details of the underlying storage provider(s), which may vary from cluster to cluster? In this post I provide an overview of <em>storage classes</em>, which solve these problems.</p>
-<h2 id="creating-volumes">Creating volumes <a href="#creating-volumes">§</a></h2>
+<h2 id="creating-volumes">Creating volumes <a href="#creating-volumes" class="section">§</a></h2>
 <p>A cluster can provide a variety of types of volumes: Ceph, NFS, <code>hostPath</code>, iSCSI and several more. Storage types of the infrastructure the cluster is deployed in may also be available, e.g. AWS EBS, Azure Disk, GCE PersistentDisk (PD), Cinder (OpenStack), etc.</p>
 <p>Creating a <code>PersistentVolume</code> requires knowing about what volume types are supported, and possibly additional details about that storage type. For example, to create a PV based on a GCE PD:</p>
 <div class="sourceCode" id="cb1"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
@@ -59,7 +59,7 @@
 <li>knowing the name and region/zones of the PD to use</li>
 </ul>
 <p>Having to know these details and encoding them into an application’s deployment manifests imposes a greater burden on administrators, or necessitates more complex operators, or results in a less portable application. Or some combination of those outcomes.</p>
-<h2 id="storage-classes">Storage classes <a href="#storage-classes">§</a></h2>
+<h2 id="storage-classes">Storage classes <a href="#storage-classes" class="section">§</a></h2>
 <p>What we really want is to abstract over the storage implementations. We want to able to specify some high-level characteristics of the storage (e.g. block or file, fast or slow?). This is what <em>storage classes</em> provide. Then when we create a PVC, we can specify the desired capacity and class, and the cluster should <em>dynamically provision</em> an appropriate volume. As a result, applications are simpler to deploy and more portable.</p>
 <p>To see the storage classes available in a cluster:</p>
 <pre><code>ftweedal% oc get storageclass
@@ -88,7 +88,7 @@ standard (default)   kubernetes.io/cinder   Delete          WaitForFirstConsumer
 <span id="cb4-8"><a href="#cb4-8" aria-hidden="true"></a><span class="at">  </span><span class="fu">resources</span><span class="kw">:</span></span>
 <span id="cb4-9"><a href="#cb4-9" aria-hidden="true"></a><span class="at">    </span><span class="fu">requests</span><span class="kw">:</span></span>
 <span id="cb4-10"><a href="#cb4-10" aria-hidden="true"></a><span class="at">      </span><span class="fu">storage</span><span class="kw">:</span><span class="at"> 10Gi</span></span></code></pre></div>
-<h2 id="dynamic-provisioning-in-action">Dynamic provisioning in action <a href="#dynamic-provisioning-in-action">§</a></h2>
+<h2 id="dynamic-provisioning-in-action">Dynamic provisioning in action <a href="#dynamic-provisioning-in-action" class="section">§</a></h2>
 <p>Let’s see what actually happens when we use dynamic provisioning. We will observe what objects are created and how their status changes as we create, use and delete a PVC that uses the default storage class.</p>
 <p>First let’s see what PVs exist:</p>
 <pre><code>ftweedal% oc get pv
@@ -164,7 +164,7 @@ ftweedal% oc get pv
 NAME                                       CAPACITY   ACCESS MODES   RECLAIM POLICY   STATUS    CLAIM                                             STORAGECLASS   REASON    AGE
 pvc-d3bc7c81-8a24-4318-a914-296dbdc5ec3f   100Gi      RWO            Delete           Bound     openshift-image-registry/image-registry-storage   standard                 7d23h</code></pre>
 <p><code>pvc-26d82d50-8e66-4938-bdee-f28ff2bcb49c</code> went away, as expected.</p>
-<h2 id="conclusion">Conclusion <a href="#conclusion">§</a></h2>
+<h2 id="conclusion">Conclusion <a href="#conclusion" class="section">§</a></h2>
 <p>As we work toward operationalising FreeIPA in OpenShift, I am interested in how we can use storage classes to make for a smooth deployment across different environments and especially those for which OpenShift Dedicated is available.</p>
 <p>I also need to learn more about the best practices or common idioms for representing in storage classes the application suitability (e.g. file versus block storage) or performance characteristics of supported volume types in a cluster. To make it a bit more concrete, consider that for performance reasons we might require low-latency/high-throughput block storage for the 389 DS LDAP database storage. How can we express this abstract requirement such that we get a satisfactory result across a variety of “clouds” with no administrator effort? Hopefully storage classes are the answer. But if they are not the whole solution, from what I have learned so far I have a strong feeling that they will be a bit part of the solution.</p>
 </div>
@@ -172,6 +172,10 @@ pvc-d3bc7c81-8a24-4318-a914-296dbdc5ec3f   100Gi      RWO            Delete     
     <div id="recent">
 Recent posts:
 <ul>
+    
+        <li>
+            <a href="../posts/2021-07-21-freeipa-on-openshift-update.html">FreeIPA on OpenShift: July 2021 update</a>
+        </li>
     
         <li>
             <a href="../posts/2021-06-29-openshift-live-changes.html">Live-testing changes in OpenShift clusters</a>
@@ -187,10 +191,6 @@ Recent posts:
     
         <li>
             <a href="../posts/2021-03-30-openshift-cgroupv2-systemd.html">systemd containers on OpenShift with cgroups v2</a>
-        </li>
-    
-        <li>
-            <a href="../posts/2021-03-10-openshift-user-namespace-multi-user.html">Multiple users in user namespaces on OpenShift</a>
         </li>
     
 </ul>

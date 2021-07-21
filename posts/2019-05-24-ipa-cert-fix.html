@@ -28,7 +28,7 @@
     <h1 id="fixing-expired-system-certificates-in-freeipa">Fixing expired system certificates in FreeIPA</h1>
 <p>In previous posts I outlined and demonstrated the <code>pki-server cert-fix</code> tool. This tool is part of Dogtag PKI. I also discussed what additional functionality would be needed to successfully use this tool in a FreeIPA environment.</p>
 <p>This post details the result of the effort to make <code>cert-fix</code> useful for FreeIPA administrators. We implemented a wrapper program, <code>ipa-cert-fix</code>, which performs FreeIPA-specific steps in addition to executing <code>pki-server cert-fix</code>.</p>
-<h2 id="what-does-ipa-cert-fix-do">What does <code>ipa-cert-fix</code> do? <a href="#what-does-ipa-cert-fix-do">§</a></h2>
+<h2 id="what-does-ipa-cert-fix-do">What does <code>ipa-cert-fix</code> do? <a href="#what-does-ipa-cert-fix-do" class="section">§</a></h2>
 <p>In brief, the steps performed by <code>ipa-cert-fix</code> are:</p>
 <ol type="1">
 <li>Inspect deployment to work out which certificates need renewing. This includes both Dogtag system certificates, FreeIPA-specific certificates (HTTP, LDAP, KDC and IPA RA).</li>
@@ -38,7 +38,7 @@
 <li>If any shared certificates were renewed (Dogtag system certificates excluding HTTP, and IPA RA), import them to the LDAP <code>ca_renewal</code> subtree and set the <code>caRenewalMaster</code> configuration to be the current server. This allows CA replicas to pick up the renewed shared certificates.</li>
 <li>Restart FreeIPA (<code>ipactl restart</code>).</li>
 </ol>
-<h2 id="demonstration">Demonstration <a href="#demonstration">§</a></h2>
+<h2 id="demonstration">Demonstration <a href="#demonstration" class="section">§</a></h2>
 <p>For this demonstration I used a deployment with the following characteristics:</p>
 <ul>
 <li>Two servers, <code>f29-0</code> and <code>f29-1</code>, with CA on both.</li>
@@ -68,7 +68,7 @@ ipa: INFO: The ipactl command was successful
 ipa: ERROR: cannot connect to 'https://f29-1.ipa.local/ipa/json':
   [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed:
   certificate has expired (_ssl.c:1056)</code></pre>
-<h3 id="fixing-the-first-server">Fixing the first server <a href="#fixing-the-first-server">§</a></h3>
+<h3 id="fixing-the-first-server">Fixing the first server <a href="#fixing-the-first-server" class="section">§</a></h3>
 <p>I will repair <code>f29-1</code> first, so that we can see why resetting the CA renewal master is an important step performed by <code>ipa-cert-fix</code>.</p>
 <p>I ran <code>ipa-cert-fix</code> as <code>root</code>. It analyses the server, then prints a warning and the list of certificates to be renewed, and asks for confirmation:</p>
 <pre><code>[f29-1] ftweedal% sudo ipa-cert-fix
@@ -179,7 +179,7 @@ Enter it again:</code></pre>
 <pre><code>[f29-1] ftweedal% ipa cert-show 1 | grep Subject
   Subject: CN=Certificate Authority,O=IPA.LOCAL 201905222205</code></pre>
 <p>And the IPA framework can talk to Dogtag. This proves that the IPA RA and Dogtag HTTPS and subsystem certificates are valid.</p>
-<h3 id="fixing-subsequent-servers">Fixing subsequent servers <a href="#fixing-subsequent-servers">§</a></h3>
+<h3 id="fixing-subsequent-servers">Fixing subsequent servers <a href="#fixing-subsequent-servers" class="section">§</a></h3>
 <p>Jumping back onto <code>f29-0</code>, let’s look at the Certmonger request statuses:</p>
 <pre><code>[f29-0] ftweedal% sudo getcert list \
                   | egrep '^Request|status:|subject:'
@@ -288,12 +288,12 @@ Renewed Dogtag sslserver certificate:
   Expires: 2023-08-14 04:25:05
 
 The ipa-cert-fix command was successful</code></pre>
-<h3 id="all-done">All done? <a href="#all-done">§</a></h3>
+<h3 id="all-done">All done? <a href="#all-done" class="section">§</a></h3>
 <p>Yep. A subsequent execution of <code>ipa-cert-fix</code> shows that there is nothing to do, and exits:</p>
 <pre><code>[f29-0] ftweedal% sudo ipa-cert-fix
 Nothing to do.
 The ipa-cert-fix command was successful</code></pre>
-<h2 id="feature-status">Feature status <a href="#feature-status">§</a></h2>
+<h2 id="feature-status">Feature status <a href="#feature-status" class="section">§</a></h2>
 <p>Against the usual procedure for FreeIPA (and Red Hat projects in general), <code>ipa-cert-fix</code> was developed “downstream-first”. It has been merged to the <code>ipa-4-6</code> branch, but there might not even be another upstream release from that branch. But there might be a future RHEL release based on that branch (the savvy reader might infer a high degree of certainty, given we actually bothered to do that…)</p>
 <p>In the meantime, work to forward-port the feature to <code>master</code> and newer branches is ongoing. I hope that it will be merged in the next week or so.</p>
 </div>
@@ -301,6 +301,10 @@ The ipa-cert-fix command was successful</code></pre>
     <div id="recent">
 Recent posts:
 <ul>
+    
+        <li>
+            <a href="../posts/2021-07-21-freeipa-on-openshift-update.html">FreeIPA on OpenShift: July 2021 update</a>
+        </li>
     
         <li>
             <a href="../posts/2021-06-29-openshift-live-changes.html">Live-testing changes in OpenShift clusters</a>
@@ -316,10 +320,6 @@ Recent posts:
     
         <li>
             <a href="../posts/2021-03-30-openshift-cgroupv2-systemd.html">systemd containers on OpenShift with cgroups v2</a>
-        </li>
-    
-        <li>
-            <a href="../posts/2021-03-10-openshift-user-namespace-multi-user.html">Multiple users in user namespaces on OpenShift</a>
         </li>
     
 </ul>
