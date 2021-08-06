@@ -135,12 +135,12 @@ version   4.7.20    True        False         8m52s   Cluster version is 4.7.20
 ::: note
 
 There is a [regression](https://github.com/cri-o/cri-o/issues/5077)
-in OpenShift 4.8 that prevents Pod annotations from being propagated
+in OpenShift 4.8.0 that prevents Pod annotations from being propagated
 to container OCI configurations.  As a consequence, `runc` does not
 receive the annotations that trigger the experimental behaviour.  I
 filed a [pull request](https://github.com/cri-o/cri-o/pull/5078)
-that fixes the issue.  It should get backported to a future `4.8.x`
-release.
+that fixes the issue.  The patch was accepted and the fix released
+in OpenShift 4.8.4.
 
 :::
 
