@@ -45,7 +45,7 @@
 NAME      VERSION   AVAILABLE   PROGRESSING   SINCE   STATUS
 version   4.7.20    True        False         8m52s   Cluster version is 4.7.20</code></pre>
 <div class="note">
-<p>There is a <a href="https://github.com/cri-o/cri-o/issues/5077">regression</a> in OpenShift 4.8 that prevents Pod annotations from being propagated to container OCI configurations. As a consequence, <code>runc</code> does not receive the annotations that trigger the experimental behaviour. I filed a <a href="https://github.com/cri-o/cri-o/pull/5078">pull request</a> that fixes the issue. It should get backported to a future <code>4.8.x</code> release.</p>
+<p>There is a <a href="https://github.com/cri-o/cri-o/issues/5077">regression</a> in OpenShift 4.8.0 that prevents Pod annotations from being propagated to container OCI configurations. As a consequence, <code>runc</code> does not receive the annotations that trigger the experimental behaviour. I filed a <a href="https://github.com/cri-o/cri-o/pull/5078">pull request</a> that fixes the issue. The patch was accepted and the fix released in OpenShift 4.8.4.</p>
 </div>
 <p>The latent credential is the cluster <code>admin</code> user. Where relevant, I use the <code>oc --as USER</code> option to execute commands as other users.</p>
 <pre class="shell"><code>% oc whoami
