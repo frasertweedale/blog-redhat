@@ -105,7 +105,7 @@ There are two main aspects.
 The first aspect is to compute the appropriate owner UID for the
 cgroup, and tell it to the cgroup manager object.  I [described the
 algorithm][] in a previous post.  The `config.HostRootUID()` method
-already implemented this computation.  I was able to use it as-is.
+already implements this computation.  I was able to reuse it.
 
 [described the algorithm]: 2021-06-09-systemd-cgroups-subuid.html#determining-the-uid
 
@@ -115,11 +115,9 @@ when creating units owned by arbitrary users.  systemd `chown`s the
 container's cgroup directory, and the `cgroup.procs`,
 `cgroup.subtree_control` and `cgroup.threads` files within that
 directory.  `runc` will do the same.  The cgroup manager object
-already knows the path to the container cgroup.  My implementation
-uses [`filepath.Walk`][filepath.Walk] to identify and `chown` these
-files to the relevant user.
-
-[filepath.Walk]: https://golang.org/pkg/path/filepath/#Walk
+already knows the path to the container cgroup directory.  It
+changes the owner of the directory and same three files as *systemd*
+to the relevant user.
 
 ## Demo
 
