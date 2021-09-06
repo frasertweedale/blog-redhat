@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 import Text.Pandoc.Definition
-  ( Pandoc(..), Block(Header, Plain), Inline(..), nullAttr )
+  ( Pandoc(..), Block(Header, Plain), Inline(..) )
 import Text.Pandoc.Walk (query, walk)
 import Hakyll
 
@@ -46,7 +46,7 @@ main = hakyll $ do
   create ["archive.html"] $ do
     route idRoute
     compile $ do
-      posts <- recentFirst =<< loadAll ("posts/*" .&&. hasNoVersion)
+      posts <- recentFirst =<< loadAll ("posts/*" .&&. hasVersion "recent")
       tagCloud <- renderTagCloud 80 120 tags
       let archiveContext =
             listField "posts" context (pure posts)
@@ -73,7 +73,6 @@ main = hakyll $ do
           _ <- render id h1 >>= saveSnapshot "fancyTitle"
           pure $ addSectionLinks pandoc
         )
-      >>= saveSnapshot "content"
 
   tagsRules tags $ \tag pattern -> do
     route idRoute
@@ -100,7 +99,7 @@ main = hakyll $ do
             <> context
 
       ident <- getUnderlying
-      loadSnapshotBody (setVersion (Just "recent") ident) "content"
+      loadBody (setVersion (Just "recent") ident)
         >>= makeItem
         >>= loadAndApplyTemplate "templates/post.html" postContext
         >>= loadAndApplyTemplate "templates/default.html" postContext
@@ -114,7 +113,7 @@ main = hakyll $ do
       let feedContext =
             bodyField "description"
             <> context
-      posts <- loadAllSnapshots ("posts/*" .&&. hasVersion "recent") "content"
+      posts <- loadAll ("posts/*" .&&. hasVersion "recent")
         >>= fmap (take 10) . recentFirst
       renderAtom feedConfiguration feedContext posts
 
