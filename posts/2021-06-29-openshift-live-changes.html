@@ -70,21 +70,21 @@ sh-4.4# cat ~/.ssh/id_rsa.pub
 ssh-rsa AAAA…4OU= root@worker-a</code></pre>
 </div>
 <p>The following <code>MachineConfig</code> adds the SSH key for user <code>core</code>:</p>
-<div class="sourceCode" id="cb4"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> machineconfiguration.openshift.io/v1</span></span>
-<span id="cb4-2"><a href="#cb4-2" aria-hidden="true"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> MachineConfig</span></span>
-<span id="cb4-3"><a href="#cb4-3" aria-hidden="true"></a><span class="fu">metadata</span><span class="kw">:</span></span>
-<span id="cb4-4"><a href="#cb4-4" aria-hidden="true"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> ssh-authorized-keys-worker</span></span>
-<span id="cb4-5"><a href="#cb4-5" aria-hidden="true"></a><span class="at">  </span><span class="fu">labels</span><span class="kw">:</span></span>
-<span id="cb4-6"><a href="#cb4-6" aria-hidden="true"></a><span class="at">    </span><span class="fu">machineconfiguration.openshift.io/role</span><span class="kw">:</span><span class="at"> worker</span></span>
-<span id="cb4-7"><a href="#cb4-7" aria-hidden="true"></a><span class="fu">spec</span><span class="kw">:</span></span>
-<span id="cb4-8"><a href="#cb4-8" aria-hidden="true"></a><span class="at">  </span><span class="fu">config</span><span class="kw">:</span></span>
-<span id="cb4-9"><a href="#cb4-9" aria-hidden="true"></a><span class="at">    </span><span class="fu">ignition</span><span class="kw">:</span></span>
-<span id="cb4-10"><a href="#cb4-10" aria-hidden="true"></a><span class="at">      </span><span class="fu">version</span><span class="kw">:</span><span class="at"> </span><span class="fl">3.2.0</span></span>
-<span id="cb4-11"><a href="#cb4-11" aria-hidden="true"></a><span class="at">    </span><span class="fu">passwd</span><span class="kw">:</span></span>
-<span id="cb4-12"><a href="#cb4-12" aria-hidden="true"></a><span class="at">      </span><span class="fu">users</span><span class="kw">:</span></span>
-<span id="cb4-13"><a href="#cb4-13" aria-hidden="true"></a><span class="at">      </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> core</span></span>
-<span id="cb4-14"><a href="#cb4-14" aria-hidden="true"></a><span class="at">        </span><span class="fu">sshAuthorizedKeys</span><span class="kw">:</span></span>
-<span id="cb4-15"><a href="#cb4-15" aria-hidden="true"></a><span class="at">        </span><span class="kw">-</span><span class="at"> ssh-rsa AAAA…40U= root@worker-a</span></span></code></pre></div>
+<div class="sourceCode" id="cb4"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> machineconfiguration.openshift.io/v1</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> MachineConfig</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a><span class="fu">metadata</span><span class="kw">:</span></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> ssh-authorized-keys-worker</span></span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">labels</span><span class="kw">:</span></span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">machineconfiguration.openshift.io/role</span><span class="kw">:</span><span class="at"> worker</span></span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a><span class="fu">spec</span><span class="kw">:</span></span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">config</span><span class="kw">:</span></span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">ignition</span><span class="kw">:</span></span>
+<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">version</span><span class="kw">:</span><span class="at"> </span><span class="fl">3.2.0</span></span>
+<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">passwd</span><span class="kw">:</span></span>
+<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">users</span><span class="kw">:</span></span>
+<span id="cb4-13"><a href="#cb4-13" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> core</span></span>
+<span id="cb4-14"><a href="#cb4-14" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="fu">sshAuthorizedKeys</span><span class="kw">:</span></span>
+<span id="cb4-15"><a href="#cb4-15" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="kw">-</span><span class="at"> ssh-rsa AAAA…40U= root@worker-a</span></span></code></pre></div>
 <p>I created the <code>MachineConfig</code>:</p>
 <pre class="shell"><code>% oc create -f machineconfig-ssh-worker.yaml
 machineconfig.machineconfiguration.openshift.io/ssh-authorized-keys created</code></pre>

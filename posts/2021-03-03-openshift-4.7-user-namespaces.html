@@ -33,26 +33,26 @@
 <pre class="shell"><code>% oc adm policy add-scc-to-user anyuid test
 securitycontextconstraints.security.openshift.io/anyuid added to: [&quot;test&quot;]</code></pre>
 <p>The pod definition is:</p>
-<div class="sourceCode" id="cb2"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true"></a><span class="pp">% cat userns-test.yaml</span></span>
-<span id="cb2-2"><a href="#cb2-2" aria-hidden="true"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
-<span id="cb2-3"><a href="#cb2-3" aria-hidden="true"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Pod</span></span>
-<span id="cb2-4"><a href="#cb2-4" aria-hidden="true"></a><span class="fu">metadata</span><span class="kw">:</span></span>
-<span id="cb2-5"><a href="#cb2-5" aria-hidden="true"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> userns-test</span></span>
-<span id="cb2-6"><a href="#cb2-6" aria-hidden="true"></a><span class="at">  </span><span class="fu">annotations</span><span class="kw">:</span></span>
-<span id="cb2-7"><a href="#cb2-7" aria-hidden="true"></a><span class="at">    </span><span class="fu">openshift.io/scc</span><span class="kw">:</span><span class="at"> restricted</span></span>
-<span id="cb2-8"><a href="#cb2-8" aria-hidden="true"></a><span class="at">    </span><span class="fu">io.kubernetes.cri-o.userns-mode</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;auto:size=65536;map-to-root=true&quot;</span></span>
-<span id="cb2-9"><a href="#cb2-9" aria-hidden="true"></a><span class="fu">spec</span><span class="kw">:</span></span>
-<span id="cb2-10"><a href="#cb2-10" aria-hidden="true"></a><span class="at">  </span><span class="fu">containers</span><span class="kw">:</span></span>
-<span id="cb2-11"><a href="#cb2-11" aria-hidden="true"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> userns-test</span></span>
-<span id="cb2-12"><a href="#cb2-12" aria-hidden="true"></a><span class="at">    </span><span class="fu">image</span><span class="kw">:</span><span class="at"> freeipa/freeipa-server:fedora-31</span></span>
-<span id="cb2-13"><a href="#cb2-13" aria-hidden="true"></a><span class="at">    </span><span class="fu">command</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="st">&quot;sleep&quot;</span><span class="kw">,</span><span class="at"> </span><span class="st">&quot;3601&quot;</span><span class="kw">]</span></span>
-<span id="cb2-14"><a href="#cb2-14" aria-hidden="true"></a><span class="at">    </span><span class="fu">securityContext</span><span class="kw">:</span></span>
-<span id="cb2-15"><a href="#cb2-15" aria-hidden="true"></a><span class="at">      </span><span class="fu">runAsUser</span><span class="kw">:</span><span class="at"> </span><span class="dv">0</span></span>
-<span id="cb2-16"><a href="#cb2-16" aria-hidden="true"></a><span class="at">      </span><span class="fu">runAsGroup</span><span class="kw">:</span><span class="at"> </span><span class="dv">0</span></span>
-<span id="cb2-17"><a href="#cb2-17" aria-hidden="true"></a><span class="at">  </span><span class="fu">securityContext</span><span class="kw">:</span></span>
-<span id="cb2-18"><a href="#cb2-18" aria-hidden="true"></a><span class="at">    </span><span class="fu">sysctls</span><span class="kw">:</span></span>
-<span id="cb2-19"><a href="#cb2-19" aria-hidden="true"></a><span class="at">    </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;net.ipv4.ping_group_range&quot;</span></span>
-<span id="cb2-20"><a href="#cb2-20" aria-hidden="true"></a><span class="at">      </span><span class="fu">value</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;0 65535&quot;</span></span></code></pre></div>
+<div class="sourceCode" id="cb2"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="pp">% cat userns-test.yaml</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Pod</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="fu">metadata</span><span class="kw">:</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> userns-test</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">annotations</span><span class="kw">:</span></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">openshift.io/scc</span><span class="kw">:</span><span class="at"> restricted</span></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">io.kubernetes.cri-o.userns-mode</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;auto:size=65536;map-to-root=true&quot;</span></span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a><span class="fu">spec</span><span class="kw">:</span></span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">containers</span><span class="kw">:</span></span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> userns-test</span></span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">image</span><span class="kw">:</span><span class="at"> freeipa/freeipa-server:fedora-31</span></span>
+<span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">command</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="st">&quot;sleep&quot;</span><span class="kw">,</span><span class="at"> </span><span class="st">&quot;3601&quot;</span><span class="kw">]</span></span>
+<span id="cb2-14"><a href="#cb2-14" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">securityContext</span><span class="kw">:</span></span>
+<span id="cb2-15"><a href="#cb2-15" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">runAsUser</span><span class="kw">:</span><span class="at"> </span><span class="dv">0</span></span>
+<span id="cb2-16"><a href="#cb2-16" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">runAsGroup</span><span class="kw">:</span><span class="at"> </span><span class="dv">0</span></span>
+<span id="cb2-17"><a href="#cb2-17" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">securityContext</span><span class="kw">:</span></span>
+<span id="cb2-18"><a href="#cb2-18" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">sysctls</span><span class="kw">:</span></span>
+<span id="cb2-19"><a href="#cb2-19" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;net.ipv4.ping_group_range&quot;</span></span>
+<span id="cb2-20"><a href="#cb2-20" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">value</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;0 65535&quot;</span></span></code></pre></div>
 <p>Note the <code>io.kubernetes.cri-o.userns-mode</code> annotation. That activates the user namespace feature. The <code>runAsUser</code> and <code>runAsGroup</code> fields in <code>securityContext</code> are also important.</p>
 <p>I create the pod. After a few moments I observe that it is running, and query the node and container ID:</p>
 <pre class="shell"><code>$ oc --as test create -f userns-test.yaml
@@ -106,29 +106,29 @@ must be in the ranges: [1000630000, 1000639999]]</code></pre>
 <p>In other words, the user namespace support in its current form is still a giant leap forward. Previously, many kinds of applications cannot run securely in OpenShift. The service account privileges caveat may be unacceptable to some, but I hope that would be addressed in time.</p>
 <h2 id="inconsistent-treatment-of-securitycontext">Inconsistent treatment of <code>securityContext</code> <a href="#inconsistent-treatment-of-securitycontext" class="section">§</a></h2>
 <p>The PodSpec I used above (with success) is:</p>
-<div class="sourceCode" id="cb8"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true"></a><span class="fu">containers</span><span class="kw">:</span></span>
-<span id="cb8-2"><a href="#cb8-2" aria-hidden="true"></a><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> userns-test</span></span>
-<span id="cb8-3"><a href="#cb8-3" aria-hidden="true"></a><span class="at">  </span><span class="fu">image</span><span class="kw">:</span><span class="at"> freeipa/freeipa-server:fedora-31</span></span>
-<span id="cb8-4"><a href="#cb8-4" aria-hidden="true"></a><span class="at">  </span><span class="fu">command</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="st">&quot;sleep&quot;</span><span class="kw">,</span><span class="at"> </span><span class="st">&quot;3601&quot;</span><span class="kw">]</span></span>
-<span id="cb8-5"><a href="#cb8-5" aria-hidden="true"></a><span class="at">  </span><span class="fu">securityContext</span><span class="kw">:</span></span>
-<span id="cb8-6"><a href="#cb8-6" aria-hidden="true"></a><span class="at">    </span><span class="fu">runAsUser</span><span class="kw">:</span><span class="at"> </span><span class="dv">0</span></span>
-<span id="cb8-7"><a href="#cb8-7" aria-hidden="true"></a><span class="at">    </span><span class="fu">runAsGroup</span><span class="kw">:</span><span class="at"> </span><span class="dv">0</span></span>
-<span id="cb8-8"><a href="#cb8-8" aria-hidden="true"></a><span class="fu">securityContext</span><span class="kw">:</span></span>
-<span id="cb8-9"><a href="#cb8-9" aria-hidden="true"></a><span class="at">  </span><span class="fu">sysctls</span><span class="kw">:</span></span>
-<span id="cb8-10"><a href="#cb8-10" aria-hidden="true"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;net.ipv4.ping_group_range&quot;</span></span>
-<span id="cb8-11"><a href="#cb8-11" aria-hidden="true"></a><span class="at">    </span><span class="fu">value</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;0 65535&quot;</span></span></code></pre></div>
+<div class="sourceCode" id="cb8"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="fu">containers</span><span class="kw">:</span></span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> userns-test</span></span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">image</span><span class="kw">:</span><span class="at"> freeipa/freeipa-server:fedora-31</span></span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">command</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="st">&quot;sleep&quot;</span><span class="kw">,</span><span class="at"> </span><span class="st">&quot;3601&quot;</span><span class="kw">]</span></span>
+<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">securityContext</span><span class="kw">:</span></span>
+<span id="cb8-6"><a href="#cb8-6" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">runAsUser</span><span class="kw">:</span><span class="at"> </span><span class="dv">0</span></span>
+<span id="cb8-7"><a href="#cb8-7" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">runAsGroup</span><span class="kw">:</span><span class="at"> </span><span class="dv">0</span></span>
+<span id="cb8-8"><a href="#cb8-8" aria-hidden="true" tabindex="-1"></a><span class="fu">securityContext</span><span class="kw">:</span></span>
+<span id="cb8-9"><a href="#cb8-9" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">sysctls</span><span class="kw">:</span></span>
+<span id="cb8-10"><a href="#cb8-10" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;net.ipv4.ping_group_range&quot;</span></span>
+<span id="cb8-11"><a href="#cb8-11" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">value</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;0 65535&quot;</span></span></code></pre></div>
 <p>Note there are two <code>securityContext</code> fields. The first, in the Container spec, is a <a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.20/#securitycontext-v1-core">SecurityContext</a> object. The second, in the PodSpec, is a <a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.20/#podsecuritycontext-v1-core">PodSecurityContext</a> object.</p>
 <p>The <code>runAsUser</code> and <code>runAsGroup</code> fields can be specified in either of these objects (or both, with SecurityContext taking precedence). I can move these fields to the PodSecurityContext, as below.</p>
-<div class="sourceCode" id="cb9"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true"></a><span class="fu">containers</span><span class="kw">:</span></span>
-<span id="cb9-2"><a href="#cb9-2" aria-hidden="true"></a><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> userns-test</span></span>
-<span id="cb9-3"><a href="#cb9-3" aria-hidden="true"></a><span class="at">  </span><span class="fu">image</span><span class="kw">:</span><span class="at"> freeipa/freeipa-server:fedora-31</span></span>
-<span id="cb9-4"><a href="#cb9-4" aria-hidden="true"></a><span class="at">  </span><span class="fu">command</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="st">&quot;sleep&quot;</span><span class="kw">,</span><span class="at"> </span><span class="st">&quot;3601&quot;</span><span class="kw">]</span></span>
-<span id="cb9-5"><a href="#cb9-5" aria-hidden="true"></a><span class="fu">securityContext</span><span class="kw">:</span></span>
-<span id="cb9-6"><a href="#cb9-6" aria-hidden="true"></a><span class="at">  </span><span class="fu">runAsUser</span><span class="kw">:</span><span class="at"> </span><span class="dv">0</span></span>
-<span id="cb9-7"><a href="#cb9-7" aria-hidden="true"></a><span class="at">  </span><span class="fu">runAsGroup</span><span class="kw">:</span><span class="at"> </span><span class="dv">0</span></span>
-<span id="cb9-8"><a href="#cb9-8" aria-hidden="true"></a><span class="at">  </span><span class="fu">sysctls</span><span class="kw">:</span></span>
-<span id="cb9-9"><a href="#cb9-9" aria-hidden="true"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;net.ipv4.ping_group_range&quot;</span></span>
-<span id="cb9-10"><a href="#cb9-10" aria-hidden="true"></a><span class="at">    </span><span class="fu">value</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;0 65535&quot;</span></span></code></pre></div>
+<div class="sourceCode" id="cb9"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="fu">containers</span><span class="kw">:</span></span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> userns-test</span></span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">image</span><span class="kw">:</span><span class="at"> freeipa/freeipa-server:fedora-31</span></span>
+<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">command</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="st">&quot;sleep&quot;</span><span class="kw">,</span><span class="at"> </span><span class="st">&quot;3601&quot;</span><span class="kw">]</span></span>
+<span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a><span class="fu">securityContext</span><span class="kw">:</span></span>
+<span id="cb9-6"><a href="#cb9-6" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">runAsUser</span><span class="kw">:</span><span class="at"> </span><span class="dv">0</span></span>
+<span id="cb9-7"><a href="#cb9-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">runAsGroup</span><span class="kw">:</span><span class="at"> </span><span class="dv">0</span></span>
+<span id="cb9-8"><a href="#cb9-8" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">sysctls</span><span class="kw">:</span></span>
+<span id="cb9-9"><a href="#cb9-9" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;net.ipv4.ping_group_range&quot;</span></span>
+<span id="cb9-10"><a href="#cb9-10" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">value</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;0 65535&quot;</span></span></code></pre></div>
 <p>According to the documentation, this object should have the same meaning as the previous one. But there is a critical behavioural difference! I create and examine the pod as before:</p>
 <pre class="shell"><code>$ oc --as test create -f userns-test.yaml
 pod/userns-test created

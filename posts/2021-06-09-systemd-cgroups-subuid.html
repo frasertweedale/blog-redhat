@@ -31,15 +31,15 @@
 <h2 id="how-runc-talks-to-systemd">How <code>runc</code> talks to <em>systemd</em> <a href="#how-runc-talks-to-systemd" class="section">§</a></h2>
 <p>The <em>Open Container Initiative (OCI)</em> <a href="https://github.com/opencontainers/runtime-spec">runtime spec</a> defines a low-level container runtime interface. OCI runtimes must create the Linux namespaces specified by an OCI config, including the cgroup namespace.</p>
 <p><code>runc</code> uses the systemd D-Bus API to ask systemd to create a cgroup scope for the container. Then it creates a cgroup namespace with the new cgroup scope as the root. We can see that <code>runc</code> invokes the <code>StartTransientUnit</code> API method with a name for the new unit, and a list of properties (<a href="https://github.com/opencontainers/runc/blob/v1.0.0-rc95/vendor/github.com/coreos/go-systemd/v22/dbus/methods.go#L198-L200">source code</a>):</p>
-<div class="sourceCode" id="cb1"><pre class="sourceCode go"><code class="sourceCode go"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true"></a><span class="co">// .../go-systemd/v22/dbus/methods.go</span></span>
-<span id="cb1-2"><a href="#cb1-2" aria-hidden="true"></a><span class="kw">func</span> (c *Conn) StartTransientUnitContext(</span>
-<span id="cb1-3"><a href="#cb1-3" aria-hidden="true"></a>  ctx context.Context, name <span class="dt">string</span>, mode <span class="dt">string</span>,</span>
-<span id="cb1-4"><a href="#cb1-4" aria-hidden="true"></a>  properties []Property, ch <span class="kw">chan</span>&lt;- <span class="dt">string</span>) (<span class="dt">int</span>, <span class="dt">error</span>) {</span>
-<span id="cb1-5"><a href="#cb1-5" aria-hidden="true"></a>  <span class="kw">return</span> c.startJob(</span>
-<span id="cb1-6"><a href="#cb1-6" aria-hidden="true"></a>    ctx, ch,</span>
-<span id="cb1-7"><a href="#cb1-7" aria-hidden="true"></a>    <span class="st">&quot;org.freedesktop.systemd1.Manager.StartTransientUnit&quot;</span>,</span>
-<span id="cb1-8"><a href="#cb1-8" aria-hidden="true"></a>    name, mode, properties, <span class="bu">make</span>([]PropertyCollection, <span class="dv">0</span>))</span>
-<span id="cb1-9"><a href="#cb1-9" aria-hidden="true"></a>}</span></code></pre></div>
+<div class="sourceCode" id="cb1"><pre class="sourceCode go"><code class="sourceCode go"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="co">// .../go-systemd/v22/dbus/methods.go</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="kw">func</span> <span class="op">(</span>c <span class="op">*</span>Conn<span class="op">)</span> StartTransientUnitContext<span class="op">(</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>  ctx context<span class="op">.</span>Context<span class="op">,</span> name <span class="dt">string</span><span class="op">,</span> mode <span class="dt">string</span><span class="op">,</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>  properties <span class="op">[]</span>Property<span class="op">,</span> ch <span class="kw">chan</span><span class="op">&lt;-</span> <span class="dt">string</span><span class="op">)</span> <span class="op">(</span><span class="dt">int</span><span class="op">,</span> <span class="dt">error</span><span class="op">)</span> <span class="op">{</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>  <span class="kw">return</span> c<span class="op">.</span>startJob<span class="op">(</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>    ctx<span class="op">,</span> ch<span class="op">,</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;org.freedesktop.systemd1.Manager.StartTransientUnit&quot;</span><span class="op">,</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>    name<span class="op">,</span> mode<span class="op">,</span> properties<span class="op">,</span> <span class="bu">make</span><span class="op">([]</span>PropertyCollection<span class="op">,</span> <span class="dv">0</span><span class="op">))</span></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
 <p>Most of the unit configuration is passed as properties.</p>
 <h2 id="the-user-property">The <code>User=</code> property <a href="#the-user-property" class="section">§</a></h2>
 <p><a href="https://www.freedesktop.org/software/systemd/man/systemd.exec.html#User="><code>systemd.exec(5)</code></a> describes the properties that configure a systemd unit (including transient units). Among the properties are <code>User=</code> and <code>Group=</code>:</p>
@@ -57,18 +57,18 @@
 {&quot;uid&quot;:0,&quot;gid&quot;:0}
 [{&quot;containerID&quot;:0,&quot;hostID&quot;:100000,&quot;size&quot;:65536}]</code></pre>
 <p><code>runc</code> has all the data it needs to compute the appropriate value for the <code>User=</code> property. The algorithm, expressed as Python is:</p>
-<div class="sourceCode" id="cb3"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true"></a>uid <span class="op">=</span> config[<span class="st">&quot;process&quot;</span>][<span class="st">&quot;user&quot;</span>][<span class="st">&quot;uid&quot;</span>]</span>
-<span id="cb3-2"><a href="#cb3-2" aria-hidden="true"></a></span>
-<span id="cb3-3"><a href="#cb3-3" aria-hidden="true"></a><span class="cf">for</span> <span class="bu">map</span> <span class="kw">in</span> config[<span class="st">&quot;linux&quot;</span>][<span class="st">&quot;uidMappings&quot;</span>]:</span>
-<span id="cb3-4"><a href="#cb3-4" aria-hidden="true"></a>    uid_min <span class="op">=</span> <span class="bu">map</span>[<span class="st">&quot;containerID&quot;</span>]</span>
-<span id="cb3-5"><a href="#cb3-5" aria-hidden="true"></a>    uid_max <span class="op">=</span> map_min <span class="op">+</span> <span class="bu">map</span>[<span class="st">&quot;size&quot;</span>] <span class="op">-</span> <span class="dv">1</span></span>
-<span id="cb3-6"><a href="#cb3-6" aria-hidden="true"></a></span>
-<span id="cb3-7"><a href="#cb3-7" aria-hidden="true"></a>    <span class="cf">if</span> uid_min <span class="op">&lt;=</span> uid <span class="op">&lt;=</span> uid_max:</span>
-<span id="cb3-8"><a href="#cb3-8" aria-hidden="true"></a>        offset <span class="op">=</span> uid <span class="op">-</span> uid_min</span>
-<span id="cb3-9"><a href="#cb3-9" aria-hidden="true"></a>        <span class="cf">return</span> <span class="bu">map</span>[<span class="st">&quot;hostID&quot;</span>] <span class="op">+</span> offset</span>
-<span id="cb3-10"><a href="#cb3-10" aria-hidden="true"></a></span>
-<span id="cb3-11"><a href="#cb3-11" aria-hidden="true"></a><span class="cf">else</span>:</span>
-<span id="cb3-12"><a href="#cb3-12" aria-hidden="true"></a>    <span class="cf">raise</span> <span class="pp">RuntimeError</span>(<span class="st">&quot;user.uid is not mapped&quot;</span>)</span></code></pre></div>
+<div class="sourceCode" id="cb3"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>uid <span class="op">=</span> config[<span class="st">&quot;process&quot;</span>][<span class="st">&quot;user&quot;</span>][<span class="st">&quot;uid&quot;</span>]</span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> <span class="bu">map</span> <span class="kw">in</span> config[<span class="st">&quot;linux&quot;</span>][<span class="st">&quot;uidMappings&quot;</span>]:</span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>    uid_min <span class="op">=</span> <span class="bu">map</span>[<span class="st">&quot;containerID&quot;</span>]</span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>    uid_max <span class="op">=</span> map_min <span class="op">+</span> <span class="bu">map</span>[<span class="st">&quot;size&quot;</span>] <span class="op">-</span> <span class="dv">1</span></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> uid_min <span class="op">&lt;=</span> uid <span class="op">&lt;=</span> uid_max:</span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a>        offset <span class="op">=</span> uid <span class="op">-</span> uid_min</span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> <span class="bu">map</span>[<span class="st">&quot;hostID&quot;</span>] <span class="op">+</span> offset</span>
+<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a><span class="cf">else</span>:</span>
+<span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a>    <span class="cf">raise</span> <span class="pp">RuntimeError</span>(<span class="st">&quot;user.uid is not mapped&quot;</span>)</span></code></pre></div>
 <h2 id="testing-with-systemd-run">Testing with <code>systemd-run</code> <a href="#testing-with-systemd-run" class="section">§</a></h2>
 <p><code>systemd-run(1)</code> uses the transient unit API to run programs via transient scope or service units. You can use the <code>--property</code>/<code>-p</code> option to pass additional properties. I used <code>systemd-run</code> to observe how systemd handles the <code>Delegate=true</code> and <code>User=</code> properties.</p>
 <h3 id="create-and-inspect-transient-unit">Create and inspect transient unit <a href="#create-and-inspect-transient-unit" class="section">§</a></h3>

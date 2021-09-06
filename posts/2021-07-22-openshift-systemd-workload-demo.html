@@ -104,37 +104,37 @@ sh-4.2# exit
 Removing debug pod ...</code></pre>
 <h3 id="enable-user-namespaces-and-cgroups-v2">Enable user namespaces and cgroups v2 <a href="#enable-user-namespaces-and-cgroups-v2" class="section">§</a></h3>
 <p>The following <code>MachineConfig</code> enables cgroups v2 and CRI-O annotation-based user namespace support:</p>
-<div class="sourceCode" id="cb6"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> machineconfiguration.openshift.io/v1</span></span>
-<span id="cb6-2"><a href="#cb6-2" aria-hidden="true"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> MachineConfig</span></span>
-<span id="cb6-3"><a href="#cb6-3" aria-hidden="true"></a><span class="fu">metadata</span><span class="kw">:</span></span>
-<span id="cb6-4"><a href="#cb6-4" aria-hidden="true"></a><span class="at">  </span><span class="fu">labels</span><span class="kw">:</span></span>
-<span id="cb6-5"><a href="#cb6-5" aria-hidden="true"></a><span class="at">    </span><span class="fu">machineconfiguration.openshift.io/role</span><span class="kw">:</span><span class="at"> worker</span></span>
-<span id="cb6-6"><a href="#cb6-6" aria-hidden="true"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> userns-cgv2</span></span>
-<span id="cb6-7"><a href="#cb6-7" aria-hidden="true"></a><span class="fu">spec</span><span class="kw">:</span></span>
-<span id="cb6-8"><a href="#cb6-8" aria-hidden="true"></a><span class="at">  </span><span class="fu">kernelArguments</span><span class="kw">:</span></span>
-<span id="cb6-9"><a href="#cb6-9" aria-hidden="true"></a><span class="at">    </span><span class="kw">-</span><span class="at"> systemd.unified_cgroup_hierarchy=1</span></span>
-<span id="cb6-10"><a href="#cb6-10" aria-hidden="true"></a><span class="at">    </span><span class="kw">-</span><span class="at"> cgroup_no_v1=&quot;all&quot;</span></span>
-<span id="cb6-11"><a href="#cb6-11" aria-hidden="true"></a><span class="at">    </span><span class="kw">-</span><span class="at"> psi=1</span></span>
-<span id="cb6-12"><a href="#cb6-12" aria-hidden="true"></a><span class="at">  </span><span class="fu">config</span><span class="kw">:</span></span>
-<span id="cb6-13"><a href="#cb6-13" aria-hidden="true"></a><span class="at">    </span><span class="fu">ignition</span><span class="kw">:</span></span>
-<span id="cb6-14"><a href="#cb6-14" aria-hidden="true"></a><span class="at">      </span><span class="fu">version</span><span class="kw">:</span><span class="at"> </span><span class="fl">3.1.0</span></span>
-<span id="cb6-15"><a href="#cb6-15" aria-hidden="true"></a><span class="at">    </span><span class="fu">storage</span><span class="kw">:</span></span>
-<span id="cb6-16"><a href="#cb6-16" aria-hidden="true"></a><span class="at">      </span><span class="fu">files</span><span class="kw">:</span></span>
-<span id="cb6-17"><a href="#cb6-17" aria-hidden="true"></a><span class="at">      </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> /etc/crio/crio.conf.d/99-crio-userns.conf</span></span>
-<span id="cb6-18"><a href="#cb6-18" aria-hidden="true"></a><span class="at">        </span><span class="fu">overwrite</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
-<span id="cb6-19"><a href="#cb6-19" aria-hidden="true"></a><span class="at">        </span><span class="fu">contents</span><span class="kw">:</span></span>
-<span id="cb6-20"><a href="#cb6-20" aria-hidden="true"></a><span class="at">          </span><span class="fu">source</span><span class="kw">:</span><span class="at"> data:text/plain;charset=utf-8;base64,W2NyaW8ucnVudGltZS5ydW50aW1lcy5ydW5jXQphbGxvd2VkX2Fubm90YXRpb25zPVsiaW8ua3ViZXJuZXRlcy5jcmktby51c2VybnMtbW9kZSJdCg==</span></span>
-<span id="cb6-21"><a href="#cb6-21" aria-hidden="true"></a><span class="at">      </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> /etc/subuid</span></span>
-<span id="cb6-22"><a href="#cb6-22" aria-hidden="true"></a><span class="at">        </span><span class="fu">overwrite</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
-<span id="cb6-23"><a href="#cb6-23" aria-hidden="true"></a><span class="at">        </span><span class="fu">contents</span><span class="kw">:</span></span>
-<span id="cb6-24"><a href="#cb6-24" aria-hidden="true"></a><span class="at">          </span><span class="fu">source</span><span class="kw">:</span><span class="at"> data:text/plain;charset=utf-8;base64,Y29yZToxMDAwMDA6NjU1MzYKY29udGFpbmVyczoyMDAwMDA6MjY4NDM1NDU2Cg==</span></span>
-<span id="cb6-25"><a href="#cb6-25" aria-hidden="true"></a><span class="at">      </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> /etc/subgid</span></span>
-<span id="cb6-26"><a href="#cb6-26" aria-hidden="true"></a><span class="at">        </span><span class="fu">overwrite</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
-<span id="cb6-27"><a href="#cb6-27" aria-hidden="true"></a><span class="at">        </span><span class="fu">contents</span><span class="kw">:</span></span>
-<span id="cb6-28"><a href="#cb6-28" aria-hidden="true"></a><span class="at">          </span><span class="fu">source</span><span class="kw">:</span><span class="at"> data:text/plain;charset=utf-8;base64,Y29yZToxMDAwMDA6NjU1MzYKY29udGFpbmVyczoyMDAwMDA6MjY4NDM1NDU2Cg==</span></span></code></pre></div>
+<div class="sourceCode" id="cb6"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> machineconfiguration.openshift.io/v1</span></span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> MachineConfig</span></span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a><span class="fu">metadata</span><span class="kw">:</span></span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">labels</span><span class="kw">:</span></span>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">machineconfiguration.openshift.io/role</span><span class="kw">:</span><span class="at"> worker</span></span>
+<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> userns-cgv2</span></span>
+<span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a><span class="fu">spec</span><span class="kw">:</span></span>
+<span id="cb6-8"><a href="#cb6-8" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">kernelArguments</span><span class="kw">:</span></span>
+<span id="cb6-9"><a href="#cb6-9" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="kw">-</span><span class="at"> systemd.unified_cgroup_hierarchy=1</span></span>
+<span id="cb6-10"><a href="#cb6-10" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="kw">-</span><span class="at"> cgroup_no_v1=&quot;all&quot;</span></span>
+<span id="cb6-11"><a href="#cb6-11" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="kw">-</span><span class="at"> psi=1</span></span>
+<span id="cb6-12"><a href="#cb6-12" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">config</span><span class="kw">:</span></span>
+<span id="cb6-13"><a href="#cb6-13" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">ignition</span><span class="kw">:</span></span>
+<span id="cb6-14"><a href="#cb6-14" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">version</span><span class="kw">:</span><span class="at"> </span><span class="fl">3.1.0</span></span>
+<span id="cb6-15"><a href="#cb6-15" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">storage</span><span class="kw">:</span></span>
+<span id="cb6-16"><a href="#cb6-16" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">files</span><span class="kw">:</span></span>
+<span id="cb6-17"><a href="#cb6-17" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> /etc/crio/crio.conf.d/99-crio-userns.conf</span></span>
+<span id="cb6-18"><a href="#cb6-18" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="fu">overwrite</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb6-19"><a href="#cb6-19" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="fu">contents</span><span class="kw">:</span></span>
+<span id="cb6-20"><a href="#cb6-20" aria-hidden="true" tabindex="-1"></a><span class="at">          </span><span class="fu">source</span><span class="kw">:</span><span class="at"> data:text/plain;charset=utf-8;base64,W2NyaW8ucnVudGltZS5ydW50aW1lcy5ydW5jXQphbGxvd2VkX2Fubm90YXRpb25zPVsiaW8ua3ViZXJuZXRlcy5jcmktby51c2VybnMtbW9kZSJdCg==</span></span>
+<span id="cb6-21"><a href="#cb6-21" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> /etc/subuid</span></span>
+<span id="cb6-22"><a href="#cb6-22" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="fu">overwrite</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb6-23"><a href="#cb6-23" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="fu">contents</span><span class="kw">:</span></span>
+<span id="cb6-24"><a href="#cb6-24" aria-hidden="true" tabindex="-1"></a><span class="at">          </span><span class="fu">source</span><span class="kw">:</span><span class="at"> data:text/plain;charset=utf-8;base64,Y29yZToxMDAwMDA6NjU1MzYKY29udGFpbmVyczoyMDAwMDA6MjY4NDM1NDU2Cg==</span></span>
+<span id="cb6-25"><a href="#cb6-25" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> /etc/subgid</span></span>
+<span id="cb6-26"><a href="#cb6-26" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="fu">overwrite</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb6-27"><a href="#cb6-27" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="fu">contents</span><span class="kw">:</span></span>
+<span id="cb6-28"><a href="#cb6-28" aria-hidden="true" tabindex="-1"></a><span class="at">          </span><span class="fu">source</span><span class="kw">:</span><span class="at"> data:text/plain;charset=utf-8;base64,Y29yZToxMDAwMDA6NjU1MzYKY29udGFpbmVyczoyMDAwMDA6MjY4NDM1NDU2Cg==</span></span></code></pre></div>
 <p>The file <code>/etc/crio/crio.conf.d/99-crio-userns.conf</code> enables CRI-O’s annotation-based user namespace support. Its content (base64-encoded in the <code>MachineConfig</code>) is:</p>
-<div class="sourceCode" id="cb7"><pre class="sourceCode ini"><code class="sourceCode ini"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true"></a><span class="kw">[crio.runtime.runtimes.runc]</span></span>
-<span id="cb7-2"><a href="#cb7-2" aria-hidden="true"></a><span class="dt">allowed_annotations</span><span class="ot">=</span><span class="st">[&quot;io.kubernetes.cri-o.userns-mode&quot;]</span></span></code></pre></div>
+<div class="sourceCode" id="cb7"><pre class="sourceCode ini"><code class="sourceCode ini"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="kw">[crio.runtime.runtimes.runc]</span></span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a><span class="dt">allowed_annotations</span><span class="ot">=</span><span class="st">[&quot;io.kubernetes.cri-o.userns-mode&quot;]</span></span></code></pre></div>
 <p>The <code>MachineConfig</code> also overrides <code>/etc/subuid</code> and <code>/etc/subgid</code>, defining sub-id ranges for user namespaces. The content is the same for both files:</p>
 <pre><code>core:100000:65536
 containers:200000:268435456</code></pre>
@@ -167,52 +167,52 @@ clusterrole.rbac.authorization.k8s.io/admin added: &quot;test&quot;
 securitycontextconstraints.security.openshift.io/anyuid added to: [&quot;test&quot;]</code></pre>
 <h3 id="create-service-and-route">Create service and route <a href="#create-service-and-route" class="section">§</a></h3>
 <p>Create a service to provide HTTP access to pods matching the <code>app: nginx</code> selector:</p>
-<div class="sourceCode" id="cb13"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
-<span id="cb13-2"><a href="#cb13-2" aria-hidden="true"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Service</span></span>
-<span id="cb13-3"><a href="#cb13-3" aria-hidden="true"></a><span class="fu">metadata</span><span class="kw">:</span></span>
-<span id="cb13-4"><a href="#cb13-4" aria-hidden="true"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> nginx</span></span>
-<span id="cb13-5"><a href="#cb13-5" aria-hidden="true"></a><span class="fu">spec</span><span class="kw">:</span></span>
-<span id="cb13-6"><a href="#cb13-6" aria-hidden="true"></a><span class="at">  </span><span class="fu">selector</span><span class="kw">:</span></span>
-<span id="cb13-7"><a href="#cb13-7" aria-hidden="true"></a><span class="at">    </span><span class="fu">app</span><span class="kw">:</span><span class="at"> nginx</span></span>
-<span id="cb13-8"><a href="#cb13-8" aria-hidden="true"></a><span class="at">  </span><span class="fu">ports</span><span class="kw">:</span></span>
-<span id="cb13-9"><a href="#cb13-9" aria-hidden="true"></a><span class="at">    </span><span class="kw">-</span><span class="at"> </span><span class="fu">protocol</span><span class="kw">:</span><span class="at"> TCP</span></span>
-<span id="cb13-10"><a href="#cb13-10" aria-hidden="true"></a><span class="at">      </span><span class="fu">port</span><span class="kw">:</span><span class="at"> </span><span class="dv">80</span></span></code></pre></div>
+<div class="sourceCode" id="cb13"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
+<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Service</span></span>
+<span id="cb13-3"><a href="#cb13-3" aria-hidden="true" tabindex="-1"></a><span class="fu">metadata</span><span class="kw">:</span></span>
+<span id="cb13-4"><a href="#cb13-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> nginx</span></span>
+<span id="cb13-5"><a href="#cb13-5" aria-hidden="true" tabindex="-1"></a><span class="fu">spec</span><span class="kw">:</span></span>
+<span id="cb13-6"><a href="#cb13-6" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">selector</span><span class="kw">:</span></span>
+<span id="cb13-7"><a href="#cb13-7" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">app</span><span class="kw">:</span><span class="at"> nginx</span></span>
+<span id="cb13-8"><a href="#cb13-8" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">ports</span><span class="kw">:</span></span>
+<span id="cb13-9"><a href="#cb13-9" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="kw">-</span><span class="at"> </span><span class="fu">protocol</span><span class="kw">:</span><span class="at"> TCP</span></span>
+<span id="cb13-10"><a href="#cb13-10" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">port</span><span class="kw">:</span><span class="at"> </span><span class="dv">80</span></span></code></pre></div>
 <pre class="shell"><code>% oc create -f service-nginx.yaml
 service/nginx created</code></pre>
 <p>The following route definition will provide HTTP ingress from outside the cluster:</p>
-<div class="sourceCode" id="cb15"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
-<span id="cb15-2"><a href="#cb15-2" aria-hidden="true"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Route</span></span>
-<span id="cb15-3"><a href="#cb15-3" aria-hidden="true"></a><span class="fu">metadata</span><span class="kw">:</span></span>
-<span id="cb15-4"><a href="#cb15-4" aria-hidden="true"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> nginx</span></span>
-<span id="cb15-5"><a href="#cb15-5" aria-hidden="true"></a><span class="fu">spec</span><span class="kw">:</span></span>
-<span id="cb15-6"><a href="#cb15-6" aria-hidden="true"></a><span class="at">  </span><span class="fu">host</span><span class="kw">:</span><span class="at"> nginx.apps.ci-ln-jqbnbfk-f76d1.origin-ci-int-gce.dev.openshift.com</span></span>
-<span id="cb15-7"><a href="#cb15-7" aria-hidden="true"></a><span class="at">  </span><span class="fu">to</span><span class="kw">:</span></span>
-<span id="cb15-8"><a href="#cb15-8" aria-hidden="true"></a><span class="at">    </span><span class="fu">kind</span><span class="kw">:</span><span class="at"> Service</span></span>
-<span id="cb15-9"><a href="#cb15-9" aria-hidden="true"></a><span class="at">    </span><span class="fu">name</span><span class="kw">:</span><span class="at"> nginx</span></span></code></pre></div>
+<div class="sourceCode" id="cb15"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
+<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Route</span></span>
+<span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a><span class="fu">metadata</span><span class="kw">:</span></span>
+<span id="cb15-4"><a href="#cb15-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> nginx</span></span>
+<span id="cb15-5"><a href="#cb15-5" aria-hidden="true" tabindex="-1"></a><span class="fu">spec</span><span class="kw">:</span></span>
+<span id="cb15-6"><a href="#cb15-6" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">host</span><span class="kw">:</span><span class="at"> nginx.apps.ci-ln-jqbnbfk-f76d1.origin-ci-int-gce.dev.openshift.com</span></span>
+<span id="cb15-7"><a href="#cb15-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">to</span><span class="kw">:</span></span>
+<span id="cb15-8"><a href="#cb15-8" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">kind</span><span class="kw">:</span><span class="at"> Service</span></span>
+<span id="cb15-9"><a href="#cb15-9" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">name</span><span class="kw">:</span><span class="at"> nginx</span></span></code></pre></div>
 <p>Note the <code>host</code> field. Its value is <code>nginx.apps.$CLUSTER_DOMAIN</code>. Change it to the proper value for your cluster, then create the route:</p>
 <pre class="shell"><code>% oc create -f route-nginx.yaml
 route.route.openshift.io/nginx created</code></pre>
 <p>There is no pod to route the traffic to… yet.</p>
 <h3 id="create-pod">Create pod <a href="#create-pod" class="section">§</a></h3>
 <p>The pod specification is:</p>
-<div class="sourceCode" id="cb17"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
-<span id="cb17-2"><a href="#cb17-2" aria-hidden="true"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Pod</span></span>
-<span id="cb17-3"><a href="#cb17-3" aria-hidden="true"></a><span class="fu">metadata</span><span class="kw">:</span></span>
-<span id="cb17-4"><a href="#cb17-4" aria-hidden="true"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> nginx</span></span>
-<span id="cb17-5"><a href="#cb17-5" aria-hidden="true"></a><span class="at">  </span><span class="fu">labels</span><span class="kw">:</span></span>
-<span id="cb17-6"><a href="#cb17-6" aria-hidden="true"></a><span class="at">    </span><span class="fu">app</span><span class="kw">:</span><span class="at"> nginx</span></span>
-<span id="cb17-7"><a href="#cb17-7" aria-hidden="true"></a><span class="at">  </span><span class="fu">annotations</span><span class="kw">:</span></span>
-<span id="cb17-8"><a href="#cb17-8" aria-hidden="true"></a><span class="at">    </span><span class="fu">openshift.io/scc</span><span class="kw">:</span><span class="at"> restricted</span></span>
-<span id="cb17-9"><a href="#cb17-9" aria-hidden="true"></a><span class="at">    </span><span class="fu">io.kubernetes.cri-o.userns-mode</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;auto:size=65536&quot;</span></span>
-<span id="cb17-10"><a href="#cb17-10" aria-hidden="true"></a><span class="fu">spec</span><span class="kw">:</span></span>
-<span id="cb17-11"><a href="#cb17-11" aria-hidden="true"></a><span class="at">  </span><span class="fu">securityContext</span><span class="kw">:</span></span>
-<span id="cb17-12"><a href="#cb17-12" aria-hidden="true"></a><span class="at">    </span><span class="fu">sysctls</span><span class="kw">:</span></span>
-<span id="cb17-13"><a href="#cb17-13" aria-hidden="true"></a><span class="at">    </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;net.ipv4.ping_group_range&quot;</span></span>
-<span id="cb17-14"><a href="#cb17-14" aria-hidden="true"></a><span class="at">      </span><span class="fu">value</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;0 65535&quot;</span></span>
-<span id="cb17-15"><a href="#cb17-15" aria-hidden="true"></a><span class="at">  </span><span class="fu">containers</span><span class="kw">:</span></span>
-<span id="cb17-16"><a href="#cb17-16" aria-hidden="true"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> nginx</span></span>
-<span id="cb17-17"><a href="#cb17-17" aria-hidden="true"></a><span class="at">    </span><span class="fu">image</span><span class="kw">:</span><span class="at"> quay.io/ftweedal/test-nginx:latest</span></span>
-<span id="cb17-18"><a href="#cb17-18" aria-hidden="true"></a><span class="at">    </span><span class="fu">tty</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span></code></pre></div>
+<div class="sourceCode" id="cb17"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
+<span id="cb17-2"><a href="#cb17-2" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Pod</span></span>
+<span id="cb17-3"><a href="#cb17-3" aria-hidden="true" tabindex="-1"></a><span class="fu">metadata</span><span class="kw">:</span></span>
+<span id="cb17-4"><a href="#cb17-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> nginx</span></span>
+<span id="cb17-5"><a href="#cb17-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">labels</span><span class="kw">:</span></span>
+<span id="cb17-6"><a href="#cb17-6" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">app</span><span class="kw">:</span><span class="at"> nginx</span></span>
+<span id="cb17-7"><a href="#cb17-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">annotations</span><span class="kw">:</span></span>
+<span id="cb17-8"><a href="#cb17-8" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">openshift.io/scc</span><span class="kw">:</span><span class="at"> restricted</span></span>
+<span id="cb17-9"><a href="#cb17-9" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">io.kubernetes.cri-o.userns-mode</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;auto:size=65536&quot;</span></span>
+<span id="cb17-10"><a href="#cb17-10" aria-hidden="true" tabindex="-1"></a><span class="fu">spec</span><span class="kw">:</span></span>
+<span id="cb17-11"><a href="#cb17-11" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">securityContext</span><span class="kw">:</span></span>
+<span id="cb17-12"><a href="#cb17-12" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">sysctls</span><span class="kw">:</span></span>
+<span id="cb17-13"><a href="#cb17-13" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;net.ipv4.ping_group_range&quot;</span></span>
+<span id="cb17-14"><a href="#cb17-14" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">value</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;0 65535&quot;</span></span>
+<span id="cb17-15"><a href="#cb17-15" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">containers</span><span class="kw">:</span></span>
+<span id="cb17-16"><a href="#cb17-16" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> nginx</span></span>
+<span id="cb17-17"><a href="#cb17-17" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">image</span><span class="kw">:</span><span class="at"> quay.io/ftweedal/test-nginx:latest</span></span>
+<span id="cb17-18"><a href="#cb17-18" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">tty</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span></code></pre></div>
 <p>Create the pod:</p>
 <pre class="shell"><code>% oc --as test create -f pod-nginx.yaml
 pod/nginx created</code></pre>

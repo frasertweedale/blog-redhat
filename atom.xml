@@ -94,37 +94,37 @@ sh-4.2# exit
 Removing debug pod ...</code></pre>
 <h3 id="enable-user-namespaces-and-cgroups-v2">Enable user namespaces and cgroups v2 <a href="#enable-user-namespaces-and-cgroups-v2" class="section">§</a></h3>
 <p>The following <code>MachineConfig</code> enables cgroups v2 and CRI-O annotation-based user namespace support:</p>
-<div class="sourceCode" id="cb6"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> machineconfiguration.openshift.io/v1</span></span>
-<span id="cb6-2"><a href="#cb6-2" aria-hidden="true"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> MachineConfig</span></span>
-<span id="cb6-3"><a href="#cb6-3" aria-hidden="true"></a><span class="fu">metadata</span><span class="kw">:</span></span>
-<span id="cb6-4"><a href="#cb6-4" aria-hidden="true"></a><span class="at">  </span><span class="fu">labels</span><span class="kw">:</span></span>
-<span id="cb6-5"><a href="#cb6-5" aria-hidden="true"></a><span class="at">    </span><span class="fu">machineconfiguration.openshift.io/role</span><span class="kw">:</span><span class="at"> worker</span></span>
-<span id="cb6-6"><a href="#cb6-6" aria-hidden="true"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> userns-cgv2</span></span>
-<span id="cb6-7"><a href="#cb6-7" aria-hidden="true"></a><span class="fu">spec</span><span class="kw">:</span></span>
-<span id="cb6-8"><a href="#cb6-8" aria-hidden="true"></a><span class="at">  </span><span class="fu">kernelArguments</span><span class="kw">:</span></span>
-<span id="cb6-9"><a href="#cb6-9" aria-hidden="true"></a><span class="at">    </span><span class="kw">-</span><span class="at"> systemd.unified_cgroup_hierarchy=1</span></span>
-<span id="cb6-10"><a href="#cb6-10" aria-hidden="true"></a><span class="at">    </span><span class="kw">-</span><span class="at"> cgroup_no_v1=&quot;all&quot;</span></span>
-<span id="cb6-11"><a href="#cb6-11" aria-hidden="true"></a><span class="at">    </span><span class="kw">-</span><span class="at"> psi=1</span></span>
-<span id="cb6-12"><a href="#cb6-12" aria-hidden="true"></a><span class="at">  </span><span class="fu">config</span><span class="kw">:</span></span>
-<span id="cb6-13"><a href="#cb6-13" aria-hidden="true"></a><span class="at">    </span><span class="fu">ignition</span><span class="kw">:</span></span>
-<span id="cb6-14"><a href="#cb6-14" aria-hidden="true"></a><span class="at">      </span><span class="fu">version</span><span class="kw">:</span><span class="at"> </span><span class="fl">3.1.0</span></span>
-<span id="cb6-15"><a href="#cb6-15" aria-hidden="true"></a><span class="at">    </span><span class="fu">storage</span><span class="kw">:</span></span>
-<span id="cb6-16"><a href="#cb6-16" aria-hidden="true"></a><span class="at">      </span><span class="fu">files</span><span class="kw">:</span></span>
-<span id="cb6-17"><a href="#cb6-17" aria-hidden="true"></a><span class="at">      </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> /etc/crio/crio.conf.d/99-crio-userns.conf</span></span>
-<span id="cb6-18"><a href="#cb6-18" aria-hidden="true"></a><span class="at">        </span><span class="fu">overwrite</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
-<span id="cb6-19"><a href="#cb6-19" aria-hidden="true"></a><span class="at">        </span><span class="fu">contents</span><span class="kw">:</span></span>
-<span id="cb6-20"><a href="#cb6-20" aria-hidden="true"></a><span class="at">          </span><span class="fu">source</span><span class="kw">:</span><span class="at"> data:text/plain;charset=utf-8;base64,W2NyaW8ucnVudGltZS5ydW50aW1lcy5ydW5jXQphbGxvd2VkX2Fubm90YXRpb25zPVsiaW8ua3ViZXJuZXRlcy5jcmktby51c2VybnMtbW9kZSJdCg==</span></span>
-<span id="cb6-21"><a href="#cb6-21" aria-hidden="true"></a><span class="at">      </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> /etc/subuid</span></span>
-<span id="cb6-22"><a href="#cb6-22" aria-hidden="true"></a><span class="at">        </span><span class="fu">overwrite</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
-<span id="cb6-23"><a href="#cb6-23" aria-hidden="true"></a><span class="at">        </span><span class="fu">contents</span><span class="kw">:</span></span>
-<span id="cb6-24"><a href="#cb6-24" aria-hidden="true"></a><span class="at">          </span><span class="fu">source</span><span class="kw">:</span><span class="at"> data:text/plain;charset=utf-8;base64,Y29yZToxMDAwMDA6NjU1MzYKY29udGFpbmVyczoyMDAwMDA6MjY4NDM1NDU2Cg==</span></span>
-<span id="cb6-25"><a href="#cb6-25" aria-hidden="true"></a><span class="at">      </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> /etc/subgid</span></span>
-<span id="cb6-26"><a href="#cb6-26" aria-hidden="true"></a><span class="at">        </span><span class="fu">overwrite</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
-<span id="cb6-27"><a href="#cb6-27" aria-hidden="true"></a><span class="at">        </span><span class="fu">contents</span><span class="kw">:</span></span>
-<span id="cb6-28"><a href="#cb6-28" aria-hidden="true"></a><span class="at">          </span><span class="fu">source</span><span class="kw">:</span><span class="at"> data:text/plain;charset=utf-8;base64,Y29yZToxMDAwMDA6NjU1MzYKY29udGFpbmVyczoyMDAwMDA6MjY4NDM1NDU2Cg==</span></span></code></pre></div>
+<div class="sourceCode" id="cb6"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> machineconfiguration.openshift.io/v1</span></span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> MachineConfig</span></span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a><span class="fu">metadata</span><span class="kw">:</span></span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">labels</span><span class="kw">:</span></span>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">machineconfiguration.openshift.io/role</span><span class="kw">:</span><span class="at"> worker</span></span>
+<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> userns-cgv2</span></span>
+<span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a><span class="fu">spec</span><span class="kw">:</span></span>
+<span id="cb6-8"><a href="#cb6-8" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">kernelArguments</span><span class="kw">:</span></span>
+<span id="cb6-9"><a href="#cb6-9" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="kw">-</span><span class="at"> systemd.unified_cgroup_hierarchy=1</span></span>
+<span id="cb6-10"><a href="#cb6-10" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="kw">-</span><span class="at"> cgroup_no_v1=&quot;all&quot;</span></span>
+<span id="cb6-11"><a href="#cb6-11" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="kw">-</span><span class="at"> psi=1</span></span>
+<span id="cb6-12"><a href="#cb6-12" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">config</span><span class="kw">:</span></span>
+<span id="cb6-13"><a href="#cb6-13" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">ignition</span><span class="kw">:</span></span>
+<span id="cb6-14"><a href="#cb6-14" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">version</span><span class="kw">:</span><span class="at"> </span><span class="fl">3.1.0</span></span>
+<span id="cb6-15"><a href="#cb6-15" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">storage</span><span class="kw">:</span></span>
+<span id="cb6-16"><a href="#cb6-16" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">files</span><span class="kw">:</span></span>
+<span id="cb6-17"><a href="#cb6-17" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> /etc/crio/crio.conf.d/99-crio-userns.conf</span></span>
+<span id="cb6-18"><a href="#cb6-18" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="fu">overwrite</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb6-19"><a href="#cb6-19" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="fu">contents</span><span class="kw">:</span></span>
+<span id="cb6-20"><a href="#cb6-20" aria-hidden="true" tabindex="-1"></a><span class="at">          </span><span class="fu">source</span><span class="kw">:</span><span class="at"> data:text/plain;charset=utf-8;base64,W2NyaW8ucnVudGltZS5ydW50aW1lcy5ydW5jXQphbGxvd2VkX2Fubm90YXRpb25zPVsiaW8ua3ViZXJuZXRlcy5jcmktby51c2VybnMtbW9kZSJdCg==</span></span>
+<span id="cb6-21"><a href="#cb6-21" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> /etc/subuid</span></span>
+<span id="cb6-22"><a href="#cb6-22" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="fu">overwrite</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb6-23"><a href="#cb6-23" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="fu">contents</span><span class="kw">:</span></span>
+<span id="cb6-24"><a href="#cb6-24" aria-hidden="true" tabindex="-1"></a><span class="at">          </span><span class="fu">source</span><span class="kw">:</span><span class="at"> data:text/plain;charset=utf-8;base64,Y29yZToxMDAwMDA6NjU1MzYKY29udGFpbmVyczoyMDAwMDA6MjY4NDM1NDU2Cg==</span></span>
+<span id="cb6-25"><a href="#cb6-25" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> /etc/subgid</span></span>
+<span id="cb6-26"><a href="#cb6-26" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="fu">overwrite</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb6-27"><a href="#cb6-27" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="fu">contents</span><span class="kw">:</span></span>
+<span id="cb6-28"><a href="#cb6-28" aria-hidden="true" tabindex="-1"></a><span class="at">          </span><span class="fu">source</span><span class="kw">:</span><span class="at"> data:text/plain;charset=utf-8;base64,Y29yZToxMDAwMDA6NjU1MzYKY29udGFpbmVyczoyMDAwMDA6MjY4NDM1NDU2Cg==</span></span></code></pre></div>
 <p>The file <code>/etc/crio/crio.conf.d/99-crio-userns.conf</code> enables CRI-O’s annotation-based user namespace support. Its content (base64-encoded in the <code>MachineConfig</code>) is:</p>
-<div class="sourceCode" id="cb7"><pre class="sourceCode ini"><code class="sourceCode ini"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true"></a><span class="kw">[crio.runtime.runtimes.runc]</span></span>
-<span id="cb7-2"><a href="#cb7-2" aria-hidden="true"></a><span class="dt">allowed_annotations</span><span class="ot">=</span><span class="st">[&quot;io.kubernetes.cri-o.userns-mode&quot;]</span></span></code></pre></div>
+<div class="sourceCode" id="cb7"><pre class="sourceCode ini"><code class="sourceCode ini"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="kw">[crio.runtime.runtimes.runc]</span></span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a><span class="dt">allowed_annotations</span><span class="ot">=</span><span class="st">[&quot;io.kubernetes.cri-o.userns-mode&quot;]</span></span></code></pre></div>
 <p>The <code>MachineConfig</code> also overrides <code>/etc/subuid</code> and <code>/etc/subgid</code>, defining sub-id ranges for user namespaces. The content is the same for both files:</p>
 <pre><code>core:100000:65536
 containers:200000:268435456</code></pre>
@@ -157,52 +157,52 @@ clusterrole.rbac.authorization.k8s.io/admin added: &quot;test&quot;
 securitycontextconstraints.security.openshift.io/anyuid added to: [&quot;test&quot;]</code></pre>
 <h3 id="create-service-and-route">Create service and route <a href="#create-service-and-route" class="section">§</a></h3>
 <p>Create a service to provide HTTP access to pods matching the <code>app: nginx</code> selector:</p>
-<div class="sourceCode" id="cb13"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
-<span id="cb13-2"><a href="#cb13-2" aria-hidden="true"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Service</span></span>
-<span id="cb13-3"><a href="#cb13-3" aria-hidden="true"></a><span class="fu">metadata</span><span class="kw">:</span></span>
-<span id="cb13-4"><a href="#cb13-4" aria-hidden="true"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> nginx</span></span>
-<span id="cb13-5"><a href="#cb13-5" aria-hidden="true"></a><span class="fu">spec</span><span class="kw">:</span></span>
-<span id="cb13-6"><a href="#cb13-6" aria-hidden="true"></a><span class="at">  </span><span class="fu">selector</span><span class="kw">:</span></span>
-<span id="cb13-7"><a href="#cb13-7" aria-hidden="true"></a><span class="at">    </span><span class="fu">app</span><span class="kw">:</span><span class="at"> nginx</span></span>
-<span id="cb13-8"><a href="#cb13-8" aria-hidden="true"></a><span class="at">  </span><span class="fu">ports</span><span class="kw">:</span></span>
-<span id="cb13-9"><a href="#cb13-9" aria-hidden="true"></a><span class="at">    </span><span class="kw">-</span><span class="at"> </span><span class="fu">protocol</span><span class="kw">:</span><span class="at"> TCP</span></span>
-<span id="cb13-10"><a href="#cb13-10" aria-hidden="true"></a><span class="at">      </span><span class="fu">port</span><span class="kw">:</span><span class="at"> </span><span class="dv">80</span></span></code></pre></div>
+<div class="sourceCode" id="cb13"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
+<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Service</span></span>
+<span id="cb13-3"><a href="#cb13-3" aria-hidden="true" tabindex="-1"></a><span class="fu">metadata</span><span class="kw">:</span></span>
+<span id="cb13-4"><a href="#cb13-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> nginx</span></span>
+<span id="cb13-5"><a href="#cb13-5" aria-hidden="true" tabindex="-1"></a><span class="fu">spec</span><span class="kw">:</span></span>
+<span id="cb13-6"><a href="#cb13-6" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">selector</span><span class="kw">:</span></span>
+<span id="cb13-7"><a href="#cb13-7" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">app</span><span class="kw">:</span><span class="at"> nginx</span></span>
+<span id="cb13-8"><a href="#cb13-8" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">ports</span><span class="kw">:</span></span>
+<span id="cb13-9"><a href="#cb13-9" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="kw">-</span><span class="at"> </span><span class="fu">protocol</span><span class="kw">:</span><span class="at"> TCP</span></span>
+<span id="cb13-10"><a href="#cb13-10" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">port</span><span class="kw">:</span><span class="at"> </span><span class="dv">80</span></span></code></pre></div>
 <pre class="shell"><code>% oc create -f service-nginx.yaml
 service/nginx created</code></pre>
 <p>The following route definition will provide HTTP ingress from outside the cluster:</p>
-<div class="sourceCode" id="cb15"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
-<span id="cb15-2"><a href="#cb15-2" aria-hidden="true"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Route</span></span>
-<span id="cb15-3"><a href="#cb15-3" aria-hidden="true"></a><span class="fu">metadata</span><span class="kw">:</span></span>
-<span id="cb15-4"><a href="#cb15-4" aria-hidden="true"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> nginx</span></span>
-<span id="cb15-5"><a href="#cb15-5" aria-hidden="true"></a><span class="fu">spec</span><span class="kw">:</span></span>
-<span id="cb15-6"><a href="#cb15-6" aria-hidden="true"></a><span class="at">  </span><span class="fu">host</span><span class="kw">:</span><span class="at"> nginx.apps.ci-ln-jqbnbfk-f76d1.origin-ci-int-gce.dev.openshift.com</span></span>
-<span id="cb15-7"><a href="#cb15-7" aria-hidden="true"></a><span class="at">  </span><span class="fu">to</span><span class="kw">:</span></span>
-<span id="cb15-8"><a href="#cb15-8" aria-hidden="true"></a><span class="at">    </span><span class="fu">kind</span><span class="kw">:</span><span class="at"> Service</span></span>
-<span id="cb15-9"><a href="#cb15-9" aria-hidden="true"></a><span class="at">    </span><span class="fu">name</span><span class="kw">:</span><span class="at"> nginx</span></span></code></pre></div>
+<div class="sourceCode" id="cb15"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
+<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Route</span></span>
+<span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a><span class="fu">metadata</span><span class="kw">:</span></span>
+<span id="cb15-4"><a href="#cb15-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> nginx</span></span>
+<span id="cb15-5"><a href="#cb15-5" aria-hidden="true" tabindex="-1"></a><span class="fu">spec</span><span class="kw">:</span></span>
+<span id="cb15-6"><a href="#cb15-6" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">host</span><span class="kw">:</span><span class="at"> nginx.apps.ci-ln-jqbnbfk-f76d1.origin-ci-int-gce.dev.openshift.com</span></span>
+<span id="cb15-7"><a href="#cb15-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">to</span><span class="kw">:</span></span>
+<span id="cb15-8"><a href="#cb15-8" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">kind</span><span class="kw">:</span><span class="at"> Service</span></span>
+<span id="cb15-9"><a href="#cb15-9" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">name</span><span class="kw">:</span><span class="at"> nginx</span></span></code></pre></div>
 <p>Note the <code>host</code> field. Its value is <code>nginx.apps.$CLUSTER_DOMAIN</code>. Change it to the proper value for your cluster, then create the route:</p>
 <pre class="shell"><code>% oc create -f route-nginx.yaml
 route.route.openshift.io/nginx created</code></pre>
 <p>There is no pod to route the traffic to… yet.</p>
 <h3 id="create-pod">Create pod <a href="#create-pod" class="section">§</a></h3>
 <p>The pod specification is:</p>
-<div class="sourceCode" id="cb17"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
-<span id="cb17-2"><a href="#cb17-2" aria-hidden="true"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Pod</span></span>
-<span id="cb17-3"><a href="#cb17-3" aria-hidden="true"></a><span class="fu">metadata</span><span class="kw">:</span></span>
-<span id="cb17-4"><a href="#cb17-4" aria-hidden="true"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> nginx</span></span>
-<span id="cb17-5"><a href="#cb17-5" aria-hidden="true"></a><span class="at">  </span><span class="fu">labels</span><span class="kw">:</span></span>
-<span id="cb17-6"><a href="#cb17-6" aria-hidden="true"></a><span class="at">    </span><span class="fu">app</span><span class="kw">:</span><span class="at"> nginx</span></span>
-<span id="cb17-7"><a href="#cb17-7" aria-hidden="true"></a><span class="at">  </span><span class="fu">annotations</span><span class="kw">:</span></span>
-<span id="cb17-8"><a href="#cb17-8" aria-hidden="true"></a><span class="at">    </span><span class="fu">openshift.io/scc</span><span class="kw">:</span><span class="at"> restricted</span></span>
-<span id="cb17-9"><a href="#cb17-9" aria-hidden="true"></a><span class="at">    </span><span class="fu">io.kubernetes.cri-o.userns-mode</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;auto:size=65536&quot;</span></span>
-<span id="cb17-10"><a href="#cb17-10" aria-hidden="true"></a><span class="fu">spec</span><span class="kw">:</span></span>
-<span id="cb17-11"><a href="#cb17-11" aria-hidden="true"></a><span class="at">  </span><span class="fu">securityContext</span><span class="kw">:</span></span>
-<span id="cb17-12"><a href="#cb17-12" aria-hidden="true"></a><span class="at">    </span><span class="fu">sysctls</span><span class="kw">:</span></span>
-<span id="cb17-13"><a href="#cb17-13" aria-hidden="true"></a><span class="at">    </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;net.ipv4.ping_group_range&quot;</span></span>
-<span id="cb17-14"><a href="#cb17-14" aria-hidden="true"></a><span class="at">      </span><span class="fu">value</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;0 65535&quot;</span></span>
-<span id="cb17-15"><a href="#cb17-15" aria-hidden="true"></a><span class="at">  </span><span class="fu">containers</span><span class="kw">:</span></span>
-<span id="cb17-16"><a href="#cb17-16" aria-hidden="true"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> nginx</span></span>
-<span id="cb17-17"><a href="#cb17-17" aria-hidden="true"></a><span class="at">    </span><span class="fu">image</span><span class="kw">:</span><span class="at"> quay.io/ftweedal/test-nginx:latest</span></span>
-<span id="cb17-18"><a href="#cb17-18" aria-hidden="true"></a><span class="at">    </span><span class="fu">tty</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span></code></pre></div>
+<div class="sourceCode" id="cb17"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
+<span id="cb17-2"><a href="#cb17-2" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Pod</span></span>
+<span id="cb17-3"><a href="#cb17-3" aria-hidden="true" tabindex="-1"></a><span class="fu">metadata</span><span class="kw">:</span></span>
+<span id="cb17-4"><a href="#cb17-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> nginx</span></span>
+<span id="cb17-5"><a href="#cb17-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">labels</span><span class="kw">:</span></span>
+<span id="cb17-6"><a href="#cb17-6" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">app</span><span class="kw">:</span><span class="at"> nginx</span></span>
+<span id="cb17-7"><a href="#cb17-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">annotations</span><span class="kw">:</span></span>
+<span id="cb17-8"><a href="#cb17-8" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">openshift.io/scc</span><span class="kw">:</span><span class="at"> restricted</span></span>
+<span id="cb17-9"><a href="#cb17-9" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">io.kubernetes.cri-o.userns-mode</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;auto:size=65536&quot;</span></span>
+<span id="cb17-10"><a href="#cb17-10" aria-hidden="true" tabindex="-1"></a><span class="fu">spec</span><span class="kw">:</span></span>
+<span id="cb17-11"><a href="#cb17-11" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">securityContext</span><span class="kw">:</span></span>
+<span id="cb17-12"><a href="#cb17-12" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">sysctls</span><span class="kw">:</span></span>
+<span id="cb17-13"><a href="#cb17-13" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;net.ipv4.ping_group_range&quot;</span></span>
+<span id="cb17-14"><a href="#cb17-14" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">value</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;0 65535&quot;</span></span>
+<span id="cb17-15"><a href="#cb17-15" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">containers</span><span class="kw">:</span></span>
+<span id="cb17-16"><a href="#cb17-16" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> nginx</span></span>
+<span id="cb17-17"><a href="#cb17-17" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">image</span><span class="kw">:</span><span class="at"> quay.io/ftweedal/test-nginx:latest</span></span>
+<span id="cb17-18"><a href="#cb17-18" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">tty</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span></code></pre></div>
 <p>Create the pod:</p>
 <pre class="shell"><code>% oc --as test create -f pod-nginx.yaml
 pod/nginx created</code></pre>
@@ -386,21 +386,21 @@ sh-4.4# cat ~/.ssh/id_rsa.pub
 ssh-rsa AAAA…4OU= root@worker-a</code></pre>
 </div>
 <p>The following <code>MachineConfig</code> adds the SSH key for user <code>core</code>:</p>
-<div class="sourceCode" id="cb4"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> machineconfiguration.openshift.io/v1</span></span>
-<span id="cb4-2"><a href="#cb4-2" aria-hidden="true"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> MachineConfig</span></span>
-<span id="cb4-3"><a href="#cb4-3" aria-hidden="true"></a><span class="fu">metadata</span><span class="kw">:</span></span>
-<span id="cb4-4"><a href="#cb4-4" aria-hidden="true"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> ssh-authorized-keys-worker</span></span>
-<span id="cb4-5"><a href="#cb4-5" aria-hidden="true"></a><span class="at">  </span><span class="fu">labels</span><span class="kw">:</span></span>
-<span id="cb4-6"><a href="#cb4-6" aria-hidden="true"></a><span class="at">    </span><span class="fu">machineconfiguration.openshift.io/role</span><span class="kw">:</span><span class="at"> worker</span></span>
-<span id="cb4-7"><a href="#cb4-7" aria-hidden="true"></a><span class="fu">spec</span><span class="kw">:</span></span>
-<span id="cb4-8"><a href="#cb4-8" aria-hidden="true"></a><span class="at">  </span><span class="fu">config</span><span class="kw">:</span></span>
-<span id="cb4-9"><a href="#cb4-9" aria-hidden="true"></a><span class="at">    </span><span class="fu">ignition</span><span class="kw">:</span></span>
-<span id="cb4-10"><a href="#cb4-10" aria-hidden="true"></a><span class="at">      </span><span class="fu">version</span><span class="kw">:</span><span class="at"> </span><span class="fl">3.2.0</span></span>
-<span id="cb4-11"><a href="#cb4-11" aria-hidden="true"></a><span class="at">    </span><span class="fu">passwd</span><span class="kw">:</span></span>
-<span id="cb4-12"><a href="#cb4-12" aria-hidden="true"></a><span class="at">      </span><span class="fu">users</span><span class="kw">:</span></span>
-<span id="cb4-13"><a href="#cb4-13" aria-hidden="true"></a><span class="at">      </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> core</span></span>
-<span id="cb4-14"><a href="#cb4-14" aria-hidden="true"></a><span class="at">        </span><span class="fu">sshAuthorizedKeys</span><span class="kw">:</span></span>
-<span id="cb4-15"><a href="#cb4-15" aria-hidden="true"></a><span class="at">        </span><span class="kw">-</span><span class="at"> ssh-rsa AAAA…40U= root@worker-a</span></span></code></pre></div>
+<div class="sourceCode" id="cb4"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> machineconfiguration.openshift.io/v1</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> MachineConfig</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a><span class="fu">metadata</span><span class="kw">:</span></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> ssh-authorized-keys-worker</span></span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">labels</span><span class="kw">:</span></span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">machineconfiguration.openshift.io/role</span><span class="kw">:</span><span class="at"> worker</span></span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a><span class="fu">spec</span><span class="kw">:</span></span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">config</span><span class="kw">:</span></span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">ignition</span><span class="kw">:</span></span>
+<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">version</span><span class="kw">:</span><span class="at"> </span><span class="fl">3.2.0</span></span>
+<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">passwd</span><span class="kw">:</span></span>
+<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">users</span><span class="kw">:</span></span>
+<span id="cb4-13"><a href="#cb4-13" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> core</span></span>
+<span id="cb4-14"><a href="#cb4-14" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="fu">sshAuthorizedKeys</span><span class="kw">:</span></span>
+<span id="cb4-15"><a href="#cb4-15" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="kw">-</span><span class="at"> ssh-rsa AAAA…40U= root@worker-a</span></span></code></pre></div>
 <p>I created the <code>MachineConfig</code>:</p>
 <pre class="shell"><code>% oc create -f machineconfig-ssh-worker.yaml
 machineconfig.machineconfiguration.openshift.io/ssh-authorized-keys created</code></pre>
@@ -527,15 +527,15 @@ Run &quot;systemctl reboot&quot; to start a reboot</code></pre>
 <h2 id="how-runc-talks-to-systemd">How <code>runc</code> talks to <em>systemd</em> <a href="#how-runc-talks-to-systemd" class="section">§</a></h2>
 <p>The <em>Open Container Initiative (OCI)</em> <a href="https://github.com/opencontainers/runtime-spec">runtime spec</a> defines a low-level container runtime interface. OCI runtimes must create the Linux namespaces specified by an OCI config, including the cgroup namespace.</p>
 <p><code>runc</code> uses the systemd D-Bus API to ask systemd to create a cgroup scope for the container. Then it creates a cgroup namespace with the new cgroup scope as the root. We can see that <code>runc</code> invokes the <code>StartTransientUnit</code> API method with a name for the new unit, and a list of properties (<a href="https://github.com/opencontainers/runc/blob/v1.0.0-rc95/vendor/github.com/coreos/go-systemd/v22/dbus/methods.go#L198-L200">source code</a>):</p>
-<div class="sourceCode" id="cb1"><pre class="sourceCode go"><code class="sourceCode go"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true"></a><span class="co">// .../go-systemd/v22/dbus/methods.go</span></span>
-<span id="cb1-2"><a href="#cb1-2" aria-hidden="true"></a><span class="kw">func</span> (c *Conn) StartTransientUnitContext(</span>
-<span id="cb1-3"><a href="#cb1-3" aria-hidden="true"></a>  ctx context.Context, name <span class="dt">string</span>, mode <span class="dt">string</span>,</span>
-<span id="cb1-4"><a href="#cb1-4" aria-hidden="true"></a>  properties []Property, ch <span class="kw">chan</span>&lt;- <span class="dt">string</span>) (<span class="dt">int</span>, <span class="dt">error</span>) {</span>
-<span id="cb1-5"><a href="#cb1-5" aria-hidden="true"></a>  <span class="kw">return</span> c.startJob(</span>
-<span id="cb1-6"><a href="#cb1-6" aria-hidden="true"></a>    ctx, ch,</span>
-<span id="cb1-7"><a href="#cb1-7" aria-hidden="true"></a>    <span class="st">&quot;org.freedesktop.systemd1.Manager.StartTransientUnit&quot;</span>,</span>
-<span id="cb1-8"><a href="#cb1-8" aria-hidden="true"></a>    name, mode, properties, <span class="bu">make</span>([]PropertyCollection, <span class="dv">0</span>))</span>
-<span id="cb1-9"><a href="#cb1-9" aria-hidden="true"></a>}</span></code></pre></div>
+<div class="sourceCode" id="cb1"><pre class="sourceCode go"><code class="sourceCode go"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="co">// .../go-systemd/v22/dbus/methods.go</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="kw">func</span> <span class="op">(</span>c <span class="op">*</span>Conn<span class="op">)</span> StartTransientUnitContext<span class="op">(</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>  ctx context<span class="op">.</span>Context<span class="op">,</span> name <span class="dt">string</span><span class="op">,</span> mode <span class="dt">string</span><span class="op">,</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>  properties <span class="op">[]</span>Property<span class="op">,</span> ch <span class="kw">chan</span><span class="op">&lt;-</span> <span class="dt">string</span><span class="op">)</span> <span class="op">(</span><span class="dt">int</span><span class="op">,</span> <span class="dt">error</span><span class="op">)</span> <span class="op">{</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>  <span class="kw">return</span> c<span class="op">.</span>startJob<span class="op">(</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>    ctx<span class="op">,</span> ch<span class="op">,</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;org.freedesktop.systemd1.Manager.StartTransientUnit&quot;</span><span class="op">,</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>    name<span class="op">,</span> mode<span class="op">,</span> properties<span class="op">,</span> <span class="bu">make</span><span class="op">([]</span>PropertyCollection<span class="op">,</span> <span class="dv">0</span><span class="op">))</span></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
 <p>Most of the unit configuration is passed as properties.</p>
 <h2 id="the-user-property">The <code>User=</code> property <a href="#the-user-property" class="section">§</a></h2>
 <p><a href="https://www.freedesktop.org/software/systemd/man/systemd.exec.html#User="><code>systemd.exec(5)</code></a> describes the properties that configure a systemd unit (including transient units). Among the properties are <code>User=</code> and <code>Group=</code>:</p>
@@ -553,18 +553,18 @@ Run &quot;systemctl reboot&quot; to start a reboot</code></pre>
 {&quot;uid&quot;:0,&quot;gid&quot;:0}
 [{&quot;containerID&quot;:0,&quot;hostID&quot;:100000,&quot;size&quot;:65536}]</code></pre>
 <p><code>runc</code> has all the data it needs to compute the appropriate value for the <code>User=</code> property. The algorithm, expressed as Python is:</p>
-<div class="sourceCode" id="cb3"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true"></a>uid <span class="op">=</span> config[<span class="st">&quot;process&quot;</span>][<span class="st">&quot;user&quot;</span>][<span class="st">&quot;uid&quot;</span>]</span>
-<span id="cb3-2"><a href="#cb3-2" aria-hidden="true"></a></span>
-<span id="cb3-3"><a href="#cb3-3" aria-hidden="true"></a><span class="cf">for</span> <span class="bu">map</span> <span class="kw">in</span> config[<span class="st">&quot;linux&quot;</span>][<span class="st">&quot;uidMappings&quot;</span>]:</span>
-<span id="cb3-4"><a href="#cb3-4" aria-hidden="true"></a>    uid_min <span class="op">=</span> <span class="bu">map</span>[<span class="st">&quot;containerID&quot;</span>]</span>
-<span id="cb3-5"><a href="#cb3-5" aria-hidden="true"></a>    uid_max <span class="op">=</span> map_min <span class="op">+</span> <span class="bu">map</span>[<span class="st">&quot;size&quot;</span>] <span class="op">-</span> <span class="dv">1</span></span>
-<span id="cb3-6"><a href="#cb3-6" aria-hidden="true"></a></span>
-<span id="cb3-7"><a href="#cb3-7" aria-hidden="true"></a>    <span class="cf">if</span> uid_min <span class="op">&lt;=</span> uid <span class="op">&lt;=</span> uid_max:</span>
-<span id="cb3-8"><a href="#cb3-8" aria-hidden="true"></a>        offset <span class="op">=</span> uid <span class="op">-</span> uid_min</span>
-<span id="cb3-9"><a href="#cb3-9" aria-hidden="true"></a>        <span class="cf">return</span> <span class="bu">map</span>[<span class="st">&quot;hostID&quot;</span>] <span class="op">+</span> offset</span>
-<span id="cb3-10"><a href="#cb3-10" aria-hidden="true"></a></span>
-<span id="cb3-11"><a href="#cb3-11" aria-hidden="true"></a><span class="cf">else</span>:</span>
-<span id="cb3-12"><a href="#cb3-12" aria-hidden="true"></a>    <span class="cf">raise</span> <span class="pp">RuntimeError</span>(<span class="st">&quot;user.uid is not mapped&quot;</span>)</span></code></pre></div>
+<div class="sourceCode" id="cb3"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>uid <span class="op">=</span> config[<span class="st">&quot;process&quot;</span>][<span class="st">&quot;user&quot;</span>][<span class="st">&quot;uid&quot;</span>]</span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> <span class="bu">map</span> <span class="kw">in</span> config[<span class="st">&quot;linux&quot;</span>][<span class="st">&quot;uidMappings&quot;</span>]:</span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>    uid_min <span class="op">=</span> <span class="bu">map</span>[<span class="st">&quot;containerID&quot;</span>]</span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>    uid_max <span class="op">=</span> map_min <span class="op">+</span> <span class="bu">map</span>[<span class="st">&quot;size&quot;</span>] <span class="op">-</span> <span class="dv">1</span></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> uid_min <span class="op">&lt;=</span> uid <span class="op">&lt;=</span> uid_max:</span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a>        offset <span class="op">=</span> uid <span class="op">-</span> uid_min</span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> <span class="bu">map</span>[<span class="st">&quot;hostID&quot;</span>] <span class="op">+</span> offset</span>
+<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a><span class="cf">else</span>:</span>
+<span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a>    <span class="cf">raise</span> <span class="pp">RuntimeError</span>(<span class="st">&quot;user.uid is not mapped&quot;</span>)</span></code></pre></div>
 <h2 id="testing-with-systemd-run">Testing with <code>systemd-run</code> <a href="#testing-with-systemd-run" class="section">§</a></h2>
 <p><code>systemd-run(1)</code> uses the transient unit API to run programs via transient scope or service units. You can use the <code>--property</code>/<code>-p</code> option to pass additional properties. I used <code>systemd-run</code> to observe how systemd handles the <code>Delegate=true</code> and <code>User=</code> properties.</p>
 <h3 id="create-and-inspect-transient-unit">Create and inspect transient unit <a href="#create-and-inspect-transient-unit" class="section">§</a></h3>
@@ -993,10 +993,10 @@ Accept-Ranges: bytes</code></pre>
 <h2 id="test-application-http-server">Test application: HTTP server <a href="#test-application-http-server" class="section">§</a></h2>
 <p>To test systemd containers on OpenShift, I created a Fedora-based container running the <em>nginx</em> HTTP server. I enable the <code>nginx</code> systemd and set the default command to <code>/sbin/init</code>, which is systemd. The server doesn’t host any interesting content, but if it responds to requests we know that systemd is working.</p>
 <p>The <code>Containerfile</code> definition is:</p>
-<div class="sourceCode" id="cb1"><pre class="sourceCode dockerfile"><code class="sourceCode dockerfile"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true"></a><span class="kw">FROM</span> fedora:33-x86_64</span>
-<span id="cb1-2"><a href="#cb1-2" aria-hidden="true"></a><span class="kw">RUN</span> dnf -y install nginx &amp;&amp; dnf clean all &amp;&amp; systemctl enable nginx</span>
-<span id="cb1-3"><a href="#cb1-3" aria-hidden="true"></a><span class="kw">EXPOSE</span> 80</span>
-<span id="cb1-4"><a href="#cb1-4" aria-hidden="true"></a><span class="kw">CMD</span> [ <span class="st">&quot;/sbin/init&quot;</span> ]</span></code></pre></div>
+<div class="sourceCode" id="cb1"><pre class="sourceCode dockerfile"><code class="sourceCode dockerfile"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="kw">FROM</span> fedora:33-x86_64</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="kw">RUN</span> dnf -y install nginx &amp;&amp; dnf clean all &amp;&amp; systemctl enable nginx</span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="kw">EXPOSE</span> 80</span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="kw">CMD</span> [ <span class="st">&quot;/sbin/init&quot;</span> ]</span></code></pre></div>
 <p>I built the container on my workstation and tagged it <code>test-nginx</code>. To check that the container works, I ran it locally and performed an HTTP request via <code>curl</code>:</p>
 <pre class="shell"><code>% podman run --detach --publish 8080:80 test-nginx
 2d8059e555c821d9ffcccd84bee88996207794957696c54e8d29787e8c33fab3
@@ -1018,16 +1018,16 @@ Accept-Ranges: bytes
 <h2 id="running-privileged-user">Running (<strong>privileged</strong> user) <a href="#running-privileged-user" class="section">§</a></h2>
 <p>I performed my testing on an OpenShift 4.8 nightly cluster. The exact build is <code>4.8.0-0.nightly-2021-03-26-010831</code>. As far as I’m aware, with respect to systemd and cgroups there are no major differences between OpenShift 4.7 (which is Generally Available) and the build I’m using. So results should be similar on OpenShift 4.7.</p>
 <p>The Pod definition for my test service is:</p>
-<div class="sourceCode" id="cb3"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
-<span id="cb3-2"><a href="#cb3-2" aria-hidden="true"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Pod</span></span>
-<span id="cb3-3"><a href="#cb3-3" aria-hidden="true"></a><span class="fu">metadata</span><span class="kw">:</span></span>
-<span id="cb3-4"><a href="#cb3-4" aria-hidden="true"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> nginx</span></span>
-<span id="cb3-5"><a href="#cb3-5" aria-hidden="true"></a><span class="at">  </span><span class="fu">labels</span><span class="kw">:</span></span>
-<span id="cb3-6"><a href="#cb3-6" aria-hidden="true"></a><span class="at">    </span><span class="fu">app</span><span class="kw">:</span><span class="at"> nginx</span></span>
-<span id="cb3-7"><a href="#cb3-7" aria-hidden="true"></a><span class="fu">spec</span><span class="kw">:</span></span>
-<span id="cb3-8"><a href="#cb3-8" aria-hidden="true"></a><span class="at">  </span><span class="fu">containers</span><span class="kw">:</span></span>
-<span id="cb3-9"><a href="#cb3-9" aria-hidden="true"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> nginx</span></span>
-<span id="cb3-10"><a href="#cb3-10" aria-hidden="true"></a><span class="at">    </span><span class="fu">image</span><span class="kw">:</span><span class="at"> quay.io/ftweedal/test-nginx:latest</span></span></code></pre></div>
+<div class="sourceCode" id="cb3"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Pod</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="fu">metadata</span><span class="kw">:</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> nginx</span></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">labels</span><span class="kw">:</span></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">app</span><span class="kw">:</span><span class="at"> nginx</span></span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a><span class="fu">spec</span><span class="kw">:</span></span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">containers</span><span class="kw">:</span></span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> nginx</span></span>
+<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">image</span><span class="kw">:</span><span class="at"> quay.io/ftweedal/test-nginx:latest</span></span></code></pre></div>
 <p>I create the Pod, operating with the cluster <code>admin</code> credential. After a few seconds, the pod is running:</p>
 <pre class="shell"><code>% oc create -f pod-nginx.yaml 
 pod/nginx created
@@ -1042,26 +1042,26 @@ pragma: no-cache
 cache-control: private, max-age=0, no-cache, no-store
 content-type: text/html</code></pre>
 <p>Now I create Service and Route objects to expose the nginx server. The Service definition is:</p>
-<div class="sourceCode" id="cb6"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
-<span id="cb6-2"><a href="#cb6-2" aria-hidden="true"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Service</span></span>
-<span id="cb6-3"><a href="#cb6-3" aria-hidden="true"></a><span class="fu">metadata</span><span class="kw">:</span></span>
-<span id="cb6-4"><a href="#cb6-4" aria-hidden="true"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> nginx</span></span>
-<span id="cb6-5"><a href="#cb6-5" aria-hidden="true"></a><span class="fu">spec</span><span class="kw">:</span></span>
-<span id="cb6-6"><a href="#cb6-6" aria-hidden="true"></a><span class="at">  </span><span class="fu">selector</span><span class="kw">:</span></span>
-<span id="cb6-7"><a href="#cb6-7" aria-hidden="true"></a><span class="at">    </span><span class="fu">app</span><span class="kw">:</span><span class="at"> nginx</span></span>
-<span id="cb6-8"><a href="#cb6-8" aria-hidden="true"></a><span class="at">  </span><span class="fu">ports</span><span class="kw">:</span></span>
-<span id="cb6-9"><a href="#cb6-9" aria-hidden="true"></a><span class="at">    </span><span class="kw">-</span><span class="at"> </span><span class="fu">protocol</span><span class="kw">:</span><span class="at"> TCP</span></span>
-<span id="cb6-10"><a href="#cb6-10" aria-hidden="true"></a><span class="at">      </span><span class="fu">port</span><span class="kw">:</span><span class="at"> </span><span class="dv">80</span></span></code></pre></div>
+<div class="sourceCode" id="cb6"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Service</span></span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a><span class="fu">metadata</span><span class="kw">:</span></span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> nginx</span></span>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a><span class="fu">spec</span><span class="kw">:</span></span>
+<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">selector</span><span class="kw">:</span></span>
+<span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">app</span><span class="kw">:</span><span class="at"> nginx</span></span>
+<span id="cb6-8"><a href="#cb6-8" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">ports</span><span class="kw">:</span></span>
+<span id="cb6-9"><a href="#cb6-9" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="kw">-</span><span class="at"> </span><span class="fu">protocol</span><span class="kw">:</span><span class="at"> TCP</span></span>
+<span id="cb6-10"><a href="#cb6-10" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">port</span><span class="kw">:</span><span class="at"> </span><span class="dv">80</span></span></code></pre></div>
 <p>And the Route definition is:</p>
-<div class="sourceCode" id="cb7"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
-<span id="cb7-2"><a href="#cb7-2" aria-hidden="true"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Route</span></span>
-<span id="cb7-3"><a href="#cb7-3" aria-hidden="true"></a><span class="fu">metadata</span><span class="kw">:</span></span>
-<span id="cb7-4"><a href="#cb7-4" aria-hidden="true"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> nginx</span></span>
-<span id="cb7-5"><a href="#cb7-5" aria-hidden="true"></a><span class="fu">spec</span><span class="kw">:</span></span>
-<span id="cb7-6"><a href="#cb7-6" aria-hidden="true"></a><span class="at">  </span><span class="fu">host</span><span class="kw">:</span><span class="at"> nginx.apps.ft-48dev-5.idmocp.lab.eng.rdu2.redhat.com</span></span>
-<span id="cb7-7"><a href="#cb7-7" aria-hidden="true"></a><span class="at">  </span><span class="fu">to</span><span class="kw">:</span></span>
-<span id="cb7-8"><a href="#cb7-8" aria-hidden="true"></a><span class="at">    </span><span class="fu">kind</span><span class="kw">:</span><span class="at"> Service</span></span>
-<span id="cb7-9"><a href="#cb7-9" aria-hidden="true"></a><span class="at">    </span><span class="fu">name</span><span class="kw">:</span><span class="at"> nginx</span></span></code></pre></div>
+<div class="sourceCode" id="cb7"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Route</span></span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a><span class="fu">metadata</span><span class="kw">:</span></span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> nginx</span></span>
+<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a><span class="fu">spec</span><span class="kw">:</span></span>
+<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">host</span><span class="kw">:</span><span class="at"> nginx.apps.ft-48dev-5.idmocp.lab.eng.rdu2.redhat.com</span></span>
+<span id="cb7-7"><a href="#cb7-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">to</span><span class="kw">:</span></span>
+<span id="cb7-8"><a href="#cb7-8" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">kind</span><span class="kw">:</span><span class="at"> Service</span></span>
+<span id="cb7-9"><a href="#cb7-9" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">name</span><span class="kw">:</span><span class="at"> nginx</span></span></code></pre></div>
 <p>I create the objects:</p>
 <pre class="shell"><code>% oc create -f service-nginx.yaml 
 service/nginx created
@@ -1152,17 +1152,17 @@ nginx   0/1     CrashLoopBackOff   1          23s</code></pre>
 <pre class="shell"><code>% oc logs pod/nginx
 %</code></pre>
 <p>There is no output. This baffled me, at first. Eventually I learned that Kubernetes, by default, does not allocate pseudo-terminal devices to containers. You can overcome this on a per-container basis by including <code>tty: true</code> in the Container object definition:</p>
-<div class="sourceCode" id="cb18"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
-<span id="cb18-2"><a href="#cb18-2" aria-hidden="true"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Pod</span></span>
-<span id="cb18-3"><a href="#cb18-3" aria-hidden="true"></a><span class="fu">metadata</span><span class="kw">:</span></span>
-<span id="cb18-4"><a href="#cb18-4" aria-hidden="true"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> nginx</span></span>
-<span id="cb18-5"><a href="#cb18-5" aria-hidden="true"></a><span class="at">  </span><span class="fu">labels</span><span class="kw">:</span></span>
-<span id="cb18-6"><a href="#cb18-6" aria-hidden="true"></a><span class="at">    </span><span class="fu">app</span><span class="kw">:</span><span class="at"> nginx</span></span>
-<span id="cb18-7"><a href="#cb18-7" aria-hidden="true"></a><span class="fu">spec</span><span class="kw">:</span></span>
-<span id="cb18-8"><a href="#cb18-8" aria-hidden="true"></a><span class="at">  </span><span class="fu">containers</span><span class="kw">:</span></span>
-<span id="cb18-9"><a href="#cb18-9" aria-hidden="true"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> nginx</span></span>
-<span id="cb18-10"><a href="#cb18-10" aria-hidden="true"></a><span class="at">    </span><span class="fu">image</span><span class="kw">:</span><span class="at"> quay.io/ftweedal/test-nginx:latest</span></span>
-<span id="cb18-11"><a href="#cb18-11" aria-hidden="true"></a><span class="at">    </span><span class="fu">tty</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span></code></pre></div>
+<div class="sourceCode" id="cb18"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
+<span id="cb18-2"><a href="#cb18-2" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Pod</span></span>
+<span id="cb18-3"><a href="#cb18-3" aria-hidden="true" tabindex="-1"></a><span class="fu">metadata</span><span class="kw">:</span></span>
+<span id="cb18-4"><a href="#cb18-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> nginx</span></span>
+<span id="cb18-5"><a href="#cb18-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">labels</span><span class="kw">:</span></span>
+<span id="cb18-6"><a href="#cb18-6" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">app</span><span class="kw">:</span><span class="at"> nginx</span></span>
+<span id="cb18-7"><a href="#cb18-7" aria-hidden="true" tabindex="-1"></a><span class="fu">spec</span><span class="kw">:</span></span>
+<span id="cb18-8"><a href="#cb18-8" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">containers</span><span class="kw">:</span></span>
+<span id="cb18-9"><a href="#cb18-9" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> nginx</span></span>
+<span id="cb18-10"><a href="#cb18-10" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">image</span><span class="kw">:</span><span class="at"> quay.io/ftweedal/test-nginx:latest</span></span>
+<span id="cb18-11"><a href="#cb18-11" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">tty</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span></code></pre></div>
 <p>With the pseudo-terminal enabled, <code>oc logs</code> now shows the error output:</p>
 <pre class="shell"><code>% oc logs pod/nginx
 systemd v246.10-1.fc33 running in system mode. (+PAM +AUDIT +SELINUX +IMA -APPARMOR +SMACK +SYSVINIT +UTMP +LIBCRYPTSETUP +GCRYPT +GNUTLS +ACL +XZ +LZ4 +ZSTD +SECCOMP +BLKID +ELFUTILS +KMOD +IDN2 -IDN +PCRE2 default-hierarchy=unified)
@@ -1183,17 +1183,17 @@ Exiting PID 1...</code></pre>
 </div>
 <h2 id="enabling-cgroups-v2">Enabling cgroups v2 <a href="#enabling-cgroups-v2" class="section">§</a></h2>
 <p>We can enable cgroups v2 (only) on worker nodes via the following MachineConfig object:</p>
-<div class="sourceCode" id="cb20"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb20-1"><a href="#cb20-1" aria-hidden="true"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> machineconfiguration.openshift.io/v1</span></span>
-<span id="cb20-2"><a href="#cb20-2" aria-hidden="true"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> MachineConfig</span></span>
-<span id="cb20-3"><a href="#cb20-3" aria-hidden="true"></a><span class="fu">metadata</span><span class="kw">:</span></span>
-<span id="cb20-4"><a href="#cb20-4" aria-hidden="true"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> enable-cgroupv2-workers</span></span>
-<span id="cb20-5"><a href="#cb20-5" aria-hidden="true"></a><span class="at">  </span><span class="fu">labels</span><span class="kw">:</span></span>
-<span id="cb20-6"><a href="#cb20-6" aria-hidden="true"></a><span class="at">    </span><span class="fu">machineconfiguration.openshift.io/role</span><span class="kw">:</span><span class="at"> worker</span></span>
-<span id="cb20-7"><a href="#cb20-7" aria-hidden="true"></a><span class="fu">spec</span><span class="kw">:</span></span>
-<span id="cb20-8"><a href="#cb20-8" aria-hidden="true"></a><span class="at">  </span><span class="fu">kernelArguments</span><span class="kw">:</span></span>
-<span id="cb20-9"><a href="#cb20-9" aria-hidden="true"></a><span class="at">    </span><span class="kw">-</span><span class="at"> systemd.unified_cgroup_hierarchy=1</span></span>
-<span id="cb20-10"><a href="#cb20-10" aria-hidden="true"></a><span class="at">    </span><span class="kw">-</span><span class="at"> cgroup_no_v1=&quot;all&quot;</span></span>
-<span id="cb20-11"><a href="#cb20-11" aria-hidden="true"></a><span class="at">    </span><span class="kw">-</span><span class="at"> psi=1</span></span></code></pre></div>
+<div class="sourceCode" id="cb20"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb20-1"><a href="#cb20-1" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> machineconfiguration.openshift.io/v1</span></span>
+<span id="cb20-2"><a href="#cb20-2" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> MachineConfig</span></span>
+<span id="cb20-3"><a href="#cb20-3" aria-hidden="true" tabindex="-1"></a><span class="fu">metadata</span><span class="kw">:</span></span>
+<span id="cb20-4"><a href="#cb20-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> enable-cgroupv2-workers</span></span>
+<span id="cb20-5"><a href="#cb20-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">labels</span><span class="kw">:</span></span>
+<span id="cb20-6"><a href="#cb20-6" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">machineconfiguration.openshift.io/role</span><span class="kw">:</span><span class="at"> worker</span></span>
+<span id="cb20-7"><a href="#cb20-7" aria-hidden="true" tabindex="-1"></a><span class="fu">spec</span><span class="kw">:</span></span>
+<span id="cb20-8"><a href="#cb20-8" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">kernelArguments</span><span class="kw">:</span></span>
+<span id="cb20-9"><a href="#cb20-9" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="kw">-</span><span class="at"> systemd.unified_cgroup_hierarchy=1</span></span>
+<span id="cb20-10"><a href="#cb20-10" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="kw">-</span><span class="at"> cgroup_no_v1=&quot;all&quot;</span></span>
+<span id="cb20-11"><a href="#cb20-11" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="kw">-</span><span class="at"> psi=1</span></span></code></pre></div>
 <p>After creating the MachineConfig, the <em>Machine Config Operator</em> applies the configuration change and restarts each worker node, one by one. This occurs over several minutes.</p>
 <h2 id="running-unprivileged-cgroups-v2">Running (<strong>unprivileged</strong>; <strong>cgroups v2</strong>) <a href="#running-unprivileged-cgroups-v2" class="section">§</a></h2>
 <p>After some time, all worker nodes have the updated kernel configuration to enable cgroups v2 and disable cgroups v1. I again created the pod as the unprivileged <code>test</code> user. And again, pod execution failed. But this time the error is different:</p>
@@ -1263,45 +1263,45 @@ sh-5.0$</code></pre>
 <p>I wrote a small Python program to serve as the container entrypoint. This program will run as <code>root</code> (in the namespace). For each of several hardcoded system accounts, it invokes <code>fork(2)</code> to duplicate the process. The child process executes <code>setuid(2)</code> to switch user account, then <code>execlp(3)</code> to replace itself with the <code>sleep(1)</code> program. The duration to sleep depends on the UID of the system account that executes it.</p>
 <p>Outside the container, we will be able to observe whether the program (and its child processes) are running, and which user accounts they are running under.</p>
 <p>The source of the test program:</p>
-<div class="sourceCode" id="cb1"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true"></a><span class="im">import</span> os, pwd, time</span>
-<span id="cb1-2"><a href="#cb1-2" aria-hidden="true"></a></span>
-<span id="cb1-3"><a href="#cb1-3" aria-hidden="true"></a>users <span class="op">=</span> [<span class="st">&#39;root&#39;</span>, <span class="st">&#39;daemon&#39;</span>, <span class="st">&#39;operator&#39;</span>, <span class="st">&#39;nobody&#39;</span>, <span class="st">&#39;mail&#39;</span>]</span>
-<span id="cb1-4"><a href="#cb1-4" aria-hidden="true"></a></span>
-<span id="cb1-5"><a href="#cb1-5" aria-hidden="true"></a><span class="cf">for</span> user <span class="kw">in</span> users:</span>
-<span id="cb1-6"><a href="#cb1-6" aria-hidden="true"></a>    ent <span class="op">=</span> pwd.getpwnam(user)</span>
-<span id="cb1-7"><a href="#cb1-7" aria-hidden="true"></a>    uid <span class="op">=</span> ent.pw_uid</span>
-<span id="cb1-8"><a href="#cb1-8" aria-hidden="true"></a>    <span class="cf">if</span> os.fork() <span class="op">!=</span> <span class="dv">0</span>:</span>
-<span id="cb1-9"><a href="#cb1-9" aria-hidden="true"></a>        os.setuid(uid)</span>
-<span id="cb1-10"><a href="#cb1-10" aria-hidden="true"></a>        os.execlp(<span class="st">&#39;sleep&#39;</span>, <span class="st">&#39;sleep&#39;</span>, <span class="bu">str</span>(<span class="dv">3000</span> <span class="op">+</span> uid))</span>
-<span id="cb1-11"><a href="#cb1-11" aria-hidden="true"></a></span>
-<span id="cb1-12"><a href="#cb1-12" aria-hidden="true"></a>time.sleep(<span class="dv">3600</span>)</span></code></pre></div>
+<div class="sourceCode" id="cb1"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> os, pwd, time</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>users <span class="op">=</span> [<span class="st">&#39;root&#39;</span>, <span class="st">&#39;daemon&#39;</span>, <span class="st">&#39;operator&#39;</span>, <span class="st">&#39;nobody&#39;</span>, <span class="st">&#39;mail&#39;</span>]</span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> user <span class="kw">in</span> users:</span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>    ent <span class="op">=</span> pwd.getpwnam(user)</span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>    uid <span class="op">=</span> ent.pw_uid</span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> os.fork() <span class="op">!=</span> <span class="dv">0</span>:</span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>        os.setuid(uid)</span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>        os.execlp(<span class="st">&#39;sleep&#39;</span>, <span class="st">&#39;sleep&#39;</span>, <span class="bu">str</span>(<span class="dv">3000</span> <span class="op">+</span> uid))</span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a>time.sleep(<span class="dv">3600</span>)</span></code></pre></div>
 <h3 id="container">Container <a href="#container" class="section">§</a></h3>
 <p>The <code>Containerfile</code> is simple. Based on <code>fedora:33-x86_64</code>, it copies the Python program into the container and defines the entry point:</p>
-<div class="sourceCode" id="cb2"><pre class="sourceCode dockerfile"><code class="sourceCode dockerfile"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true"></a><span class="kw">FROM</span> fedora:33-x86_64</span>
-<span id="cb2-2"><a href="#cb2-2" aria-hidden="true"></a><span class="kw">COPY</span> test_multiuser.py .</span>
-<span id="cb2-3"><a href="#cb2-3" aria-hidden="true"></a><span class="kw">ENTRYPOINT</span> [<span class="st">&quot;python3&quot;</span>, <span class="st">&quot;test_multiuser.py&quot;</span>]</span></code></pre></div>
+<div class="sourceCode" id="cb2"><pre class="sourceCode dockerfile"><code class="sourceCode dockerfile"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="kw">FROM</span> fedora:33-x86_64</span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="kw">COPY</span> test_multiuser.py .</span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="kw">ENTRYPOINT</span> [<span class="st">&quot;python3&quot;</span>, <span class="st">&quot;test_multiuser.py&quot;</span>]</span></code></pre></div>
 <p>I built the container and pushed it to <a href="https://quay.io/repository/ftweedal/test-multiuser"><code>quay.io/ftweedal/test-multiuser:latest</code></a>.</p>
 <h3 id="pod-specification">Pod specification <a href="#pod-specification" class="section">§</a></h3>
 <p>The pod YAML is:</p>
-<div class="sourceCode" id="cb3"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
-<span id="cb3-2"><a href="#cb3-2" aria-hidden="true"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Pod</span></span>
-<span id="cb3-3"><a href="#cb3-3" aria-hidden="true"></a><span class="fu">metadata</span><span class="kw">:</span></span>
-<span id="cb3-4"><a href="#cb3-4" aria-hidden="true"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> multiuser-test</span></span>
-<span id="cb3-5"><a href="#cb3-5" aria-hidden="true"></a><span class="at">  </span><span class="fu">annotations</span><span class="kw">:</span></span>
-<span id="cb3-6"><a href="#cb3-6" aria-hidden="true"></a><span class="at">    </span><span class="fu">openshift.io/scc</span><span class="kw">:</span><span class="at"> restricted</span></span>
-<span id="cb3-7"><a href="#cb3-7" aria-hidden="true"></a><span class="at">    </span><span class="fu">io.kubernetes.cri-o.userns-mode</span><span class="kw">:</span></span>
-<span id="cb3-8"><a href="#cb3-8" aria-hidden="true"></a><span class="at">      </span><span class="st">&quot;auto:size=65536;map-to-root=true&quot;</span></span>
-<span id="cb3-9"><a href="#cb3-9" aria-hidden="true"></a><span class="fu">spec</span><span class="kw">:</span></span>
-<span id="cb3-10"><a href="#cb3-10" aria-hidden="true"></a><span class="at">  </span><span class="fu">containers</span><span class="kw">:</span></span>
-<span id="cb3-11"><a href="#cb3-11" aria-hidden="true"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> multiuser-test</span></span>
-<span id="cb3-12"><a href="#cb3-12" aria-hidden="true"></a><span class="at">    </span><span class="fu">image</span><span class="kw">:</span><span class="at"> quay.io/ftweedal/test-multiuser:latest</span></span>
-<span id="cb3-13"><a href="#cb3-13" aria-hidden="true"></a><span class="at">    </span><span class="fu">securityContext</span><span class="kw">:</span></span>
-<span id="cb3-14"><a href="#cb3-14" aria-hidden="true"></a><span class="at">      </span><span class="fu">runAsUser</span><span class="kw">:</span><span class="at"> </span><span class="dv">0</span></span>
-<span id="cb3-15"><a href="#cb3-15" aria-hidden="true"></a><span class="at">      </span><span class="fu">runAsGroup</span><span class="kw">:</span><span class="at"> </span><span class="dv">0</span></span>
-<span id="cb3-16"><a href="#cb3-16" aria-hidden="true"></a><span class="at">  </span><span class="fu">securityContext</span><span class="kw">:</span></span>
-<span id="cb3-17"><a href="#cb3-17" aria-hidden="true"></a><span class="at">    </span><span class="fu">sysctls</span><span class="kw">:</span></span>
-<span id="cb3-18"><a href="#cb3-18" aria-hidden="true"></a><span class="at">    </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;net.ipv4.ping_group_range&quot;</span></span>
-<span id="cb3-19"><a href="#cb3-19" aria-hidden="true"></a><span class="at">      </span><span class="fu">value</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;0 65535&quot;</span></span></code></pre></div>
+<div class="sourceCode" id="cb3"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Pod</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="fu">metadata</span><span class="kw">:</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> multiuser-test</span></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">annotations</span><span class="kw">:</span></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">openshift.io/scc</span><span class="kw">:</span><span class="at"> restricted</span></span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">io.kubernetes.cri-o.userns-mode</span><span class="kw">:</span></span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="st">&quot;auto:size=65536;map-to-root=true&quot;</span></span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a><span class="fu">spec</span><span class="kw">:</span></span>
+<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">containers</span><span class="kw">:</span></span>
+<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> multiuser-test</span></span>
+<span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">image</span><span class="kw">:</span><span class="at"> quay.io/ftweedal/test-multiuser:latest</span></span>
+<span id="cb3-13"><a href="#cb3-13" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">securityContext</span><span class="kw">:</span></span>
+<span id="cb3-14"><a href="#cb3-14" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">runAsUser</span><span class="kw">:</span><span class="at"> </span><span class="dv">0</span></span>
+<span id="cb3-15"><a href="#cb3-15" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">runAsGroup</span><span class="kw">:</span><span class="at"> </span><span class="dv">0</span></span>
+<span id="cb3-16"><a href="#cb3-16" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">securityContext</span><span class="kw">:</span></span>
+<span id="cb3-17"><a href="#cb3-17" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">sysctls</span><span class="kw">:</span></span>
+<span id="cb3-18"><a href="#cb3-18" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;net.ipv4.ping_group_range&quot;</span></span>
+<span id="cb3-19"><a href="#cb3-19" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">value</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;0 65535&quot;</span></span></code></pre></div>
 <p>The <code>io.kubernetes.cri-o.userns-mode</code> annotation tells CRI-O to run the pod in a user namespace. The <code>runAsUser</code> and <code>runAsGroup</code> fields tell CRI-O to execute the entry point process as <code>root</code> (inside the namespace).</p>
 <h2 id="verification">Verification <a href="#verification" class="section">§</a></h2>
 <p>I created the pod:</p>
@@ -1359,26 +1359,26 @@ USER         PID CMD
 <pre class="shell"><code>% oc adm policy add-scc-to-user anyuid test
 securitycontextconstraints.security.openshift.io/anyuid added to: [&quot;test&quot;]</code></pre>
 <p>The pod definition is:</p>
-<div class="sourceCode" id="cb2"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true"></a><span class="pp">% cat userns-test.yaml</span></span>
-<span id="cb2-2"><a href="#cb2-2" aria-hidden="true"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
-<span id="cb2-3"><a href="#cb2-3" aria-hidden="true"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Pod</span></span>
-<span id="cb2-4"><a href="#cb2-4" aria-hidden="true"></a><span class="fu">metadata</span><span class="kw">:</span></span>
-<span id="cb2-5"><a href="#cb2-5" aria-hidden="true"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> userns-test</span></span>
-<span id="cb2-6"><a href="#cb2-6" aria-hidden="true"></a><span class="at">  </span><span class="fu">annotations</span><span class="kw">:</span></span>
-<span id="cb2-7"><a href="#cb2-7" aria-hidden="true"></a><span class="at">    </span><span class="fu">openshift.io/scc</span><span class="kw">:</span><span class="at"> restricted</span></span>
-<span id="cb2-8"><a href="#cb2-8" aria-hidden="true"></a><span class="at">    </span><span class="fu">io.kubernetes.cri-o.userns-mode</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;auto:size=65536;map-to-root=true&quot;</span></span>
-<span id="cb2-9"><a href="#cb2-9" aria-hidden="true"></a><span class="fu">spec</span><span class="kw">:</span></span>
-<span id="cb2-10"><a href="#cb2-10" aria-hidden="true"></a><span class="at">  </span><span class="fu">containers</span><span class="kw">:</span></span>
-<span id="cb2-11"><a href="#cb2-11" aria-hidden="true"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> userns-test</span></span>
-<span id="cb2-12"><a href="#cb2-12" aria-hidden="true"></a><span class="at">    </span><span class="fu">image</span><span class="kw">:</span><span class="at"> freeipa/freeipa-server:fedora-31</span></span>
-<span id="cb2-13"><a href="#cb2-13" aria-hidden="true"></a><span class="at">    </span><span class="fu">command</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="st">&quot;sleep&quot;</span><span class="kw">,</span><span class="at"> </span><span class="st">&quot;3601&quot;</span><span class="kw">]</span></span>
-<span id="cb2-14"><a href="#cb2-14" aria-hidden="true"></a><span class="at">    </span><span class="fu">securityContext</span><span class="kw">:</span></span>
-<span id="cb2-15"><a href="#cb2-15" aria-hidden="true"></a><span class="at">      </span><span class="fu">runAsUser</span><span class="kw">:</span><span class="at"> </span><span class="dv">0</span></span>
-<span id="cb2-16"><a href="#cb2-16" aria-hidden="true"></a><span class="at">      </span><span class="fu">runAsGroup</span><span class="kw">:</span><span class="at"> </span><span class="dv">0</span></span>
-<span id="cb2-17"><a href="#cb2-17" aria-hidden="true"></a><span class="at">  </span><span class="fu">securityContext</span><span class="kw">:</span></span>
-<span id="cb2-18"><a href="#cb2-18" aria-hidden="true"></a><span class="at">    </span><span class="fu">sysctls</span><span class="kw">:</span></span>
-<span id="cb2-19"><a href="#cb2-19" aria-hidden="true"></a><span class="at">    </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;net.ipv4.ping_group_range&quot;</span></span>
-<span id="cb2-20"><a href="#cb2-20" aria-hidden="true"></a><span class="at">      </span><span class="fu">value</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;0 65535&quot;</span></span></code></pre></div>
+<div class="sourceCode" id="cb2"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="pp">% cat userns-test.yaml</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Pod</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="fu">metadata</span><span class="kw">:</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> userns-test</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">annotations</span><span class="kw">:</span></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">openshift.io/scc</span><span class="kw">:</span><span class="at"> restricted</span></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">io.kubernetes.cri-o.userns-mode</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;auto:size=65536;map-to-root=true&quot;</span></span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a><span class="fu">spec</span><span class="kw">:</span></span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">containers</span><span class="kw">:</span></span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> userns-test</span></span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">image</span><span class="kw">:</span><span class="at"> freeipa/freeipa-server:fedora-31</span></span>
+<span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">command</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="st">&quot;sleep&quot;</span><span class="kw">,</span><span class="at"> </span><span class="st">&quot;3601&quot;</span><span class="kw">]</span></span>
+<span id="cb2-14"><a href="#cb2-14" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">securityContext</span><span class="kw">:</span></span>
+<span id="cb2-15"><a href="#cb2-15" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">runAsUser</span><span class="kw">:</span><span class="at"> </span><span class="dv">0</span></span>
+<span id="cb2-16"><a href="#cb2-16" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">runAsGroup</span><span class="kw">:</span><span class="at"> </span><span class="dv">0</span></span>
+<span id="cb2-17"><a href="#cb2-17" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">securityContext</span><span class="kw">:</span></span>
+<span id="cb2-18"><a href="#cb2-18" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">sysctls</span><span class="kw">:</span></span>
+<span id="cb2-19"><a href="#cb2-19" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;net.ipv4.ping_group_range&quot;</span></span>
+<span id="cb2-20"><a href="#cb2-20" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">value</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;0 65535&quot;</span></span></code></pre></div>
 <p>Note the <code>io.kubernetes.cri-o.userns-mode</code> annotation. That activates the user namespace feature. The <code>runAsUser</code> and <code>runAsGroup</code> fields in <code>securityContext</code> are also important.</p>
 <p>I create the pod. After a few moments I observe that it is running, and query the node and container ID:</p>
 <pre class="shell"><code>$ oc --as test create -f userns-test.yaml
@@ -1432,29 +1432,29 @@ must be in the ranges: [1000630000, 1000639999]]</code></pre>
 <p>In other words, the user namespace support in its current form is still a giant leap forward. Previously, many kinds of applications cannot run securely in OpenShift. The service account privileges caveat may be unacceptable to some, but I hope that would be addressed in time.</p>
 <h2 id="inconsistent-treatment-of-securitycontext">Inconsistent treatment of <code>securityContext</code> <a href="#inconsistent-treatment-of-securitycontext" class="section">§</a></h2>
 <p>The PodSpec I used above (with success) is:</p>
-<div class="sourceCode" id="cb8"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true"></a><span class="fu">containers</span><span class="kw">:</span></span>
-<span id="cb8-2"><a href="#cb8-2" aria-hidden="true"></a><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> userns-test</span></span>
-<span id="cb8-3"><a href="#cb8-3" aria-hidden="true"></a><span class="at">  </span><span class="fu">image</span><span class="kw">:</span><span class="at"> freeipa/freeipa-server:fedora-31</span></span>
-<span id="cb8-4"><a href="#cb8-4" aria-hidden="true"></a><span class="at">  </span><span class="fu">command</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="st">&quot;sleep&quot;</span><span class="kw">,</span><span class="at"> </span><span class="st">&quot;3601&quot;</span><span class="kw">]</span></span>
-<span id="cb8-5"><a href="#cb8-5" aria-hidden="true"></a><span class="at">  </span><span class="fu">securityContext</span><span class="kw">:</span></span>
-<span id="cb8-6"><a href="#cb8-6" aria-hidden="true"></a><span class="at">    </span><span class="fu">runAsUser</span><span class="kw">:</span><span class="at"> </span><span class="dv">0</span></span>
-<span id="cb8-7"><a href="#cb8-7" aria-hidden="true"></a><span class="at">    </span><span class="fu">runAsGroup</span><span class="kw">:</span><span class="at"> </span><span class="dv">0</span></span>
-<span id="cb8-8"><a href="#cb8-8" aria-hidden="true"></a><span class="fu">securityContext</span><span class="kw">:</span></span>
-<span id="cb8-9"><a href="#cb8-9" aria-hidden="true"></a><span class="at">  </span><span class="fu">sysctls</span><span class="kw">:</span></span>
-<span id="cb8-10"><a href="#cb8-10" aria-hidden="true"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;net.ipv4.ping_group_range&quot;</span></span>
-<span id="cb8-11"><a href="#cb8-11" aria-hidden="true"></a><span class="at">    </span><span class="fu">value</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;0 65535&quot;</span></span></code></pre></div>
+<div class="sourceCode" id="cb8"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="fu">containers</span><span class="kw">:</span></span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> userns-test</span></span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">image</span><span class="kw">:</span><span class="at"> freeipa/freeipa-server:fedora-31</span></span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">command</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="st">&quot;sleep&quot;</span><span class="kw">,</span><span class="at"> </span><span class="st">&quot;3601&quot;</span><span class="kw">]</span></span>
+<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">securityContext</span><span class="kw">:</span></span>
+<span id="cb8-6"><a href="#cb8-6" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">runAsUser</span><span class="kw">:</span><span class="at"> </span><span class="dv">0</span></span>
+<span id="cb8-7"><a href="#cb8-7" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">runAsGroup</span><span class="kw">:</span><span class="at"> </span><span class="dv">0</span></span>
+<span id="cb8-8"><a href="#cb8-8" aria-hidden="true" tabindex="-1"></a><span class="fu">securityContext</span><span class="kw">:</span></span>
+<span id="cb8-9"><a href="#cb8-9" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">sysctls</span><span class="kw">:</span></span>
+<span id="cb8-10"><a href="#cb8-10" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;net.ipv4.ping_group_range&quot;</span></span>
+<span id="cb8-11"><a href="#cb8-11" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">value</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;0 65535&quot;</span></span></code></pre></div>
 <p>Note there are two <code>securityContext</code> fields. The first, in the Container spec, is a <a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.20/#securitycontext-v1-core">SecurityContext</a> object. The second, in the PodSpec, is a <a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.20/#podsecuritycontext-v1-core">PodSecurityContext</a> object.</p>
 <p>The <code>runAsUser</code> and <code>runAsGroup</code> fields can be specified in either of these objects (or both, with SecurityContext taking precedence). I can move these fields to the PodSecurityContext, as below.</p>
-<div class="sourceCode" id="cb9"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true"></a><span class="fu">containers</span><span class="kw">:</span></span>
-<span id="cb9-2"><a href="#cb9-2" aria-hidden="true"></a><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> userns-test</span></span>
-<span id="cb9-3"><a href="#cb9-3" aria-hidden="true"></a><span class="at">  </span><span class="fu">image</span><span class="kw">:</span><span class="at"> freeipa/freeipa-server:fedora-31</span></span>
-<span id="cb9-4"><a href="#cb9-4" aria-hidden="true"></a><span class="at">  </span><span class="fu">command</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="st">&quot;sleep&quot;</span><span class="kw">,</span><span class="at"> </span><span class="st">&quot;3601&quot;</span><span class="kw">]</span></span>
-<span id="cb9-5"><a href="#cb9-5" aria-hidden="true"></a><span class="fu">securityContext</span><span class="kw">:</span></span>
-<span id="cb9-6"><a href="#cb9-6" aria-hidden="true"></a><span class="at">  </span><span class="fu">runAsUser</span><span class="kw">:</span><span class="at"> </span><span class="dv">0</span></span>
-<span id="cb9-7"><a href="#cb9-7" aria-hidden="true"></a><span class="at">  </span><span class="fu">runAsGroup</span><span class="kw">:</span><span class="at"> </span><span class="dv">0</span></span>
-<span id="cb9-8"><a href="#cb9-8" aria-hidden="true"></a><span class="at">  </span><span class="fu">sysctls</span><span class="kw">:</span></span>
-<span id="cb9-9"><a href="#cb9-9" aria-hidden="true"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;net.ipv4.ping_group_range&quot;</span></span>
-<span id="cb9-10"><a href="#cb9-10" aria-hidden="true"></a><span class="at">    </span><span class="fu">value</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;0 65535&quot;</span></span></code></pre></div>
+<div class="sourceCode" id="cb9"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="fu">containers</span><span class="kw">:</span></span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> userns-test</span></span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">image</span><span class="kw">:</span><span class="at"> freeipa/freeipa-server:fedora-31</span></span>
+<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">command</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="st">&quot;sleep&quot;</span><span class="kw">,</span><span class="at"> </span><span class="st">&quot;3601&quot;</span><span class="kw">]</span></span>
+<span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a><span class="fu">securityContext</span><span class="kw">:</span></span>
+<span id="cb9-6"><a href="#cb9-6" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">runAsUser</span><span class="kw">:</span><span class="at"> </span><span class="dv">0</span></span>
+<span id="cb9-7"><a href="#cb9-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">runAsGroup</span><span class="kw">:</span><span class="at"> </span><span class="dv">0</span></span>
+<span id="cb9-8"><a href="#cb9-8" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">sysctls</span><span class="kw">:</span></span>
+<span id="cb9-9"><a href="#cb9-9" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;net.ipv4.ping_group_range&quot;</span></span>
+<span id="cb9-10"><a href="#cb9-10" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">value</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;0 65535&quot;</span></span></code></pre></div>
 <p>According to the documentation, this object should have the same meaning as the previous one. But there is a critical behavioural difference! I create and examine the pod as before:</p>
 <pre class="shell"><code>$ oc --as test create -f userns-test.yaml
 pod/userns-test created
@@ -1504,39 +1504,39 @@ sh-4.4# cat /proc/1022187/uid_map
 <p>To simplify and speed up <a href="https://www.freeipa.org/">FreeIPA</a> startup, I needed to implement systemd notification support in <a href="https://www.dogtagpki.org/">Dogtag PKI</a>. Dogtag (when so configured) should call <a href="https://www.freedesktop.org/software/systemd/man/sd_notify.html"><code>sd_notify(3)</code></a> to notify the system service manager when it has started up and is ready to service requests.</p>
 <p>Dogtag already uses JNI in a few places (as does some of its dependencies, including JSS). But I was not keen to use JNI, with all its complexity, for this small use case. A colleague pointed me to JNA, and I decided to give it a go.</p>
 <p>The resulting code is so small I’ll just include it all here, with commentary. (I made some changes for clarity; you can review the actual patch in the <a href="https://github.com/dogtagpki/pki/pull/569/files">pull request</a>).</p>
-<div class="sourceCode" id="cb1"><pre class="sourceCode java"><code class="sourceCode java"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true"></a><span class="kw">package</span><span class="im"> com.netscape.cmscore.systemd;</span></span>
-<span id="cb1-2"><a href="#cb1-2" aria-hidden="true"></a></span>
-<span id="cb1-3"><a href="#cb1-3" aria-hidden="true"></a><span class="kw">import</span><span class="im"> com.sun.jna.Library;</span></span>
-<span id="cb1-4"><a href="#cb1-4" aria-hidden="true"></a><span class="kw">import</span><span class="im"> com.sun.jna.Native;</span></span>
-<span id="cb1-5"><a href="#cb1-5" aria-hidden="true"></a></span>
-<span id="cb1-6"><a href="#cb1-6" aria-hidden="true"></a><span class="kw">public</span> <span class="kw">class</span> SystemdStartupNotifier {</span></code></pre></div>
+<div class="sourceCode" id="cb1"><pre class="sourceCode java"><code class="sourceCode java"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="kw">package</span><span class="im"> com</span><span class="op">.</span><span class="im">netscape</span><span class="op">.</span><span class="im">cmscore</span><span class="op">.</span><span class="im">systemd</span><span class="op">;</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="kw">import</span> <span class="im">com</span><span class="op">.</span><span class="im">sun</span><span class="op">.</span><span class="im">jna</span><span class="op">.</span><span class="im">Library</span><span class="op">;</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="kw">import</span> <span class="im">com</span><span class="op">.</span><span class="im">sun</span><span class="op">.</span><span class="im">jna</span><span class="op">.</span><span class="im">Native</span><span class="op">;</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="kw">public</span> <span class="kw">class</span> SystemdStartupNotifier <span class="op">{</span></span></code></pre></div>
 <p>Import JNA and begin the class definition.</p>
-<div class="sourceCode" id="cb2"><pre class="sourceCode java"><code class="sourceCode java"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true"></a><span class="kw">interface</span> Systemd <span class="kw">extends</span> Library {</span>
-<span id="cb2-2"><a href="#cb2-2" aria-hidden="true"></a>    <span class="kw">public</span> <span class="dt">int</span> <span class="fu">sd_booted</span>();</span>
-<span id="cb2-3"><a href="#cb2-3" aria-hidden="true"></a>    <span class="kw">public</span> <span class="dt">int</span> <span class="fu">sd_notify</span>(<span class="dt">int</span> unset_env, <span class="bu">String</span> state);</span>
-<span id="cb2-4"><a href="#cb2-4" aria-hidden="true"></a>}</span></code></pre></div>
+<div class="sourceCode" id="cb2"><pre class="sourceCode java"><code class="sourceCode java"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="kw">interface</span> Systemd <span class="kw">extends</span> Library <span class="op">{</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    <span class="kw">public</span> <span class="dt">int</span> <span class="fu">sd_booted</span><span class="op">();</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    <span class="kw">public</span> <span class="dt">int</span> <span class="fu">sd_notify</span><span class="op">(</span><span class="dt">int</span> unset_env<span class="op">,</span> <span class="bu">String</span> state<span class="op">);</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
 <p>Declare an interface to the shared library by extending <code>sun.jna.Native</code>. Method signatures must match the native function signatures, according to the <a href="https://github.com/java-native-access/jna/blob/5.6.0/www/Mappings.md">type mappings</a>.</p>
-<div class="sourceCode" id="cb3"><pre class="sourceCode java"><code class="sourceCode java"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true"></a>Systemd systemd = <span class="kw">null</span>;</span>
-<span id="cb3-2"><a href="#cb3-2" aria-hidden="true"></a></span>
-<span id="cb3-3"><a href="#cb3-3" aria-hidden="true"></a><span class="kw">public</span> <span class="dt">void</span> <span class="fu">init</span>() {</span>
-<span id="cb3-4"><a href="#cb3-4" aria-hidden="true"></a>    systemd = Native.<span class="fu">load</span>(<span class="st">&quot;systemd&quot;</span>, Systemd.<span class="fu">class</span>);</span>
-<span id="cb3-5"><a href="#cb3-5" aria-hidden="true"></a>}</span></code></pre></div>
+<div class="sourceCode" id="cb3"><pre class="sourceCode java"><code class="sourceCode java"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>Systemd systemd <span class="op">=</span> <span class="kw">null</span><span class="op">;</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="kw">public</span> <span class="dt">void</span> <span class="fu">init</span><span class="op">()</span> <span class="op">{</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>    systemd <span class="op">=</span> Native<span class="op">.</span><span class="fu">load</span><span class="op">(</span><span class="st">&quot;systemd&quot;</span><span class="op">,</span> Systemd<span class="op">.</span><span class="fu">class</span><span class="op">);</span></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
 <p><code>init()</code> gets called by initialisation code. <code>Native.load()</code> loads <code>libsystemd.so</code> and initialises the foreign library proxy with respect to the <code>Systemd</code> interface. The proxy object is assigned to the instance variable <code>systemd</code>. An alternative approach is to assign the proxy object to a static variable in the interface definition (<a href="https://github.com/java-native-access/jna/blob/5.6.0/www/GettingStarted.md#getting-started-with-jna">example</a>).</p>
-<div class="sourceCode" id="cb4"><pre class="sourceCode java"><code class="sourceCode java"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true"></a><span class="dt">boolean</span> <span class="fu">notify</span>(<span class="bu">String</span> status) {</span>
-<span id="cb4-2"><a href="#cb4-2" aria-hidden="true"></a>    <span class="kw">if</span> (!systemd.<span class="fu">sd_booted</span>()) {</span>
-<span id="cb4-3"><a href="#cb4-3" aria-hidden="true"></a>        <span class="kw">return</span> <span class="kw">true</span>;</span>
-<span id="cb4-4"><a href="#cb4-4" aria-hidden="true"></a>    } <span class="kw">else</span> {</span>
-<span id="cb4-5"><a href="#cb4-5" aria-hidden="true"></a>        <span class="dt">int</span> r = systemd.<span class="fu">sd_notify</span>(</span>
-<span id="cb4-6"><a href="#cb4-6" aria-hidden="true"></a>            <span class="dv">0</span> <span class="co">/* don&#39;t unset environment */</span>,</span>
-<span id="cb4-7"><a href="#cb4-7" aria-hidden="true"></a>            status);</span>
-<span id="cb4-8"><a href="#cb4-8" aria-hidden="true"></a>        <span class="kw">if</span> (r &lt; <span class="dv">1</span>) {</span>
-<span id="cb4-9"><a href="#cb4-9" aria-hidden="true"></a>            <span class="bu">System</span>.<span class="fu">err</span>.<span class="fu">println</span>(<span class="st">&quot;sd_notify failed&quot;</span>);</span>
-<span id="cb4-10"><a href="#cb4-10" aria-hidden="true"></a>            <span class="kw">return</span> <span class="kw">false</span>;</span>
-<span id="cb4-11"><a href="#cb4-11" aria-hidden="true"></a>        } <span class="kw">else</span> {</span>
-<span id="cb4-12"><a href="#cb4-12" aria-hidden="true"></a>            <span class="kw">return</span> <span class="kw">true</span>;</span>
-<span id="cb4-13"><a href="#cb4-13" aria-hidden="true"></a>        }</span>
-<span id="cb4-14"><a href="#cb4-14" aria-hidden="true"></a>    }</span>
-<span id="cb4-15"><a href="#cb4-15" aria-hidden="true"></a>}</span></code></pre></div>
+<div class="sourceCode" id="cb4"><pre class="sourceCode java"><code class="sourceCode java"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="dt">boolean</span> <span class="fu">notify</span><span class="op">(</span><span class="bu">String</span> status<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> <span class="op">(!</span>systemd<span class="op">.</span><span class="fu">sd_booted</span><span class="op">())</span> <span class="op">{</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> <span class="kw">true</span><span class="op">;</span></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span> <span class="cf">else</span> <span class="op">{</span></span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>        <span class="dt">int</span> r <span class="op">=</span> systemd<span class="op">.</span><span class="fu">sd_notify</span><span class="op">(</span></span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>            <span class="dv">0</span> <span class="co">/* don&#39;t unset environment */</span><span class="op">,</span></span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>            status<span class="op">);</span></span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> <span class="op">(</span>r <span class="op">&lt;</span> <span class="dv">1</span><span class="op">)</span> <span class="op">{</span></span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a>            <span class="bu">System</span><span class="op">.</span><span class="fu">err</span><span class="op">.</span><span class="fu">println</span><span class="op">(</span><span class="st">&quot;sd_notify failed&quot;</span><span class="op">);</span></span>
+<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a>            <span class="cf">return</span> <span class="kw">false</span><span class="op">;</span></span>
+<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span> <span class="cf">else</span> <span class="op">{</span></span>
+<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a>            <span class="cf">return</span> <span class="kw">true</span><span class="op">;</span></span>
+<span id="cb4-13"><a href="#cb4-13" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
+<span id="cb4-14"><a href="#cb4-14" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb4-15"><a href="#cb4-15" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
 <p><code>notify()</code> makes two foreign calls. First it calls <a href="https://www.freedesktop.org/software/systemd/man/sd_booted.html"><code>sd_booted(3)</code></a> to see if the system was booted using systemd. If not, we return (successfully). If the program <em>is</em> running under systemd it calls <a href="https://www.freedesktop.org/software/systemd/man/sd_notify.html"><code>sd_notify(3)</code></a>, logging an error on failure.</p>
 <p>That’s pretty much all there is to it. This is much, <em>much</em> nicer than JNI.</p>
 <h2 id="discussion">Discussion <a href="#discussion" class="section">§</a></h2>

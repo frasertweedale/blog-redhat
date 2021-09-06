@@ -35,39 +35,39 @@
 <p>To simplify and speed up <a href="https://www.freeipa.org/">FreeIPA</a> startup, I needed to implement systemd notification support in <a href="https://www.dogtagpki.org/">Dogtag PKI</a>. Dogtag (when so configured) should call <a href="https://www.freedesktop.org/software/systemd/man/sd_notify.html"><code>sd_notify(3)</code></a> to notify the system service manager when it has started up and is ready to service requests.</p>
 <p>Dogtag already uses JNI in a few places (as does some of its dependencies, including JSS). But I was not keen to use JNI, with all its complexity, for this small use case. A colleague pointed me to JNA, and I decided to give it a go.</p>
 <p>The resulting code is so small I’ll just include it all here, with commentary. (I made some changes for clarity; you can review the actual patch in the <a href="https://github.com/dogtagpki/pki/pull/569/files">pull request</a>).</p>
-<div class="sourceCode" id="cb1"><pre class="sourceCode java"><code class="sourceCode java"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true"></a><span class="kw">package</span><span class="im"> com.netscape.cmscore.systemd;</span></span>
-<span id="cb1-2"><a href="#cb1-2" aria-hidden="true"></a></span>
-<span id="cb1-3"><a href="#cb1-3" aria-hidden="true"></a><span class="kw">import</span><span class="im"> com.sun.jna.Library;</span></span>
-<span id="cb1-4"><a href="#cb1-4" aria-hidden="true"></a><span class="kw">import</span><span class="im"> com.sun.jna.Native;</span></span>
-<span id="cb1-5"><a href="#cb1-5" aria-hidden="true"></a></span>
-<span id="cb1-6"><a href="#cb1-6" aria-hidden="true"></a><span class="kw">public</span> <span class="kw">class</span> SystemdStartupNotifier {</span></code></pre></div>
+<div class="sourceCode" id="cb1"><pre class="sourceCode java"><code class="sourceCode java"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="kw">package</span><span class="im"> com</span><span class="op">.</span><span class="im">netscape</span><span class="op">.</span><span class="im">cmscore</span><span class="op">.</span><span class="im">systemd</span><span class="op">;</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="kw">import</span> <span class="im">com</span><span class="op">.</span><span class="im">sun</span><span class="op">.</span><span class="im">jna</span><span class="op">.</span><span class="im">Library</span><span class="op">;</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="kw">import</span> <span class="im">com</span><span class="op">.</span><span class="im">sun</span><span class="op">.</span><span class="im">jna</span><span class="op">.</span><span class="im">Native</span><span class="op">;</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="kw">public</span> <span class="kw">class</span> SystemdStartupNotifier <span class="op">{</span></span></code></pre></div>
 <p>Import JNA and begin the class definition.</p>
-<div class="sourceCode" id="cb2"><pre class="sourceCode java"><code class="sourceCode java"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true"></a><span class="kw">interface</span> Systemd <span class="kw">extends</span> Library {</span>
-<span id="cb2-2"><a href="#cb2-2" aria-hidden="true"></a>    <span class="kw">public</span> <span class="dt">int</span> <span class="fu">sd_booted</span>();</span>
-<span id="cb2-3"><a href="#cb2-3" aria-hidden="true"></a>    <span class="kw">public</span> <span class="dt">int</span> <span class="fu">sd_notify</span>(<span class="dt">int</span> unset_env, <span class="bu">String</span> state);</span>
-<span id="cb2-4"><a href="#cb2-4" aria-hidden="true"></a>}</span></code></pre></div>
+<div class="sourceCode" id="cb2"><pre class="sourceCode java"><code class="sourceCode java"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="kw">interface</span> Systemd <span class="kw">extends</span> Library <span class="op">{</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    <span class="kw">public</span> <span class="dt">int</span> <span class="fu">sd_booted</span><span class="op">();</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    <span class="kw">public</span> <span class="dt">int</span> <span class="fu">sd_notify</span><span class="op">(</span><span class="dt">int</span> unset_env<span class="op">,</span> <span class="bu">String</span> state<span class="op">);</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
 <p>Declare an interface to the shared library by extending <code>sun.jna.Native</code>. Method signatures must match the native function signatures, according to the <a href="https://github.com/java-native-access/jna/blob/5.6.0/www/Mappings.md">type mappings</a>.</p>
-<div class="sourceCode" id="cb3"><pre class="sourceCode java"><code class="sourceCode java"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true"></a>Systemd systemd = <span class="kw">null</span>;</span>
-<span id="cb3-2"><a href="#cb3-2" aria-hidden="true"></a></span>
-<span id="cb3-3"><a href="#cb3-3" aria-hidden="true"></a><span class="kw">public</span> <span class="dt">void</span> <span class="fu">init</span>() {</span>
-<span id="cb3-4"><a href="#cb3-4" aria-hidden="true"></a>    systemd = Native.<span class="fu">load</span>(<span class="st">&quot;systemd&quot;</span>, Systemd.<span class="fu">class</span>);</span>
-<span id="cb3-5"><a href="#cb3-5" aria-hidden="true"></a>}</span></code></pre></div>
+<div class="sourceCode" id="cb3"><pre class="sourceCode java"><code class="sourceCode java"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>Systemd systemd <span class="op">=</span> <span class="kw">null</span><span class="op">;</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="kw">public</span> <span class="dt">void</span> <span class="fu">init</span><span class="op">()</span> <span class="op">{</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>    systemd <span class="op">=</span> Native<span class="op">.</span><span class="fu">load</span><span class="op">(</span><span class="st">&quot;systemd&quot;</span><span class="op">,</span> Systemd<span class="op">.</span><span class="fu">class</span><span class="op">);</span></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
 <p><code>init()</code> gets called by initialisation code. <code>Native.load()</code> loads <code>libsystemd.so</code> and initialises the foreign library proxy with respect to the <code>Systemd</code> interface. The proxy object is assigned to the instance variable <code>systemd</code>. An alternative approach is to assign the proxy object to a static variable in the interface definition (<a href="https://github.com/java-native-access/jna/blob/5.6.0/www/GettingStarted.md#getting-started-with-jna">example</a>).</p>
-<div class="sourceCode" id="cb4"><pre class="sourceCode java"><code class="sourceCode java"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true"></a><span class="dt">boolean</span> <span class="fu">notify</span>(<span class="bu">String</span> status) {</span>
-<span id="cb4-2"><a href="#cb4-2" aria-hidden="true"></a>    <span class="kw">if</span> (!systemd.<span class="fu">sd_booted</span>()) {</span>
-<span id="cb4-3"><a href="#cb4-3" aria-hidden="true"></a>        <span class="kw">return</span> <span class="kw">true</span>;</span>
-<span id="cb4-4"><a href="#cb4-4" aria-hidden="true"></a>    } <span class="kw">else</span> {</span>
-<span id="cb4-5"><a href="#cb4-5" aria-hidden="true"></a>        <span class="dt">int</span> r = systemd.<span class="fu">sd_notify</span>(</span>
-<span id="cb4-6"><a href="#cb4-6" aria-hidden="true"></a>            <span class="dv">0</span> <span class="co">/* don't unset environment */</span>,</span>
-<span id="cb4-7"><a href="#cb4-7" aria-hidden="true"></a>            status);</span>
-<span id="cb4-8"><a href="#cb4-8" aria-hidden="true"></a>        <span class="kw">if</span> (r &lt; <span class="dv">1</span>) {</span>
-<span id="cb4-9"><a href="#cb4-9" aria-hidden="true"></a>            <span class="bu">System</span>.<span class="fu">err</span>.<span class="fu">println</span>(<span class="st">&quot;sd_notify failed&quot;</span>);</span>
-<span id="cb4-10"><a href="#cb4-10" aria-hidden="true"></a>            <span class="kw">return</span> <span class="kw">false</span>;</span>
-<span id="cb4-11"><a href="#cb4-11" aria-hidden="true"></a>        } <span class="kw">else</span> {</span>
-<span id="cb4-12"><a href="#cb4-12" aria-hidden="true"></a>            <span class="kw">return</span> <span class="kw">true</span>;</span>
-<span id="cb4-13"><a href="#cb4-13" aria-hidden="true"></a>        }</span>
-<span id="cb4-14"><a href="#cb4-14" aria-hidden="true"></a>    }</span>
-<span id="cb4-15"><a href="#cb4-15" aria-hidden="true"></a>}</span></code></pre></div>
+<div class="sourceCode" id="cb4"><pre class="sourceCode java"><code class="sourceCode java"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="dt">boolean</span> <span class="fu">notify</span><span class="op">(</span><span class="bu">String</span> status<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> <span class="op">(!</span>systemd<span class="op">.</span><span class="fu">sd_booted</span><span class="op">())</span> <span class="op">{</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> <span class="kw">true</span><span class="op">;</span></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span> <span class="cf">else</span> <span class="op">{</span></span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>        <span class="dt">int</span> r <span class="op">=</span> systemd<span class="op">.</span><span class="fu">sd_notify</span><span class="op">(</span></span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>            <span class="dv">0</span> <span class="co">/* don't unset environment */</span><span class="op">,</span></span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>            status<span class="op">);</span></span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> <span class="op">(</span>r <span class="op">&lt;</span> <span class="dv">1</span><span class="op">)</span> <span class="op">{</span></span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a>            <span class="bu">System</span><span class="op">.</span><span class="fu">err</span><span class="op">.</span><span class="fu">println</span><span class="op">(</span><span class="st">&quot;sd_notify failed&quot;</span><span class="op">);</span></span>
+<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a>            <span class="cf">return</span> <span class="kw">false</span><span class="op">;</span></span>
+<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span> <span class="cf">else</span> <span class="op">{</span></span>
+<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a>            <span class="cf">return</span> <span class="kw">true</span><span class="op">;</span></span>
+<span id="cb4-13"><a href="#cb4-13" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
+<span id="cb4-14"><a href="#cb4-14" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb4-15"><a href="#cb4-15" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
 <p><code>notify()</code> makes two foreign calls. First it calls <a href="https://www.freedesktop.org/software/systemd/man/sd_booted.html"><code>sd_booted(3)</code></a> to see if the system was booted using systemd. If not, we return (successfully). If the program <em>is</em> running under systemd it calls <a href="https://www.freedesktop.org/software/systemd/man/sd_notify.html"><code>sd_notify(3)</code></a>, logging an error on failure.</p>
 <p>That’s pretty much all there is to it. This is much, <em>much</em> nicer than JNI.</p>
 <h2 id="discussion">Discussion <a href="#discussion" class="section">§</a></h2>

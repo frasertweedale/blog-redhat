@@ -30,25 +30,25 @@
 <p>Because it’s still in development, the API is subject to change. I think the overall structure of the API is fine so hopefully any changes will be minor. The API is well documented so if in doubt, check the docstrings (calling <code>help(&lt;module|class|object&gt;)</code> is a handy way to read the docs in the interactive Python interpreter).</p>
 <h2 id="pkiconnection">PKIConnection <a href="#pkiconnection" class="section">§</a></h2>
 <p>The <code>pki.client.PKIConnection</code> class connects to a Dogtag instance and executes REST verbs on behalf of clients. Internally, it uses the excellent <a href="http://docs.python-requests.org/en/latest/">Requests</a> library.</p>
-<div class="sourceCode" id="cb1"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true"></a><span class="im">import</span> pki.client</span>
-<span id="cb1-2"><a href="#cb1-2" aria-hidden="true"></a></span>
-<span id="cb1-3"><a href="#cb1-3" aria-hidden="true"></a>scheme <span class="op">=</span> <span class="st">'https'</span></span>
-<span id="cb1-4"><a href="#cb1-4" aria-hidden="true"></a>host <span class="op">=</span> <span class="st">'localhost'</span></span>
-<span id="cb1-5"><a href="#cb1-5" aria-hidden="true"></a>port <span class="op">=</span> <span class="st">'8443'</span></span>
-<span id="cb1-6"><a href="#cb1-6" aria-hidden="true"></a>subsystem <span class="op">=</span> <span class="st">'ca'</span></span>
-<span id="cb1-7"><a href="#cb1-7" aria-hidden="true"></a>conn <span class="op">=</span> pki.client.PKIConnection(scheme, host, port, subsystem)</span></code></pre></div>
+<div class="sourceCode" id="cb1"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> pki.client</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>scheme <span class="op">=</span> <span class="st">'https'</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>host <span class="op">=</span> <span class="st">'localhost'</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>port <span class="op">=</span> <span class="st">'8443'</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>subsystem <span class="op">=</span> <span class="st">'ca'</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>conn <span class="op">=</span> pki.client.PKIConnection(scheme, host, port, subsystem)</span></code></pre></div>
 <p>For actions that require authentication, a client certificate is required, in PEM format. Client certificates are often distributed in the PKCS #12 format. In such case, the following command will convert a PKCS #12 client certificate to an unencrypted PEM certificate:</p>
 <pre><code>$ openssl pkcs12 -nodes -in cl_cert.p12 -out cl_cert.pem</code></pre>
 <p>After telling the <code>PKIConnection</code> where to find the client certificate, the connection object will be ready to use:</p>
-<div class="sourceCode" id="cb3"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true"></a>conn.set_authentication_cert(<span class="st">&quot;/path/to/cl_cert.pem&quot;</span>)</span></code></pre></div>
+<div class="sourceCode" id="cb3"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>conn.set_authentication_cert(<span class="st">&quot;/path/to/cl_cert.pem&quot;</span>)</span></code></pre></div>
 <h2 id="profileclient">ProfileClient <a href="#profileclient" class="section">§</a></h2>
 <p>The <code>pki.profile.ProfileClient</code> class proxies the profiles-related REST resources.</p>
-<div class="sourceCode" id="cb4"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true"></a><span class="im">import</span> pki.profile</span>
-<span id="cb4-2"><a href="#cb4-2" aria-hidden="true"></a></span>
-<span id="cb4-3"><a href="#cb4-3" aria-hidden="true"></a>profile_client <span class="op">=</span> pki.profile.ProfileClient(conn)</span>
-<span id="cb4-4"><a href="#cb4-4" aria-hidden="true"></a>profiles <span class="op">=</span> profile_client.list_profiles()</span>
-<span id="cb4-5"><a href="#cb4-5" aria-hidden="true"></a><span class="cf">for</span> profile <span class="kw">in</span> profiles:</span>
-<span id="cb4-6"><a href="#cb4-6" aria-hidden="true"></a>  <span class="cf">pass</span>  <span class="co"># do stuff</span></span></code></pre></div>
+<div class="sourceCode" id="cb4"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> pki.profile</span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>profile_client <span class="op">=</span> pki.profile.ProfileClient(conn)</span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>profiles <span class="op">=</span> profile_client.list_profiles()</span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> profile <span class="kw">in</span> profiles:</span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>  <span class="cf">pass</span>  <span class="co"># do stuff</span></span></code></pre></div>
 <p><code>list_profiles()</code> also takes optional <code>start</code> and <code>size</code> keyword arguments for pagination. For inspecting an individual profile, there is the <code>get_profile</code> method. But first let’s see what happens when we ask for a profile that doesn’t exist:</p>
 <pre><code>&gt;&gt;&gt; profile = profile_client.get_profile('nope')
 Traceback (most recent call last):
@@ -78,29 +78,29 @@ enrolling server certificates.'}}
 <p>There’s not much else to the profiles aspect of the API at this time. You can list profiles, inspect profiles, and enable/disable profiles, but you aren’t yet able to create new profiles or perform more advanced profile administration. Future work will (hopefully) add these capabilities.</p>
 <h2 id="certclient">CertClient <a href="#certclient" class="section">§</a></h2>
 <p>Although <code>pki.profile</code> on its own doesn’t currently offer a lot to the API end-user, some other modules do leverage the provided classes and methods in their own behaviours. <code>pki.cert</code> is one such module.</p>
-<div class="sourceCode" id="cb7"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true"></a><span class="im">import</span> pki.cert</span>
-<span id="cb7-2"><a href="#cb7-2" aria-hidden="true"></a></span>
-<span id="cb7-3"><a href="#cb7-3" aria-hidden="true"></a>cert_client <span class="op">=</span> pki.cert.CertClient(conn)</span>
-<span id="cb7-4"><a href="#cb7-4" aria-hidden="true"></a></span>
-<span id="cb7-5"><a href="#cb7-5" aria-hidden="true"></a><span class="co"># enrol a certificate</span></span>
-<span id="cb7-6"><a href="#cb7-6" aria-hidden="true"></a>inputs <span class="op">=</span> {</span>
-<span id="cb7-7"><a href="#cb7-7" aria-hidden="true"></a>  <span class="st">&quot;cert_request_type&quot;</span>: <span class="st">&quot;pkcs10&quot;</span>,</span>
-<span id="cb7-8"><a href="#cb7-8" aria-hidden="true"></a>  <span class="st">&quot;cert_request&quot;</span>: <span class="st">&quot;MIIBmDCC... (a PEM certificate request)&quot;</span>,</span>
-<span id="cb7-9"><a href="#cb7-9" aria-hidden="true"></a>  <span class="st">&quot;requestor_name&quot;</span>: <span class="st">&quot;John A. Citizen&quot;</span>,</span>
-<span id="cb7-10"><a href="#cb7-10" aria-hidden="true"></a>  <span class="st">&quot;requestor_email&quot;</span>: <span class="st">&quot;jcitizen@example.tld&quot;</span>,</span>
-<span id="cb7-11"><a href="#cb7-11" aria-hidden="true"></a>}</span>
-<span id="cb7-12"><a href="#cb7-12" aria-hidden="true"></a>enroll_req <span class="op">=</span> cert_client.create_enrollment_request(<span class="st">&quot;caServerCert&quot;</span>, inputs)</span>
-<span id="cb7-13"><a href="#cb7-13" aria-hidden="true"></a>req_infos <span class="op">=</span> cert_client.submit_enrollment_request(enroll_req)</span></code></pre></div>
+<div class="sourceCode" id="cb7"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> pki.cert</span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a>cert_client <span class="op">=</span> pki.cert.CertClient(conn)</span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a><span class="co"># enrol a certificate</span></span>
+<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a>inputs <span class="op">=</span> {</span>
+<span id="cb7-7"><a href="#cb7-7" aria-hidden="true" tabindex="-1"></a>  <span class="st">&quot;cert_request_type&quot;</span>: <span class="st">&quot;pkcs10&quot;</span>,</span>
+<span id="cb7-8"><a href="#cb7-8" aria-hidden="true" tabindex="-1"></a>  <span class="st">&quot;cert_request&quot;</span>: <span class="st">&quot;MIIBmDCC... (a PEM certificate request)&quot;</span>,</span>
+<span id="cb7-9"><a href="#cb7-9" aria-hidden="true" tabindex="-1"></a>  <span class="st">&quot;requestor_name&quot;</span>: <span class="st">&quot;John A. Citizen&quot;</span>,</span>
+<span id="cb7-10"><a href="#cb7-10" aria-hidden="true" tabindex="-1"></a>  <span class="st">&quot;requestor_email&quot;</span>: <span class="st">&quot;jcitizen@example.tld&quot;</span>,</span>
+<span id="cb7-11"><a href="#cb7-11" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb7-12"><a href="#cb7-12" aria-hidden="true" tabindex="-1"></a>enroll_req <span class="op">=</span> cert_client.create_enrollment_request(<span class="st">&quot;caServerCert&quot;</span>, inputs)</span>
+<span id="cb7-13"><a href="#cb7-13" aria-hidden="true" tabindex="-1"></a>req_infos <span class="op">=</span> cert_client.submit_enrollment_request(enroll_req)</span></code></pre></div>
 <p>The above instantiates a <code>CertClient</code> (reusing the connection object from before), creates a certificate enrollment request for the <code>caServerCert</code> profile (using the given inputs) and submits the certificate enrollment request. A certificate enrollment can actually involve multiple certificates, so the <code>req_infos</code> variable above contains a <code>CertRequestInfoCollection</code> object. Completing the enrollment involves iterating over this collection and approving each certificate request.</p>
-<div class="sourceCode" id="cb8"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true"></a>certificates <span class="op">=</span> []</span>
-<span id="cb8-2"><a href="#cb8-2" aria-hidden="true"></a><span class="cf">for</span> req_info <span class="kw">in</span> req_infos:</span>
-<span id="cb8-3"><a href="#cb8-3" aria-hidden="true"></a>  req_id <span class="op">=</span> req_info.request_id</span>
-<span id="cb8-4"><a href="#cb8-4" aria-hidden="true"></a>  cert_client.approve_request(req_id)</span>
-<span id="cb8-5"><a href="#cb8-5" aria-hidden="true"></a>  cert_id <span class="op">=</span> cert_client.get_request(req_id).cert_id</span>
-<span id="cb8-6"><a href="#cb8-6" aria-hidden="true"></a>  certificates.append(cert_client.get_cert(cert_id))</span></code></pre></div>
+<div class="sourceCode" id="cb8"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>certificates <span class="op">=</span> []</span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> req_info <span class="kw">in</span> req_infos:</span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a>  req_id <span class="op">=</span> req_info.request_id</span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a>  cert_client.approve_request(req_id)</span>
+<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a>  cert_id <span class="op">=</span> cert_client.get_request(req_id).cert_id</span>
+<span id="cb8-6"><a href="#cb8-6" aria-hidden="true" tabindex="-1"></a>  certificates.append(cert_client.get_cert(cert_id))</span></code></pre></div>
 <p>Assuming nothing went wrong, <code>certificates</code> now contains a <code>list</code> of <code>pki.cert.CertData</code> objects, but took quite a few operations to get from the enrollment request inputs to our actual certificate(s). Fortunately, the API provides a convenience method to take care of all these details:</p>
-<div class="sourceCode" id="cb9"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true"></a>profile_id <span class="op">=</span> <span class="st">&quot;caServerCert&quot;</span></span>
-<span id="cb9-2"><a href="#cb9-2" aria-hidden="true"></a>certificates <span class="op">=</span> cert_client.enroll_cert(profile_id, inputs)</span></code></pre></div>
+<div class="sourceCode" id="cb9"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a>profile_id <span class="op">=</span> <span class="st">&quot;caServerCert&quot;</span></span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a>certificates <span class="op">=</span> cert_client.enroll_cert(profile_id, inputs)</span></code></pre></div>
 <p><code>enroll_cert</code> takes care of all the details and returns a list of <code>CertData</code> objects when it completes. If this particular process of certificate enrollment request generation, submission, approval and certificate retrieval turns out to be a common use case, this method will save a lot of typing, but it’s important to know how it works and what it does behind the scenes.</p>
 <p>Let’s now have a look at one of these <code>CertData</code> objects:</p>
 <pre><code>&gt;&gt;&gt; type(cert)

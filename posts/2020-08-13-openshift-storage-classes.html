@@ -32,27 +32,27 @@
 <h2 id="creating-volumes">Creating volumes <a href="#creating-volumes" class="section">§</a></h2>
 <p>A cluster can provide a variety of types of volumes: Ceph, NFS, <code>hostPath</code>, iSCSI and several more. Storage types of the infrastructure the cluster is deployed in may also be available, e.g. AWS EBS, Azure Disk, GCE PersistentDisk (PD), Cinder (OpenStack), etc.</p>
 <p>Creating a <code>PersistentVolume</code> requires knowing about what volume types are supported, and possibly additional details about that storage type. For example, to create a PV based on a GCE PD:</p>
-<div class="sourceCode" id="cb1"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
-<span id="cb1-2"><a href="#cb1-2" aria-hidden="true"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> PersistentVolume</span></span>
-<span id="cb1-3"><a href="#cb1-3" aria-hidden="true"></a><span class="fu">metadata</span><span class="kw">:</span></span>
-<span id="cb1-4"><a href="#cb1-4" aria-hidden="true"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> pv-test</span></span>
-<span id="cb1-5"><a href="#cb1-5" aria-hidden="true"></a><span class="fu">spec</span><span class="kw">:</span></span>
-<span id="cb1-6"><a href="#cb1-6" aria-hidden="true"></a><span class="at">  </span><span class="fu">capacity</span><span class="kw">:</span></span>
-<span id="cb1-7"><a href="#cb1-7" aria-hidden="true"></a><span class="at">    </span><span class="fu">storage</span><span class="kw">:</span><span class="at"> 100Gi</span></span>
-<span id="cb1-8"><a href="#cb1-8" aria-hidden="true"></a><span class="at">  </span><span class="fu">accessModes</span><span class="kw">:</span></span>
-<span id="cb1-9"><a href="#cb1-9" aria-hidden="true"></a><span class="at">  </span><span class="kw">-</span><span class="at"> ReadWriteOnce</span></span>
-<span id="cb1-10"><a href="#cb1-10" aria-hidden="true"></a><span class="at">  </span><span class="fu">gcePersistentDisk</span><span class="kw">:</span></span>
-<span id="cb1-11"><a href="#cb1-11" aria-hidden="true"></a><span class="at">    </span><span class="fu">pdName</span><span class="kw">:</span><span class="at"> my-data-disk</span></span>
-<span id="cb1-12"><a href="#cb1-12" aria-hidden="true"></a><span class="at">    </span><span class="fu">fsType</span><span class="kw">:</span><span class="at"> ext4</span></span>
-<span id="cb1-13"><a href="#cb1-13" aria-hidden="true"></a><span class="at">  </span><span class="fu">nodeAffinity</span><span class="kw">:</span></span>
-<span id="cb1-14"><a href="#cb1-14" aria-hidden="true"></a><span class="at">    </span><span class="fu">required</span><span class="kw">:</span></span>
-<span id="cb1-15"><a href="#cb1-15" aria-hidden="true"></a><span class="at">      </span><span class="fu">nodeSelectorTerms</span><span class="kw">:</span></span>
-<span id="cb1-16"><a href="#cb1-16" aria-hidden="true"></a><span class="at">      </span><span class="kw">-</span><span class="at"> </span><span class="fu">matchExpressions</span><span class="kw">:</span></span>
-<span id="cb1-17"><a href="#cb1-17" aria-hidden="true"></a><span class="at">        </span><span class="kw">-</span><span class="at"> </span><span class="fu">key</span><span class="kw">:</span><span class="at"> failure-domain.beta.kubernetes.io/zone</span></span>
-<span id="cb1-18"><a href="#cb1-18" aria-hidden="true"></a><span class="at">          </span><span class="fu">operator</span><span class="kw">:</span><span class="at"> In</span></span>
-<span id="cb1-19"><a href="#cb1-19" aria-hidden="true"></a><span class="at">          </span><span class="fu">values</span><span class="kw">:</span></span>
-<span id="cb1-20"><a href="#cb1-20" aria-hidden="true"></a><span class="at">          </span><span class="kw">-</span><span class="at"> us-central1-a</span></span>
-<span id="cb1-21"><a href="#cb1-21" aria-hidden="true"></a><span class="at">          </span><span class="kw">-</span><span class="at"> us-central1-b</span></span></code></pre></div>
+<div class="sourceCode" id="cb1"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> PersistentVolume</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="fu">metadata</span><span class="kw">:</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> pv-test</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="fu">spec</span><span class="kw">:</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">capacity</span><span class="kw">:</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">storage</span><span class="kw">:</span><span class="at"> 100Gi</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">accessModes</span><span class="kw">:</span></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> ReadWriteOnce</span></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">gcePersistentDisk</span><span class="kw">:</span></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">pdName</span><span class="kw">:</span><span class="at"> my-data-disk</span></span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">fsType</span><span class="kw">:</span><span class="at"> ext4</span></span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">nodeAffinity</span><span class="kw">:</span></span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">required</span><span class="kw">:</span></span>
+<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">nodeSelectorTerms</span><span class="kw">:</span></span>
+<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">-</span><span class="at"> </span><span class="fu">matchExpressions</span><span class="kw">:</span></span>
+<span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="kw">-</span><span class="at"> </span><span class="fu">key</span><span class="kw">:</span><span class="at"> failure-domain.beta.kubernetes.io/zone</span></span>
+<span id="cb1-18"><a href="#cb1-18" aria-hidden="true" tabindex="-1"></a><span class="at">          </span><span class="fu">operator</span><span class="kw">:</span><span class="at"> In</span></span>
+<span id="cb1-19"><a href="#cb1-19" aria-hidden="true" tabindex="-1"></a><span class="at">          </span><span class="fu">values</span><span class="kw">:</span></span>
+<span id="cb1-20"><a href="#cb1-20" aria-hidden="true" tabindex="-1"></a><span class="at">          </span><span class="kw">-</span><span class="at"> us-central1-a</span></span>
+<span id="cb1-21"><a href="#cb1-21" aria-hidden="true" tabindex="-1"></a><span class="at">          </span><span class="kw">-</span><span class="at"> us-central1-b</span></span></code></pre></div>
 <p>Creating this PV required:</p>
 <ul>
 <li>knowing that the cluster provides the GCE PD volume type</li>
@@ -66,28 +66,28 @@
 NAME                 PROVISIONER            RECLAIMPOLICY   VOLUMEBINDINGMODE      ALLOWVOLUMEEXPANSION   AGE
 standard (default)   kubernetes.io/cinder   Delete          WaitForFirstConsumer   true                   28d</code></pre>
 <p>This cluster has only one storage class, called <code>standard</code>. It is also the default storage class for this cluster. To use dynamic provisioning, in the PVC spec instead of <code>volumeName</code> specify <code>storageClassName</code>:</p>
-<div class="sourceCode" id="cb3"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
-<span id="cb3-2"><a href="#cb3-2" aria-hidden="true"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> PersistentVolumeClaim</span></span>
-<span id="cb3-3"><a href="#cb3-3" aria-hidden="true"></a><span class="fu">metadata</span><span class="kw">:</span></span>
-<span id="cb3-4"><a href="#cb3-4" aria-hidden="true"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> pvc-test</span></span>
-<span id="cb3-5"><a href="#cb3-5" aria-hidden="true"></a><span class="fu">spec</span><span class="kw">:</span></span>
-<span id="cb3-6"><a href="#cb3-6" aria-hidden="true"></a><span class="at">  </span><span class="fu">accessModes</span><span class="kw">:</span></span>
-<span id="cb3-7"><a href="#cb3-7" aria-hidden="true"></a><span class="at">    </span><span class="kw">-</span><span class="at"> ReadWriteOnce</span></span>
-<span id="cb3-8"><a href="#cb3-8" aria-hidden="true"></a><span class="at">  </span><span class="fu">resources</span><span class="kw">:</span></span>
-<span id="cb3-9"><a href="#cb3-9" aria-hidden="true"></a><span class="at">    </span><span class="fu">requests</span><span class="kw">:</span></span>
-<span id="cb3-10"><a href="#cb3-10" aria-hidden="true"></a><span class="at">      </span><span class="fu">storage</span><span class="kw">:</span><span class="at"> 10Gi</span></span>
-<span id="cb3-11"><a href="#cb3-11" aria-hidden="true"></a><span class="at">  </span><span class="fu">storageClassName</span><span class="kw">:</span><span class="at"> standard</span></span></code></pre></div>
+<div class="sourceCode" id="cb3"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> PersistentVolumeClaim</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="fu">metadata</span><span class="kw">:</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> pvc-test</span></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a><span class="fu">spec</span><span class="kw">:</span></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">accessModes</span><span class="kw">:</span></span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="kw">-</span><span class="at"> ReadWriteOnce</span></span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">resources</span><span class="kw">:</span></span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">requests</span><span class="kw">:</span></span>
+<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">storage</span><span class="kw">:</span><span class="at"> 10Gi</span></span>
+<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">storageClassName</span><span class="kw">:</span><span class="at"> standard</span></span></code></pre></div>
 <p>If you want to use the default storage class, you can even omit the <code>storageClassName</code> field:</p>
-<div class="sourceCode" id="cb4"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
-<span id="cb4-2"><a href="#cb4-2" aria-hidden="true"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> PersistentVolumeClaim</span></span>
-<span id="cb4-3"><a href="#cb4-3" aria-hidden="true"></a><span class="fu">metadata</span><span class="kw">:</span></span>
-<span id="cb4-4"><a href="#cb4-4" aria-hidden="true"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> pvc-test</span></span>
-<span id="cb4-5"><a href="#cb4-5" aria-hidden="true"></a><span class="fu">spec</span><span class="kw">:</span></span>
-<span id="cb4-6"><a href="#cb4-6" aria-hidden="true"></a><span class="at">  </span><span class="fu">accessModes</span><span class="kw">:</span></span>
-<span id="cb4-7"><a href="#cb4-7" aria-hidden="true"></a><span class="at">    </span><span class="kw">-</span><span class="at"> ReadWriteOnce</span></span>
-<span id="cb4-8"><a href="#cb4-8" aria-hidden="true"></a><span class="at">  </span><span class="fu">resources</span><span class="kw">:</span></span>
-<span id="cb4-9"><a href="#cb4-9" aria-hidden="true"></a><span class="at">    </span><span class="fu">requests</span><span class="kw">:</span></span>
-<span id="cb4-10"><a href="#cb4-10" aria-hidden="true"></a><span class="at">      </span><span class="fu">storage</span><span class="kw">:</span><span class="at"> 10Gi</span></span></code></pre></div>
+<div class="sourceCode" id="cb4"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> PersistentVolumeClaim</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a><span class="fu">metadata</span><span class="kw">:</span></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> pvc-test</span></span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a><span class="fu">spec</span><span class="kw">:</span></span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">accessModes</span><span class="kw">:</span></span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="kw">-</span><span class="at"> ReadWriteOnce</span></span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">resources</span><span class="kw">:</span></span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">requests</span><span class="kw">:</span></span>
+<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">storage</span><span class="kw">:</span><span class="at"> 10Gi</span></span></code></pre></div>
 <h2 id="dynamic-provisioning-in-action">Dynamic provisioning in action <a href="#dynamic-provisioning-in-action" class="section">§</a></h2>
 <p>Let’s see what actually happens when we use dynamic provisioning. We will observe what objects are created and how their status changes as we create, use and delete a PVC that uses the default storage class.</p>
 <p>First let’s see what PVs exist:</p>
@@ -111,24 +111,24 @@ ftweedal% oc get pvc pvc-test -o yaml |grep storageClassName
 storageClassName: standard</code></pre>
 <p>The PVC <code>pvc-test</code> was created and has status <code>pending</code>. No new PV has been created yet. Finally note that the PVC has <code>storageClassName: standard</code> (which is the cluster default).</p>
 <p>Now lets create a pod that uses <code>pvc-test</code>, mounting it at <code>/data</code>. The pod spec is:</p>
-<div class="sourceCode" id="cb7"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
-<span id="cb7-2"><a href="#cb7-2" aria-hidden="true"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Pod</span></span>
-<span id="cb7-3"><a href="#cb7-3" aria-hidden="true"></a><span class="fu">metadata</span><span class="kw">:</span></span>
-<span id="cb7-4"><a href="#cb7-4" aria-hidden="true"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> pod-test</span></span>
-<span id="cb7-5"><a href="#cb7-5" aria-hidden="true"></a><span class="fu">spec</span><span class="kw">:</span></span>
-<span id="cb7-6"><a href="#cb7-6" aria-hidden="true"></a><span class="at">  </span><span class="fu">containers</span><span class="kw">:</span></span>
-<span id="cb7-7"><a href="#cb7-7" aria-hidden="true"></a><span class="at">    </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> pod-test-container</span></span>
-<span id="cb7-8"><a href="#cb7-8" aria-hidden="true"></a><span class="at">      </span><span class="fu">image</span><span class="kw">:</span><span class="at"> freeipa/freeipa-server:fedora-31</span></span>
-<span id="cb7-9"><a href="#cb7-9" aria-hidden="true"></a><span class="at">      </span><span class="fu">volumeMounts</span><span class="kw">:</span></span>
-<span id="cb7-10"><a href="#cb7-10" aria-hidden="true"></a><span class="at">        </span><span class="kw">-</span><span class="at"> </span><span class="fu">mountPath</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;/data&quot;</span></span>
-<span id="cb7-11"><a href="#cb7-11" aria-hidden="true"></a><span class="at">          </span><span class="fu">name</span><span class="kw">:</span><span class="at"> data</span></span>
-<span id="cb7-12"><a href="#cb7-12" aria-hidden="true"></a><span class="at">      </span><span class="fu">command</span><span class="kw">:</span></span>
-<span id="cb7-13"><a href="#cb7-13" aria-hidden="true"></a><span class="at">        </span><span class="kw">-</span><span class="at"> sleep</span></span>
-<span id="cb7-14"><a href="#cb7-14" aria-hidden="true"></a><span class="at">        </span><span class="kw">-</span><span class="at"> </span><span class="st">&quot;3600&quot;</span></span>
-<span id="cb7-15"><a href="#cb7-15" aria-hidden="true"></a><span class="at">  </span><span class="fu">volumes</span><span class="kw">:</span></span>
-<span id="cb7-16"><a href="#cb7-16" aria-hidden="true"></a><span class="at">    </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> data</span></span>
-<span id="cb7-17"><a href="#cb7-17" aria-hidden="true"></a><span class="at">      </span><span class="fu">persistentVolumeClaim</span><span class="kw">:</span></span>
-<span id="cb7-18"><a href="#cb7-18" aria-hidden="true"></a><span class="at">        </span><span class="fu">claimName</span><span class="kw">:</span><span class="at"> pvc-test</span></span></code></pre></div>
+<div class="sourceCode" id="cb7"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Pod</span></span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a><span class="fu">metadata</span><span class="kw">:</span></span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> pod-test</span></span>
+<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a><span class="fu">spec</span><span class="kw">:</span></span>
+<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">containers</span><span class="kw">:</span></span>
+<span id="cb7-7"><a href="#cb7-7" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> pod-test-container</span></span>
+<span id="cb7-8"><a href="#cb7-8" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">image</span><span class="kw">:</span><span class="at"> freeipa/freeipa-server:fedora-31</span></span>
+<span id="cb7-9"><a href="#cb7-9" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">volumeMounts</span><span class="kw">:</span></span>
+<span id="cb7-10"><a href="#cb7-10" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="kw">-</span><span class="at"> </span><span class="fu">mountPath</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;/data&quot;</span></span>
+<span id="cb7-11"><a href="#cb7-11" aria-hidden="true" tabindex="-1"></a><span class="at">          </span><span class="fu">name</span><span class="kw">:</span><span class="at"> data</span></span>
+<span id="cb7-12"><a href="#cb7-12" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">command</span><span class="kw">:</span></span>
+<span id="cb7-13"><a href="#cb7-13" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="kw">-</span><span class="at"> sleep</span></span>
+<span id="cb7-14"><a href="#cb7-14" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="kw">-</span><span class="at"> </span><span class="st">&quot;3600&quot;</span></span>
+<span id="cb7-15"><a href="#cb7-15" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">volumes</span><span class="kw">:</span></span>
+<span id="cb7-16"><a href="#cb7-16" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> data</span></span>
+<span id="cb7-17"><a href="#cb7-17" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">persistentVolumeClaim</span><span class="kw">:</span></span>
+<span id="cb7-18"><a href="#cb7-18" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="fu">claimName</span><span class="kw">:</span><span class="at"> pvc-test</span></span></code></pre></div>
 <p>After creating the pod we will write a file under <code>/data</code>, delete then re-create the pod, and observe that the file we wrote persists.</p>
 <pre><code>ftweedal% oc create -f deploy/pod-test.yaml
 pod/pod-test created

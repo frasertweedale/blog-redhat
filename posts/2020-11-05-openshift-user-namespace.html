@@ -106,13 +106,13 @@ dr-xr-xr-x. 9 root root 0 Nov  5 05:55 /proc/1381728</code></pre>
 <p>Right now there is no final proposal and no implementation plan. As a team we cannot proceed on the assumption that Kubernetes will support user namespaces. We will certainly present our case to OpenShift engineering internally at Red Hat, but we have to look at other options.</p>
 <h2 id="user-namespace-support-in-cri-o">User namespace support in CRI-O <a href="#user-namespace-support-in-cri-o" class="section">§</a></h2>
 <p>The <a href="https://cri-o.io/">CRI-O</a> container runtime <a href="https://github.com/cri-o/cri-o/pull/3944">recently implemented</a> support for running each pod in a separate user namespace, via <em>annotations</em> on the pod, e.g.:</p>
-<div class="sourceCode" id="cb11"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
-<span id="cb11-2"><a href="#cb11-2" aria-hidden="true"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Pod</span></span>
-<span id="cb11-3"><a href="#cb11-3" aria-hidden="true"></a><span class="fu">metadata</span><span class="kw">:</span></span>
-<span id="cb11-4"><a href="#cb11-4" aria-hidden="true"></a><span class="at">  </span><span class="fu">annotations</span><span class="kw">:</span></span>
-<span id="cb11-5"><a href="#cb11-5" aria-hidden="true"></a><span class="at">    </span><span class="fu">io.kubernetes.cri-o.userns-mode</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;auto&quot;</span></span>
-<span id="cb11-6"><a href="#cb11-6" aria-hidden="true"></a><span class="fu">spec</span><span class="kw">:</span></span>
-<span id="cb11-7"><a href="#cb11-7" aria-hidden="true"></a><span class="at">  ...</span></span></code></pre></div>
+<div class="sourceCode" id="cb11"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
+<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Pod</span></span>
+<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a><span class="fu">metadata</span><span class="kw">:</span></span>
+<span id="cb11-4"><a href="#cb11-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">annotations</span><span class="kw">:</span></span>
+<span id="cb11-5"><a href="#cb11-5" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">io.kubernetes.cri-o.userns-mode</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;auto&quot;</span></span>
+<span id="cb11-6"><a href="#cb11-6" aria-hidden="true" tabindex="-1"></a><span class="fu">spec</span><span class="kw">:</span></span>
+<span id="cb11-7"><a href="#cb11-7" aria-hidden="true" tabindex="-1"></a><span class="at">  ...</span></span></code></pre></div>
 <p>Using annotations means that no explicit support in Kubernetes is required. All that is required is that Kubernetes is using the CRI-O container runtime, and that CRI-O is configured to enable this feature. OpenShift 4.x does use CRI-O, so we’re halfway there. The remaining step is to enable the feature in <code>crio.conf</code>:</p>
 <pre><code>allow_userns_annotation = true</code></pre>
 <p>The developer Giuseppe Scrivano kindly published a <a href="https://asciinema.org/a/351396">screencast showing the feature in action</a> (2 minutes). This feature is not yet in a supported release but is available on the v1.20 branch and is included in OpenShift <a href>nightly builds</a>.</p>
