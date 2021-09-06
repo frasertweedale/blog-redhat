@@ -31,7 +31,7 @@ main = hakyll $ do
   match "index.rst" $ do
     route $ setExtension "html"
     compile $ do
-      posts <- loadRecentPosts
+      posts <- take 5 <$> loadRecentPosts
       let homeContext =
             listField "posts" context (pure posts)
             <> constField "title" "Home"
@@ -46,7 +46,7 @@ main = hakyll $ do
   create ["archive.html"] $ do
     route idRoute
     compile $ do
-      posts <- recentFirst =<< loadAll ("posts/*" .&&. hasVersion "recent")
+      posts <- loadRecentPosts
       tagCloud <- renderTagCloud 80 120 tags
       let archiveContext =
             listField "posts" context (pure posts)
@@ -92,7 +92,7 @@ main = hakyll $ do
   match "posts/*" $ do
     route $ setExtension "html"
     compile $ do
-      posts <- loadRecentPosts
+      posts <- take 5 <$> loadRecentPosts
       let postContext =
             listField "posts" context (pure posts)
             <> tagsField "tags" tags
@@ -113,14 +113,12 @@ main = hakyll $ do
       let feedContext =
             bodyField "description"
             <> context
-      posts <- loadAll ("posts/*" .&&. hasVersion "recent")
-        >>= fmap (take 10) . recentFirst
+      posts <- take 10 <$> loadRecentPosts
       renderAtom feedConfiguration feedContext posts
 
 
 loadRecentPosts :: Compiler [Item String]
-loadRecentPosts =
-  fmap (take 5) . recentFirst =<< loadAll ("posts/*" .&&. hasVersion "recent")
+loadRecentPosts = recentFirst =<< loadAll ("posts/*" .&&. hasVersion "recent")
 
 
 context :: Context String
