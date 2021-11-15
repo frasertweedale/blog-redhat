@@ -145,7 +145,7 @@ div p:first-child {
     margin-top: 0;
 }
 
-.note div:last-child pre {
+.note p:last-child, .note div:last-child pre {
     margin-bottom: 0;
 }
 
