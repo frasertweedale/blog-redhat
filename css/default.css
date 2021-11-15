@@ -145,7 +145,7 @@ div p:first-child {
     margin-top: 0;
 }
 
-div p:last-child {
+.note div:last-child pre {
     margin-bottom: 0;
 }
 
@@ -179,7 +179,7 @@ pre {
     border: solid 1px gold;
     border-radius: 10px;
     background: lightyellow;
-    padding: 10px 15px;
+    padding: 15px;
     overflow: auto;
 }
 
