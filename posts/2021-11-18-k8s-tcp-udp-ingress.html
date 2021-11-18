@@ -1,0 +1,298 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+    <head>
+        <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+        <title>Fraser's IdM Blog - Bare TCP and UDP ingress on Kubernetes</title>
+        <link rel="stylesheet" type="text/css" href="../css/default.css" />
+    </head>
+    <body>
+        <div id="header">
+            <div id="logo">
+                <a href="../">Fraser's IdM Blog</a>
+            </div>
+            <div id="navigation">
+                <a href="../">Home</a>
+                <a href="../archive.html">Archive</a>
+            </div>
+        </div>
+
+        <div id="content">
+            <div class="info">
+    
+    Tags: <a title="All pages tagged 'kubernetes'." href="../tags/kubernetes.html">kubernetes</a>, <a title="All pages tagged 'openshift'." href="../tags/openshift.html">openshift</a>, <a title="All pages tagged 'dns'." href="../tags/dns.html">dns</a>
+    
+</div>
+
+<div id="postContent">
+    <h1 id="bare-tcp-and-udp-ingress-on-kubernetes">Bare TCP and UDP ingress on Kubernetes</h1>
+<p>Kubernetes and OpenShift have good solutions for routing HTTP/HTTPS traffic to the right applications. But for ingress of bare TCP (that is, not HTTP(S) or TLS with SNI) or UDP traffic, the situation is more complicated. In this post I demonstrate how to use <code>LoadBalancer</code> Service objects to route bare TCP and UDP traffic to your Kubernetes applications.</p>
+<h2 id="example-service">Example service <a href="#example-service" class="section">§</a></h2>
+<p>For testing purposes I wrote a basic echo server. It listens on both TCP and UDP port 12345, and merely upper-cases and returns the data it receives:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> socketserver</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> threading</span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> serve_tcp():</span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    <span class="kw">class</span> Handler(socketserver.StreamRequestHandler):</span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>        <span class="kw">def</span> handle(<span class="va">self</span>):</span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>            <span class="cf">while</span> <span class="va">True</span>:</span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>                data <span class="op">=</span> <span class="va">self</span>.rfile.readline()</span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>                <span class="cf">if</span> <span class="kw">not</span> data:</span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>                    <span class="cf">break</span></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a>                <span class="va">self</span>.wfile.write(data.upper())</span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a>    <span class="cf">with</span> socketserver.TCPServer((<span class="st">''</span>, <span class="dv">12345</span>), Handler) <span class="im">as</span> server:</span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a>        server.serve_forever()</span>
+<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> serve_udp():</span>
+<span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a>    <span class="kw">class</span> Handler(socketserver.DatagramRequestHandler):</span>
+<span id="cb1-18"><a href="#cb1-18" aria-hidden="true" tabindex="-1"></a>        <span class="kw">def</span> handle(<span class="va">self</span>):</span>
+<span id="cb1-19"><a href="#cb1-19" aria-hidden="true" tabindex="-1"></a>            <span class="va">self</span>.wfile.write(<span class="va">self</span>.rfile.read().upper())</span>
+<span id="cb1-20"><a href="#cb1-20" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-21"><a href="#cb1-21" aria-hidden="true" tabindex="-1"></a>    <span class="cf">with</span> socketserver.UDPServer((<span class="st">''</span>, <span class="dv">12345</span>), Handler) <span class="im">as</span> server:</span>
+<span id="cb1-22"><a href="#cb1-22" aria-hidden="true" tabindex="-1"></a>        server.serve_forever()</span>
+<span id="cb1-23"><a href="#cb1-23" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-24"><a href="#cb1-24" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> <span class="va">__name__</span> <span class="op">==</span> <span class="st">&quot;__main__&quot;</span>:</span>
+<span id="cb1-25"><a href="#cb1-25" aria-hidden="true" tabindex="-1"></a>    threading.Thread(target<span class="op">=</span>serve_tcp).start()</span>
+<span id="cb1-26"><a href="#cb1-26" aria-hidden="true" tabindex="-1"></a>    threading.Thread(target<span class="op">=</span>serve_udp).start()</span></code></pre></div>
+<p>The <code>Containerfile</code> adds this program to the official Fedora 35 container and declares the entry point:</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode dockerfile"><code class="sourceCode dockerfile"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="kw">FROM</span> fedora:35-x86_64</span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="kw">COPY</span> echo.py .</span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="kw">CMD</span> [ <span class="st">&quot;python3&quot;</span>, <span class="st">&quot;echo.py&quot;</span> ]</span></code></pre></div>
+<p>I published the container <a href="https://quay.io/repository/ftweedal/udpecho.">image on Quay.io</a>. The Pod spec references it:</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Pod</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="fu">metadata</span><span class="kw">:</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> echo</span></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">labels</span><span class="kw">:</span></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">app</span><span class="kw">:</span><span class="at"> echo</span></span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a><span class="fu">spec</span><span class="kw">:</span></span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">containers</span><span class="kw">:</span></span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> server</span></span>
+<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">image</span><span class="kw">:</span><span class="at"> quay.io/ftweedal/udpecho:latest</span></span></code></pre></div>
+<p>I defined a new project namespace <code>echo</code> and created the Pod:</p>
+<pre class="shell"><code>% oc new-project echo
+Now using project &quot;echo&quot; on server
+  &quot;https://api.ci-ln-4ixdypb-72292.origin-ci-int-gce.dev.rhcloud.com:6443&quot;.
+
+…
+
+% oc create -f pod-echo.yaml
+pod/echo created</code></pre>
+<h2 id="create-service-object">Create Service object <a href="#create-service-object" class="section">§</a></h2>
+<p>My application is not talking HTTP, so I can’t use the normal Ingress or Route facilities to get traffic to my app.</p>
+<div class="note">
+<p>HTTP and HTTPS traffic includes the <strong><code>Host</code></strong> header, which the ingress system can inspect to route requests to a particular Pod. Similarly, TLS with the <strong><em>Server Name (SNI)</em></strong> extension allows TLS traffic to be routed to a particular Pod (the Pod will perform the handshake). Neither approach works for UDP packets or “bare” TCP connections.</p>
+</div>
+<p>Therefore, I define a <code>LoadBalancer</code> Service. The service controller will ask the cloud provider to create a load balancer that routes external traffic into the cluster. For example, on AWS it will (by default) create an ELB (<em>Elastic Load Balancer</em>) instance.</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Service</span></span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a><span class="fu">metadata</span><span class="kw">:</span></span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> echo</span></span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a><span class="fu">spec</span><span class="kw">:</span></span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">type</span><span class="kw">:</span><span class="at"> LoadBalancer</span></span>
+<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">selector</span><span class="kw">:</span></span>
+<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">app</span><span class="kw">:</span><span class="at"> echo</span></span>
+<span id="cb5-9"><a href="#cb5-9" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">ports</span><span class="kw">:</span></span>
+<span id="cb5-10"><a href="#cb5-10" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> tcpecho</span></span>
+<span id="cb5-11"><a href="#cb5-11" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">protocol</span><span class="kw">:</span><span class="at"> TCP</span></span>
+<span id="cb5-12"><a href="#cb5-12" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">port</span><span class="kw">:</span><span class="at"> </span><span class="dv">12345</span></span>
+<span id="cb5-13"><a href="#cb5-13" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> udpecho</span></span>
+<span id="cb5-14"><a href="#cb5-14" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">protocol</span><span class="kw">:</span><span class="at"> UDP</span></span>
+<span id="cb5-15"><a href="#cb5-15" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">port</span><span class="kw">:</span><span class="at"> </span><span class="dv">12345</span></span></code></pre></div>
+<p>OK, let’s create the Service:</p>
+<pre class="shell"><code>% oc create -f service-echo.yaml 
+The Service &quot;echo&quot; is invalid: spec.ports: Invalid value:
+[]core.ServicePort{core.ServicePort{Name:&quot;tcpecho&quot;, Protocol:&quot;TCP&quot;,
+AppProtocol:(*string)(nil), Port:12345,
+TargetPort:intstr.IntOrString{Type:0, IntVal:12345, StrVal:&quot;&quot;},
+NodePort:0}, core.ServicePort{Name:&quot;udpecho&quot;, Protocol:&quot;UDP&quot;,
+AppProtocol:(*string)(nil), Port:12345,
+TargetPort:intstr.IntOrString{Type:0, IntVal:12345, StrVal:&quot;&quot;},
+NodePort:0}}: may not contain more than 1 protocol when type is
+'LoadBalancer'</code></pre>
+<p>Well, that’s unfortunate. Kubernetes does not support <code>LoadBalancer</code> services with mixed <code>protocol</code>. <a href="https://github.com/kubernetes/enhancements/issues/1435">KEP 1435</a> is in progress to address this. It is a gated “alpha” feature <a href="https://github.com/kubernetes/kubernetes/blob/master/CHANGELOG/CHANGELOG-1.20.md">since Kubernetes 1.20</a>. Cloud provider support is currently <a href="https://github.com/kubernetes/enhancements/issues/1435#issuecomment-969523031">mixed</a> but work is ongoing.</p>
+<p>So for now, I have to create separate Service objects for UDP and TCP ingress. As a consequence, there will be <strong>different public IP addresses for TCP and UDP</strong>. Whether this is a problem depends on the application. Applications that use <code>SRV</code> records to locate servers can handle this scenario. Kerberos is such an application (modern implementations, at least). Applications that use <code>A</code> or <code>AAAA</code> records directly might have problems.</p>
+<p>The other downside is cost. Cloud providers charge money for load balancer instances. The more you use, the more you pay.</p>
+<p>Below is the definition of my decomposed Service objects:</p>
+<div class="sourceCode" id="cb7"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Service</span></span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a><span class="fu">metadata</span><span class="kw">:</span></span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> echo-udp</span></span>
+<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a><span class="fu">spec</span><span class="kw">:</span></span>
+<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">type</span><span class="kw">:</span><span class="at"> LoadBalancer</span></span>
+<span id="cb7-7"><a href="#cb7-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">selector</span><span class="kw">:</span></span>
+<span id="cb7-8"><a href="#cb7-8" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">app</span><span class="kw">:</span><span class="at"> echo</span></span>
+<span id="cb7-9"><a href="#cb7-9" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">ports</span><span class="kw">:</span></span>
+<span id="cb7-10"><a href="#cb7-10" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> udpecho</span></span>
+<span id="cb7-11"><a href="#cb7-11" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">protocol</span><span class="kw">:</span><span class="at"> UDP</span></span>
+<span id="cb7-12"><a href="#cb7-12" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">port</span><span class="kw">:</span><span class="at"> </span><span class="dv">12345</span></span>
+<span id="cb7-13"><a href="#cb7-13" aria-hidden="true" tabindex="-1"></a><span class="pp">---</span></span>
+<span id="cb7-14"><a href="#cb7-14" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
+<span id="cb7-15"><a href="#cb7-15" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Service</span></span>
+<span id="cb7-16"><a href="#cb7-16" aria-hidden="true" tabindex="-1"></a><span class="fu">metadata</span><span class="kw">:</span></span>
+<span id="cb7-17"><a href="#cb7-17" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> echo-tcp</span></span>
+<span id="cb7-18"><a href="#cb7-18" aria-hidden="true" tabindex="-1"></a><span class="fu">spec</span><span class="kw">:</span></span>
+<span id="cb7-19"><a href="#cb7-19" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">type</span><span class="kw">:</span><span class="at"> LoadBalancer</span></span>
+<span id="cb7-20"><a href="#cb7-20" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">selector</span><span class="kw">:</span></span>
+<span id="cb7-21"><a href="#cb7-21" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">app</span><span class="kw">:</span><span class="at"> echo</span></span>
+<span id="cb7-22"><a href="#cb7-22" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">ports</span><span class="kw">:</span></span>
+<span id="cb7-23"><a href="#cb7-23" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> tcpecho</span></span>
+<span id="cb7-24"><a href="#cb7-24" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">protocol</span><span class="kw">:</span><span class="at"> TCP</span></span>
+<span id="cb7-25"><a href="#cb7-25" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">port</span><span class="kw">:</span><span class="at"> </span><span class="dv">12345</span></span></code></pre></div>
+<p>Creating the objects now succeeds:</p>
+<pre class="shell"><code>% oc create -f service-echo.yaml 
+service/echo-udp created
+service/echo-tcp created</code></pre>
+<p>To find out the hostname or IP address of the load balancer ingress endpoint, inspect the <code>status</code> field of the Service object:</p>
+<pre class="shell"><code>% oc get -o json service \
+    | jq -c '.items[] | (.metadata.name, .status)'
+&quot;echo-tcp&quot;
+{&quot;loadBalancer&quot;:{&quot;ingress&quot;:[{&quot;ip&quot;:&quot;34.136.55.93&quot;}]}}
+&quot;echo-udp&quot;
+{&quot;loadBalancer&quot;:{&quot;ingress&quot;:[{&quot;ip&quot;:&quot;34.71.82.205&quot;}]}}</code></pre>
+<p>Most cloud providers report an IP address. That includes Google Cloud (GCP) where this cluster was deployed. On the other hand, AWS reports a DNS name. Below is the result of creating my service objects on an cluster hosted on AWS:</p>
+<pre class="shell"><code>% oc get -o json service \
+    | jq -c '.items[] | (.metadata.name, .status)'
+&quot;echo-tcp&quot;
+{&quot;loadBalancer&quot;:{&quot;ingress&quot;:[{&quot;hostname&quot;:&quot;a095e8e1ebb9e4c64ae71e0f3c688ad4-608097611.us-east-2.elb.amazonaws.com&quot;}]}}
+&quot;echo-udp&quot;
+{&quot;loadBalancer&quot;:{}}</code></pre>
+<p>ELB successfully created a load balancer for the TCP port. But something is wrong with the UDP service. The events give more information:</p>
+<pre class="shell"><code>% oc get event --field-selector involvedObject.name=echo-udp
+LAST SEEN   TYPE      REASON                   OBJECT             MESSAGE
+94s         Normal    EnsuringLoadBalancer     service/echo-udp   Ensuring load balancer
+94s         Warning   SyncLoadBalancerFailed   service/echo-udp   Error syncing load balancer: failed to ensure load balancer: Protocol UDP not supported by LoadBalancer</code></pre>
+<p>Load balancer creation failed with the error:</p>
+<blockquote>
+<p>Error syncing load balancer: failed to ensure load balancer: Protocol UDP not supported by LoadBalancer</p>
+</blockquote>
+<p>The workaround is to add an annotation to request a <em>Network Load Balancer (NLB)</em> instance instead of ELB (the default):</p>
+<div class="sourceCode" id="cb12"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
+<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Service</span></span>
+<span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a><span class="fu">metadata</span><span class="kw">:</span></span>
+<span id="cb12-4"><a href="#cb12-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> echo-udp</span></span>
+<span id="cb12-5"><a href="#cb12-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">annotations</span><span class="kw">:</span></span>
+<span id="cb12-6"><a href="#cb12-6" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">service.beta.kubernetes.io/aws-load-balancer-type</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;nlb&quot;</span></span>
+<span id="cb12-7"><a href="#cb12-7" aria-hidden="true" tabindex="-1"></a><span class="fu">spec</span><span class="kw">:</span></span>
+<span id="cb12-8"><a href="#cb12-8" aria-hidden="true" tabindex="-1"></a><span class="at">  …</span></span></code></pre></div>
+<p>After adding the annotation, both load balancers are configured:</p>
+<pre class="shell"><code>% oc get -o json service \
+    | jq -c '.items[] | (.metadata.name, .status)'
+&quot;echo-tcp&quot;
+{&quot;loadBalancer&quot;:{&quot;ingress&quot;:[{&quot;hostname&quot;:&quot;a473cf621de6b49dfabb6e933d0fab55-2099420434.us-east-2.elb.amazonaws.com&quot;}]}}
+&quot;echo-udp&quot;
+{&quot;loadBalancer&quot;:{&quot;ingress&quot;:[{&quot;hostname&quot;:&quot;af7f7ed0f44c9461dbb54a9a4aedca2c-0c5861432365c726.elb.us-east-2.amazonaws.com&quot;}]}}</code></pre>
+<div class="note">
+<p><code>aws-load-balancer-type</code> is one of several annotations for modifying AWS load balancer configuration. See the <a href="https://cloud-provider-aws.sigs.k8s.io/service_controller/">AWS Cloud Provider documentation</a> for the full list.</p>
+</div>
+<h2 id="testing-the-ingress">Testing the ingress <a href="#testing-the-ingress" class="section">§</a></h2>
+<p>Using the IP address or DNS name from the <code>status</code> field, you can use <code>nc(1)</code> to verify that the server is contactable.</p>
+<pre class="shell"><code>% echo hello | nc 34.136.55.93 12345
+HELLO
+
+% nc --udp 34.71.82.205 12345
+hello                             -- input
+HELLO                             -- response
+^D</code></pre>
+<p>I was able to talk to my echo server via both TCP and UDP.</p>
+<div class="note">
+<p>If using TLS or DTLS, you could instead use OpenSSL’s <code>s_client(1)</code> to test connectivity.</p>
+</div>
+<p>Use hostname instead of IP address if that is how the cloud provider reports the ingress endpoint.</p>
+<h2 id="reaching-the-service-via-dns">Reaching the service via DNS <a href="#reaching-the-service-via-dns" class="section">§</a></h2>
+<p>The cloud provider has set up the load balancer and the ingress IP addresses or hostnames are reported in the <code>status</code> field of the Service object(s). Now you probably wish to set up DNS records so that clients can use an established domain name to find the server.</p>
+<p>I can’t go deep into this topic in this post, because I am still exploring this problem space myself. But I can describe some possible solutions at a high level.</p>
+<p>One possibility is to teach your application controller to manage the required DNS records. It would monitor the Service objects and reconcile the external DNS configuration with what it sees. The number and kind of records to be created will vary depending on whether the cloud providers reports the ingress points as hostnames or IP addresses:</p>
+<table>
+<thead>
+<tr class="header">
+<th>Ingress endpoint</th>
+<th>Resolution method</th>
+<th>Records needed</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>hostname</code></td>
+<td>direct</td>
+<td><code>CNAME</code></td>
+</tr>
+<tr class="even">
+<td><code>hostname</code></td>
+<td>SRV</td>
+<td><code>SRV</code></td>
+</tr>
+<tr class="odd">
+<td><code>ip</code></td>
+<td>direct</td>
+<td><code>A</code>/<code>AAAA</code></td>
+</tr>
+<tr class="even">
+<td><code>ip</code></td>
+<td>SRV</td>
+<td><code>A</code>/<code>AAAA</code> and <code>SRV</code></td>
+</tr>
+</tbody>
+</table>
+<p>Most applications have similar needs, so it would make sense to encapsulate this behaviour in a controller that configures arbitrary external DNS providers. That’s what the Kubernetes <a href="https://github.com/kubernetes-sigs/external-dns">ExternalDNS</a> project is all about. <a href="https://github.com/kubernetes-sigs/external-dns#status-of-providers">Provider stability varies</a>; at time of writing the only <em>stable</em> providers are Google Cloud DNS and AWS Route 53.</p>
+<p>Integration with OpenShift is via the <a href="https://github.com/openshift/external-dns-operator">ExternalDNS Operator</a>. This is an active area of work and ExternalDNS will hopefully be an officially supported part of OpenShift in a future release.</p>
+<p>I haven’t actually played with ExternalDNS yet so can’t say much more about it at this time. Only that it looks like a very useful solution!</p>
+<p>Finally, recall the caveats I mentioned earlier about applications that require ingress of <strong>both TCP and UDP</strong> traffic. <a href="https://github.com/kubernetes/enhancements/issues/1435">KEP 1435</a>, along with cloud provider support, should resolve this issue eventually.</p>
+</div>
+<div id="postFooter">
+    <div id="recent">
+Recent posts:
+<ul>
+    
+        <li>
+            <a href="../posts/2021-11-18-k8s-tcp-udp-ingress.html">Bare TCP and UDP ingress on Kubernetes</a>
+        </li>
+    
+        <li>
+            <a href="../posts/2021-10-15-openshift-userns-in-container.html">Creating user namespaces inside containers</a>
+        </li>
+    
+        <li>
+            <a href="../posts/2021-07-22-openshift-systemd-workload-demo.html">Demo: namespaced systemd workloads on OpenShift</a>
+        </li>
+    
+        <li>
+            <a href="../posts/2021-07-21-freeipa-on-openshift-update.html">FreeIPA on OpenShift: July 2021 update</a>
+        </li>
+    
+        <li>
+            <a href="../posts/2021-06-29-openshift-live-changes.html">Live-testing changes in OpenShift clusters</a>
+        </li>
+    
+</ul>
+
+<div id="recentLinks">
+    <a type="application/atom+xml" href="../atom.xml">Atom feed</a>
+     <!-- em space -->
+    <a href="../archive.html">All posts…</a>
+</div>
+
+</div>
+
+    <div id="license">
+    <a rel="license" href="https://creativecommons.org/licenses/by/4.0/">
+        <img alt="Creative Commons License" style="border-width:0" src="https://licensebuttons.net/l/by/4.0/88x31.png">
+    </a>
+    <br />
+    Except where otherwise noted, this work is licensed under a
+    <a rel="license" href="https://creativecommons.org/licenses/by/4.0/">
+        Creative Commons Attribution 4.0 International License
+    </a>.
+</div>
+
+</div>
+
+        </div>
+        <div class="clear"></div>
+        <div id="footer">
+            Generated by
+            <a href="https://jaspervdj.be/hakyll">Hakyll</a>
+        </div>
+    </body>
+</html>
