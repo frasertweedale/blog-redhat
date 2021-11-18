@@ -124,6 +124,7 @@ div.info {
 }
 
 table {
+    margin: auto;
     border-collapse: collapse;
 }
 
