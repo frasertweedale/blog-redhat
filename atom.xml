@@ -8,8 +8,198 @@
         <name>Fraser Tweedale</name>
         <email>frase@frase.id.au</email>
     </author>
-    <updated>2021-11-18T00:00:00Z</updated>
+    <updated>2022-02-02T00:00:00Z</updated>
     <entry>
+    <title>Running Pods in user namespaces without privileged SCCs</title>
+    <link href="https://frasertweedale.github.io/blog-redhat/posts/2022-02-02-openshift-user-ns-without-anyuid.html" />
+    <id>https://frasertweedale.github.io/blog-redhat/posts/2022-02-02-openshift-user-ns-without-anyuid.html</id>
+    <published>2022-02-02T00:00:00Z</published>
+    <updated>2022-02-02T00:00:00Z</updated>
+    <summary type="html"><![CDATA[<h1 id="running-pods-in-user-namespaces-without-privileged-sccs">Running Pods in user namespaces without privileged SCCs</h1>
+<p>In <a href="2021-07-22-openshift-systemd-workload-demo.html">previous posts</a> I demonstrated how to run workloads in an isolated user namespace on OpenShift. There are still come caveats to doing this. One of the caveats is that Pods had to be admitted by an account that has been granted the right to use the <code>anyuid</code> SCC (or other SCC that allows containers to run as any user).</p>
+<p>It turns out that you <em>can</em> run a workload in a user namespace even via the default <code>restricted</code> SCC. But the configuration is not intuitive, and the reasons <em>why</em> it must be configured that way are convoluted. In this post I explain the challenges that arise when running a user namespaced Pod under the <code>restricted</code> SCC, and demonstrate the solution.</p>
+<h2 id="cluster-configuration">Cluster configuration <a href="#cluster-configuration" class="section">§</a></h2>
+<p>I am testing on an OpenShift 4.10 (pre-release) cluster. Some changes to worker node configuration are required. The following <code>MachineConfig</code> object defines those changes:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> machineconfiguration.openshift.io/v1</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> MachineConfig</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="fu">metadata</span><span class="kw">:</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">labels</span><span class="kw">:</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">machineconfiguration.openshift.io/role</span><span class="kw">:</span><span class="at"> worker</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> idm-4-10</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a><span class="fu">spec</span><span class="kw">:</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">kernelArguments</span><span class="kw">:</span></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="kw">-</span><span class="at"> systemd.unified_cgroup_hierarchy=1</span></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="kw">-</span><span class="at"> cgroup_no_v1=&quot;all&quot;</span></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="kw">-</span><span class="at"> psi=1</span></span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">config</span><span class="kw">:</span></span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">ignition</span><span class="kw">:</span></span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">version</span><span class="kw">:</span><span class="at"> </span><span class="fl">3.1.0</span></span>
+<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">systemd</span><span class="kw">:</span></span>
+<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">units</span><span class="kw">:</span></span>
+<span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;override-runc.service&quot;</span></span>
+<span id="cb1-18"><a href="#cb1-18" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="fu">enabled</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb1-19"><a href="#cb1-19" aria-hidden="true" tabindex="-1"></a><span class="fu">        contents</span><span class="kw">: </span><span class="ch">|</span></span>
+<span id="cb1-20"><a href="#cb1-20" aria-hidden="true" tabindex="-1"></a>          [Unit]</span>
+<span id="cb1-21"><a href="#cb1-21" aria-hidden="true" tabindex="-1"></a>          Description=Install runc override</span>
+<span id="cb1-22"><a href="#cb1-22" aria-hidden="true" tabindex="-1"></a>          After=network-online.target rpm-ostreed.service</span>
+<span id="cb1-23"><a href="#cb1-23" aria-hidden="true" tabindex="-1"></a>          [Service]</span>
+<span id="cb1-24"><a href="#cb1-24" aria-hidden="true" tabindex="-1"></a>          ExecStart=/bin/sh -c &#39;rpm -q runc-1.0.3-992.rhaos4.10.el8.x86_64 || rpm-ostree override replace --reboot https://ftweedal.fedorapeople.org/runc-1.0.3-992.rhaos4.10.el8.x86_64.rpm&#39;</span>
+<span id="cb1-25"><a href="#cb1-25" aria-hidden="true" tabindex="-1"></a>          Restart=on-failure</span>
+<span id="cb1-26"><a href="#cb1-26" aria-hidden="true" tabindex="-1"></a>          [Install]</span>
+<span id="cb1-27"><a href="#cb1-27" aria-hidden="true" tabindex="-1"></a>          WantedBy=multi-user.target</span>
+<span id="cb1-28"><a href="#cb1-28" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">storage</span><span class="kw">:</span></span>
+<span id="cb1-29"><a href="#cb1-29" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">files</span><span class="kw">:</span></span>
+<span id="cb1-30"><a href="#cb1-30" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> /etc/subuid</span></span>
+<span id="cb1-31"><a href="#cb1-31" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="fu">overwrite</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb1-32"><a href="#cb1-32" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="fu">contents</span><span class="kw">:</span></span>
+<span id="cb1-33"><a href="#cb1-33" aria-hidden="true" tabindex="-1"></a><span class="at">          </span><span class="fu">source</span><span class="kw">:</span><span class="at"> data:text/plain;charset=utf-8;base64,Y29yZToxMDAwMDA6NjU1MzYKY29udGFpbmVyczoyMDAwMDA6MjY4NDM1NDU2Cg==</span></span>
+<span id="cb1-34"><a href="#cb1-34" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> /etc/subgid</span></span>
+<span id="cb1-35"><a href="#cb1-35" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="fu">overwrite</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb1-36"><a href="#cb1-36" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="fu">contents</span><span class="kw">:</span></span>
+<span id="cb1-37"><a href="#cb1-37" aria-hidden="true" tabindex="-1"></a><span class="at">          </span><span class="fu">source</span><span class="kw">:</span><span class="at"> data:text/plain;charset=utf-8;base64,Y29yZToxMDAwMDA6NjU1MzYKY29udGFpbmVyczoyMDAwMDA6MjY4NDM1NDU2Cg==</span></span>
+<span id="cb1-38"><a href="#cb1-38" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> /etc/crio/crio.conf.d/99-crio-userns.conf</span></span>
+<span id="cb1-39"><a href="#cb1-39" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="fu">overwrite</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb1-40"><a href="#cb1-40" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="fu">contents</span><span class="kw">:</span></span>
+<span id="cb1-41"><a href="#cb1-41" aria-hidden="true" tabindex="-1"></a><span class="at">          </span><span class="fu">source</span><span class="kw">:</span><span class="at"> data:text/plain;charset=utf-8;base64,W2NyaW8ucnVudGltZS53b3JrbG9hZHMub3BlbnNoaWZ0LXVzZXJuc10KYWN0aXZhdGlvbl9hbm5vdGF0aW9uID0gImlvLm9wZW5zaGlmdC51c2VybnMiCmFsbG93ZWRfYW5ub3RhdGlvbnMgPSBbCiAgImlvLmt1YmVybmV0ZXMuY3JpLW8udXNlcm5zLW1vZGUiLAogICJpby5rdWJlcm5ldGVzLmNyaS1vLmNncm91cDItbW91bnQtaGllcmFyY2h5LXJ3IiwKICAiaW8ua3ViZXJuZXRlcy5jcmktby5EZXZpY2VzIgpdCg==</span></span></code></pre></div>
+<p>The main parts of this <code>MachineConfig</code> are:</p>
+<ul>
+<li><p>The <strong><code>kernelArguments</code></strong> enable cgroupsv2, which are not strictly required for this demo, but are required for running systemd-based workloads.</p></li>
+<li><p>The <strong><code>override-runc.service</code></strong> systemd unit installs a custom version of runc that implements the new <a href="https://github.com/opencontainers/runtime-spec/blob/8958f93039ab90be53d803cd7e231a775f644451/config-linux.md#cgroup-ownership">OCI Runtime Specification cgroup ownership semantics</a>. This should be the default behaviour in future versions of OpenShift, perhaps as soon as OpenShift 4.11.</p></li>
+<li><p><strong><code>/etc/subuid</code></strong> and <strong><code>/etc/subgid</code></strong> provide a sub-id mapping range for CRI-O to use when creating Pods with user namespaces.</p></li>
+<li><p><strong><code>/etc/crio/crio.conf.d/99-crio-userns.conf</code></strong> defines the <code>io.openshift.userns</code> workload type for CRI-O. It is also not strictly necessary for this demo but is required for systemd-based workloads to run successfully. The default CRI-O configuration in OpenShift 4.10 provides the <code>io.openshift.builder</code> workload type, which is sufficient if your workload does not need to manage cgroups.</p></li>
+</ul>
+<p>Aside from the node configuration changes, I (as cluster admin) also created project and user account to use for the subsequent steps:</p>
+<pre class="shell"><code>% oc new-project test
+Now using project &quot;test&quot; on server &quot;https://api.ci-ln-5rkyxfb-72292.origin-ci-int-gce.dev.rhcloud.com:6443&quot;.
+…
+
+% oc create user test
+user.user.openshift.io/test created
+
+% oc adm policy add-role-to-user edit test
+clusterrole.rbac.authorization.k8s.io/edit added: &quot;test&quot;</code></pre>
+<p>I did not assign any special SCCs to the <code>test</code> user account.</p>
+<div class="note">
+<p>Remember to wait for the Machine Config Operator to finish updating the worker nodes before proceeding with Pod creation. You can use <code>oc wait</code> to await this condition:</p>
+<pre class="shell"><code>% oc wait mcp/worker --for condition=updated --timeout=-1s</code></pre>
+</div>
+<h2 id="problem-demonstration">Problem demonstration <a href="#problem-demonstration" class="section">§</a></h2>
+<p>The objective is to run a Pod in a user namespace, with that Pod being admitted via the default <code>restricted</code> SCC. We will start with the following Pod definition:</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Pod</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a><span class="fu">metadata</span><span class="kw">:</span></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> fedora</span></span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">annotations</span><span class="kw">:</span></span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">io.openshift.userns</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;true&quot;</span></span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">io.kubernetes.cri-o.userns-mode</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;auto:size=65536&quot;</span></span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a><span class="fu">spec</span><span class="kw">:</span></span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">containers</span><span class="kw">:</span></span>
+<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> fedora</span></span>
+<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">image</span><span class="kw">:</span><span class="at"> registry.fedoraproject.org/fedora:35-x86_64</span></span>
+<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">command</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="st">&quot;sleep&quot;</span><span class="kw">,</span><span class="at"> </span><span class="st">&quot;3600&quot;</span><span class="kw">]</span></span></code></pre></div>
+<p>The <strong><code>io.openshift.userns</code></strong> annotation selects the CRI-O workload profile that we added via the <code>MachineConfig</code> above. This profile enables several other annotations, but does not automatically execute the Pod in a user namespace. For that, you must <em>also</em> supply the <strong><code>io.kubernetes.cri-o.userns-mode</code></strong> annotation. Its argument tells CRI-O to automatically select unique host UID range of size 65536 to map into the container’s user namespace.</p>
+<p>I created the Pod as user <code>test</code>:</p>
+<pre class="shell"><code>% oc --as test create -f pod-fedora.yaml
+pod/fedora created</code></pre>
+<p>Observe that it was admitted via the <code>restricted</code> SCC:</p>
+<pre class="shell"><code>% oc get -o json pod/fedora \
+    | jq &#39;.metadata.annotations.&quot;openshift.io/scc&quot;&#39;
+&quot;restricted&quot;</code></pre>
+<p>Unfortunately, the container is not running:</p>
+<pre class="shell"><code>% oc get -o json pod/fedora \
+  | jq &#39;.status.containerStatuses[].state&#39;
+{
+  &quot;waiting&quot;: {
+    &quot;message&quot;: &quot;container create failed: time=\&quot;2022-02-02T05:43:34Z\&quot; level=error msg=\&quot;container_linux.go:380: starting container process caused: setup user: cannot set uid to unmapped user in user namespace\&quot;\n&quot;,
+    &quot;reason&quot;: &quot;CreateContainerError&quot;
+  }
+}</code></pre>
+<p>The core error message is: <strong><em>cannot set uid to unmapped user in user namespace</em></strong>. This arises because, in the absense of a <code>runAsUser</code> specification in the PodSpec, the <code>restricted</code> SCC has defaulted it to a value from the UID range assigned to the project:</p>
+<pre class="shell"><code>% oc get -o json pod/fedora \
+  | jq &#39;.spec.containers[].securityContext.runAsUser&#39;
+1000650000</code></pre>
+<p>The project UID range allocation is recorded in the project and namespace annotations:</p>
+<pre class="shell"><code>% oc get -o json project/test namespace/test \
+    | jq &#39;.items[].metadata.annotations.&quot;openshift.io/sa.scc.uid-range&quot;&#39;
+&quot;1000650000/10000&quot;
+&quot;1000650000/10000&quot;</code></pre>
+<p>OpenShift allocated to project <code>test</code> a range of 10000 UIDs starting at <code>1000650000</code>. The error arises because UID <code>1000650000</code> is not mapped in the user namespace. The host UID range may be something like <code>200000</code>–<code>265535</code>, whereas the sandbox’s UID range is <code>0</code>–<code>65535</code>.</p>
+<p>I deleted the Pod and will try something different:</p>
+<pre class="shell"><code>% oc delete pod/fedora
+pod &quot;fedora&quot; deleted</code></pre>
+<p>Let’s say that we want to run the container process as UID <code>0</code> <em>in the Pod’s user namespace</em>, as would be required for a systemd-based workload. Instead of leaving it to the SCC machinery, I’ll set <code>runAsUser: 0</code> in the PodSpec myself:</p>
+<div class="sourceCode" id="cb11"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
+<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Pod</span></span>
+<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a><span class="fu">metadata</span><span class="kw">:</span></span>
+<span id="cb11-4"><a href="#cb11-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> fedora</span></span>
+<span id="cb11-5"><a href="#cb11-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">annotations</span><span class="kw">:</span></span>
+<span id="cb11-6"><a href="#cb11-6" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">io.openshift.userns</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;true&quot;</span></span>
+<span id="cb11-7"><a href="#cb11-7" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">io.kubernetes.cri-o.userns-mode</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;auto:size=65536&quot;</span></span>
+<span id="cb11-8"><a href="#cb11-8" aria-hidden="true" tabindex="-1"></a><span class="fu">spec</span><span class="kw">:</span></span>
+<span id="cb11-9"><a href="#cb11-9" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">containers</span><span class="kw">:</span></span>
+<span id="cb11-10"><a href="#cb11-10" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> fedora</span></span>
+<span id="cb11-11"><a href="#cb11-11" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">image</span><span class="kw">:</span><span class="at"> registry.fedoraproject.org/fedora:35-x86_64</span></span>
+<span id="cb11-12"><a href="#cb11-12" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">command</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="st">&quot;sleep&quot;</span><span class="kw">,</span><span class="at"> </span><span class="st">&quot;3600&quot;</span><span class="kw">]</span></span>
+<span id="cb11-13"><a href="#cb11-13" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">securityContext</span><span class="kw">:</span></span>
+<span id="cb11-14"><a href="#cb11-14" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">runAsUser</span><span class="kw">:</span><span class="at"> </span><span class="dv">0</span></span></code></pre></div>
+<p>This time the <code>test</code> user cannot even create the Pod:</p>
+<pre class="shell"><code>% oc --as test create -f pod-fedora.yaml
+Error from server (Forbidden): error when creating &quot;pod-fedora.yaml&quot;…</code></pre>
+<p>I’ve trimmed the rather long error message, but the core problem is:</p>
+<pre><code>spec.containers[0].securityContext.runAsUser: Invalid value:
+0: must be in the ranges: [1000650000, 1000659999]</code></pre>
+<p>The <code>restricted</code> SCC only allows <code>runAsUser</code> values that fall in the projects assigned UID range. And this is what we would expect. The problem is that the admission machinery has no awareness of user namespaces. It cannot discern that <code>runAsUser: 0</code> means that we want to run as UID <code>0</code> <em>inside the user namespace</em>, whilst mapped to an unprivileged UID on the host.</p>
+<p>The problem is twofold. First, we are unable to control the UID mapping that CRI-O gives us, so that it would coincide with the project’s UID range. Second, the SCC admission checks and defaulting is oblivious to user namespace. <code>runAsUser</code> is interpreted as referring to host UIDs, and the <code>restricted</code> SCC restricts (or defaults) us to values that are not mapped in the Pod’s user namespace.</p>
+<h2 id="solution">Solution <a href="#solution" class="section">§</a></h2>
+<p>The <code>map-to-root</code> option in the <code>userns-mode</code> annotation provides a solution to this dilemma. It takes whatever value <code>runAsUser</code> is, and ensures that that host UID gets mapped to UID <code>0</code> in the Pod user namespace. The updated PodSpec is:</p>
+<div class="sourceCode" id="cb14"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
+<span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Pod</span></span>
+<span id="cb14-3"><a href="#cb14-3" aria-hidden="true" tabindex="-1"></a><span class="fu">metadata</span><span class="kw">:</span></span>
+<span id="cb14-4"><a href="#cb14-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> fedora</span></span>
+<span id="cb14-5"><a href="#cb14-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">annotations</span><span class="kw">:</span></span>
+<span id="cb14-6"><a href="#cb14-6" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">io.openshift.userns</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;true&quot;</span></span>
+<span id="cb14-7"><a href="#cb14-7" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">io.kubernetes.cri-o.userns-mode</span><span class="kw">:</span></span>
+<span id="cb14-8"><a href="#cb14-8" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="st">&quot;auto:size=65536;map-to-root=true&quot;</span></span>
+<span id="cb14-9"><a href="#cb14-9" aria-hidden="true" tabindex="-1"></a><span class="fu">spec</span><span class="kw">:</span></span>
+<span id="cb14-10"><a href="#cb14-10" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">securityContext</span><span class="kw">:</span></span>
+<span id="cb14-11"><a href="#cb14-11" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">runAsUser</span><span class="kw">:</span><span class="at"> </span><span class="dv">1000650000</span></span>
+<span id="cb14-12"><a href="#cb14-12" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">containers</span><span class="kw">:</span></span>
+<span id="cb14-13"><a href="#cb14-13" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> fedora</span></span>
+<span id="cb14-14"><a href="#cb14-14" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">image</span><span class="kw">:</span><span class="at"> registry.fedoraproject.org/fedora:35-x86_64</span></span>
+<span id="cb14-15"><a href="#cb14-15" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">command</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="st">&quot;sleep&quot;</span><span class="kw">,</span><span class="at"> </span><span class="st">&quot;3600&quot;</span><span class="kw">]</span></span></code></pre></div>
+<p>Now the Pod is able to run:</p>
+<pre class="shell"><code>% oc --as test create -f pod-fedora.yaml
+pod/fedora created
+
+% oc get -o json pod/fedora \
+  | jq &#39;.spec.nodeName, .status.containerStatuses[].state&#39;
+&quot;ci-ln-fizz88k-72292-9phfc-worker-c-7s99v&quot;
+{
+  &quot;running&quot;: {
+    &quot;startedAt&quot;: &quot;2022-02-02T06:20:49Z&quot;
+  }
+}</code></pre>
+<p>We can observe the UID mapping:</p>
+<pre class="shell"><code>% oc rsh pod/fedora cat /proc/self/uid_map
+         1     265536      65535
+         0 1000650000          1</code></pre>
+<p>This shows that UID <code>0</code> in the Pod’s user namespace maps to UID <code>10000650000</code> in the parent (host) user namespace. The remaining UIDs <code>1</code>–<code>65536</code> in the Pod’s user namespace are mapped contiguously from UID <code>265536</code> in the host user namespace.</p>
+<p>Objective achieved.</p>
+<h3 id="why-runasuser-must-be-specified">Why <code>runAsUser</code> must be specified <a href="#why-runasuser-must-be-specified" class="section">§</a></h3>
+<p>Referring back to the PodSpec, why is it necessary to explicitly specify <code>runAsUser</code>? Doesn’t the SCC admission machinery automatically set the default value? Well… yes, and no. The SCC machinery defaults <code>runAsUser</code> in each <em>container’s</em> <code>securityContext</code> field. But it does not set it in the <em>Pod’s</em> <code>securityContext</code>. And it is the <em>Pod</em> <code>securityContext</code> that CRI-O examines when processing the <code>map-to-root</code> option. If it is unset, <code>CRI-O</code> will not set the mapping up properly and container(s) will fail to run.</p>
+<p>The consequence of this is that the user or operator creating the Pod must first examing the Project or Namespace object to learn what its assigned UID range is. Then it must set the <code>spec.securityContext.runAsUser</code> field to the start value of that range. The range assignment will certainly differ from project to project so it cannot be hardcoded. This is a bit annoying: more work for the human operator, or more automation behaviour to implement and maintain.</p>
+<p>The simplest solution I can think of is to enhance the SCC processing to also set <code>spec.securityContext.runAsUser</code> if it is unset. Then CRI-O would see the value it needs to see. Alternatively CRI-O could be enhanced to check the container <code>securityContext</code> if the <code>runAsUser</code> is not specified in the Pod <code>securityContext</code>. But to me this seems ill principled because different containers (in the same Pod) could specify different values, and there is no obvious “right” way to resolve the ambiguities.</p>
+<h2 id="using-multiple-uids">Using multiple UIDs <a href="#using-multiple-uids" class="section">§</a></h2>
+<p>Although I have a nice range of 65536 UIDs mapped in the Pod’s user namespace, I am not able to run processes as any UID other than <code>0</code>. This is beacuse the <code>restricted</code> SCC forcibly omits <code>CAP_SETUID</code> (among others) from the capability bounding set of the container process. Complex workloads, including any based on systemd, will fail to run properly under such a constraint.</p>
+<p>The simplest workaround is to admit the Pod via the <code>anyuid</code> SCC. But that undoes the good outcome achieved in this post!</p>
+<p>An intermediate workaround is the create a new SCC that does not forcibly deprive containers of <code>CAP_SETUID</code>. This entails administrative overhead.</p>
+<p>It also increases the attack surface. The <code>setuid(2)</code> system call is restricted to UIDs mapped in the UID namespace of the calling process. If the calling process is in an isolated user namespace that maps to unprivileged host UIDs, it is safe (up to kernel bugs) to grant <code>CAP_SETUID</code> to that process. But recall that user namespaces are still opt-in; by default Pods use the host user namespace. An SCC can use <code>MustRunAsRange</code> to restrict the <em>initial</em> container process to running as a user in the project’s assigned UID range. But if that SCC also lets containers use <code>CAP_SETUID</code>, then it doesn’t really provide more protection than <code>anyuid</code></p>
+<p>A more robust solution would be to modify CRI-O to <em>reinstate</em> <code>CAP_SETUID</code> and related capapbilities when the Pod runs in a user namespace. I will raise the topic with the CRI-O maintainers, as solving this problem is important for our use case, and probably other “legacy” workloads too.</p>
+<h2 id="conclusion">Conclusion <a href="#conclusion" class="section">§</a></h2>
+<p>In this post I demonstrated how to run workloads in a user namespace on OpenShift, under the default <code>restricted</code> SCC. The <code>map-to-root</code> option is critical to accomplishing this. There is an unfortunate “rough edge” in that the workload must specifically refer to the UID range assigned to the namespace in which the Pod will live, which means additional work for or complexity in the operator (human or otherwise).</p>
+<p>Despite this progress, if you need to run processes under different UIDs in the container(s), the <code>restricted</code> UID won’t work because it deprives the container process of the <code>CAP_SETUID</code> capability. You must go back to admitting the workload via <code>anyuid</code> or a similar SCC, which is a significant erosion of the security boundaries between containers and the host. This issue will be the subject of future investigations.</p>]]></summary>
+</entry>
+<entry>
     <title>Bare TCP and UDP ingress on Kubernetes</title>
     <link href="https://frasertweedale.github.io/blog-redhat/posts/2021-11-18-k8s-tcp-udp-ingress.html" />
     <id>https://frasertweedale.github.io/blog-redhat/posts/2021-11-18-k8s-tcp-udp-ingress.html</id>
@@ -1670,149 +1860,6 @@ USER         PID CMD
 <p>The so far unstated assumption is that the mapped UID range includes all the UIDs actually used by the containerised application. Different applications use different UIDs, and different operating systems define different UIDs. So take care that the UID map hinted by the CRI-O annotation suits the container and application.</p>
 <p>Note that mapped UID ranges in Linux need not be contiguous (either outside or inside the container). That is, a process may have multiple lines in its <code>/proc/&lt;PID&gt;/uid_map</code>, mapping multiple, non-overlapping and not-necessarily-adjacent ranges. But I am talking about the Linux user namespace feature here. I have not yet checked whether CRI-O + OpenShift admits this more complex scenario. But it is fundamentally possible.</p>
 <p>The <code>nobody</code> user in Fedora has UID <code>65534</code>. Therefore a “simple mapping” must have a size not less than <em>65535</em> to use the <code>nobody</code> account in a user namespaced pod. OK, let’s round that up to <em>65536 = 2<sup>16</sup></em>. With a total UID space of <em>2<sup>16+16</sup></em>, you are limited to less than <em>65536</em> separate mappings. It sounds like a lot, but this limit could be a problem in large, complex environments. But most applications will use only a handful of UIDs. Non-contiguous UID mapping could dramatically increase the number of ranges available, by not mapping UIDs that applications do not use. But there is substantial complexity in defining and managing non-contiguous UID mappings.</p>]]></summary>
-</entry>
-<entry>
-    <title>User namespace support in OpenShift 4.7</title>
-    <link href="https://frasertweedale.github.io/blog-redhat/posts/2021-03-03-openshift-4.7-user-namespaces.html" />
-    <id>https://frasertweedale.github.io/blog-redhat/posts/2021-03-03-openshift-4.7-user-namespaces.html</id>
-    <published>2021-03-03T00:00:00Z</published>
-    <updated>2021-03-03T00:00:00Z</updated>
-    <summary type="html"><![CDATA[<h1 id="user-namespace-support-in-openshift-4.7">User namespace support in OpenShift 4.7</h1>
-<p>In a <a href="2020-12-01-openshift-crio-userns.html">previous post</a> I investigated how to use the annotation-based <a href="https://github.com/cri-o/cri-o/pull/3944">user namespace support</a> in CRI-O 1.20. At the end of that post, I was stuck. Now that <a href="https://www.openshift.com/blog/red-hat-openshift-4.7-is-now-available">OpenShift 4.7 has been released</a>, where do things stand?</p>
-<h2 id="user-namespaces-are-working">User namespaces are working <a href="#user-namespaces-are-working" class="section">§</a></h2>
-<p>Using the same setup, and a similar pod specification, I am able to run the pod in a user namespace. The process executes as <code>root</code> inside the namespace, and an unprivileged account outside the namespace.</p>
-<p>I won’t repeat all the setup here, but one important difference is that I granted to <code>anyuid</code> SCC to the account that creates the pod (named <code>test</code>):</p>
-<pre class="shell"><code>% oc adm policy add-scc-to-user anyuid test
-securitycontextconstraints.security.openshift.io/anyuid added to: [&quot;test&quot;]</code></pre>
-<p>The pod definition is:</p>
-<div class="sourceCode" id="cb2"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="pp">% cat userns-test.yaml</span></span>
-<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
-<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Pod</span></span>
-<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="fu">metadata</span><span class="kw">:</span></span>
-<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> userns-test</span></span>
-<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">annotations</span><span class="kw">:</span></span>
-<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">openshift.io/scc</span><span class="kw">:</span><span class="at"> restricted</span></span>
-<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">io.kubernetes.cri-o.userns-mode</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;auto:size=65536;map-to-root=true&quot;</span></span>
-<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a><span class="fu">spec</span><span class="kw">:</span></span>
-<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">containers</span><span class="kw">:</span></span>
-<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> userns-test</span></span>
-<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">image</span><span class="kw">:</span><span class="at"> freeipa/freeipa-server:fedora-31</span></span>
-<span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">command</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="st">&quot;sleep&quot;</span><span class="kw">,</span><span class="at"> </span><span class="st">&quot;3601&quot;</span><span class="kw">]</span></span>
-<span id="cb2-14"><a href="#cb2-14" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">securityContext</span><span class="kw">:</span></span>
-<span id="cb2-15"><a href="#cb2-15" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">runAsUser</span><span class="kw">:</span><span class="at"> </span><span class="dv">0</span></span>
-<span id="cb2-16"><a href="#cb2-16" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">runAsGroup</span><span class="kw">:</span><span class="at"> </span><span class="dv">0</span></span>
-<span id="cb2-17"><a href="#cb2-17" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">securityContext</span><span class="kw">:</span></span>
-<span id="cb2-18"><a href="#cb2-18" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">sysctls</span><span class="kw">:</span></span>
-<span id="cb2-19"><a href="#cb2-19" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;net.ipv4.ping_group_range&quot;</span></span>
-<span id="cb2-20"><a href="#cb2-20" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">value</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;0 65535&quot;</span></span></code></pre></div>
-<p>Note the <code>io.kubernetes.cri-o.userns-mode</code> annotation. That activates the user namespace feature. The <code>runAsUser</code> and <code>runAsGroup</code> fields in <code>securityContext</code> are also important.</p>
-<p>I create the pod. After a few moments I observe that it is running, and query the node and container ID:</p>
-<pre class="shell"><code>$ oc --as test create -f userns-test.yaml
-pod/userns-test created
-
-% oc get -o json pod userns-test \
-    | jq .status.phase
-&quot;Running&quot;
-
-% oc get -o json pod userns-test \
-    | jq .spec.nodeName
-&quot;ft-47dev-1-4kplg-worker-0-qjfcj&quot;
-
-% oc get -o json pod userns-test \
-    | jq &quot;.status.containerStatuses[0].containerID&quot;
-&quot;cri-o://92bf6c3b61337f18f4c963450b5db76cbcd4aa73e2659759ba2725f4d0f8aac7&quot;</code></pre>
-<p>In a debug shell on the worker node, I use <code>crictl</code> to find out the pid of the pod’s (first) process:</p>
-<pre class="shell"><code>% oc debug node/ft-47dev-1-4kplg-worker-0-qjfcj
-Starting pod/ft-47dev-1-4kplg-worker-0-qjfcj-debug ...
-To use host binaries, run `chroot /host`
-Pod IP: 10.8.0.165
-If you don&#39;t see a command prompt, try pressing enter.
-sh-4.2# chroot /host
-sh-4.4# crictl inspect 92bf6c3b | jq .info.pid
-937107</code></pre>
-<div class="note">
-<p>Earlier versions of <code>crictl</code> have the PID in the top-level object (<code>jq</code> selector <code>.pid</code>). The selector is now <code>.info.pid</code>.</p>
-</div>
-<p>Now we can query the UID map of the container process:</p>
-<pre class="shell"><code>sh-4.4# cat /proc/937107/uid_map
-         0     200000      65536</code></pre>
-<p>This shows that the process is running as uid 0 (<code>root</code>) in the namespace, and uid 200000 outside the namespace. The mapped range is contiguous and has size 65536, which agrees with the annotation:</p>
-<pre><code>io.kubernetes.cri-o.userns-mode: &quot;auto:size=65536;map-to-root=true&quot;</code></pre>
-<p>This is great!</p>
-<h2 id="they-still-require-a-privileged-service-account">They still require a privileged service account <a href="#they-still-require-a-privileged-service-account" class="section">§</a></h2>
-<p>In my earlier investigation I found that that users require the <code>anyuid</code> SCC (or equivalent) to create user-namespaced pods running as specific UIDs (e.g. <code>root</code>) inside the pod. This is still the case. Rescinding <code>anyuid</code> from user <code>test</code> and (re)creating the pod results in an error:</p>
-<pre class="shell"><code>% oc adm policy remove-scc-from-user anyuid test
-securitycontextconstraints.security.openshift.io/anyuid removed from: [&quot;test&quot;]
-
-% oc --as test create -f userns-test.yaml
-Error from server (Forbidden): error when creating
-&quot;userns-test.yaml&quot;: pods &quot;userns-test&quot; is forbidden: unable to
-validate against any security context constraint:
-[spec.containers[0].securityContext.runAsUser: Invalid value: 0:
-must be in the ranges: [1000630000, 1000639999]]</code></pre>
-<p>At the end of my previous post, I wrote:</p>
-<blockquote>
-<p>The security context constraint (SCC) is prohibiting the use of uid <code>0</code> for the container process. Switching to a permissive SCC might allow me to proceed, but it would also mean using a more privileged OpenShift user account. Then that privileged account could then create containers running as <code>root</code> <em>in the system user namespace</em>. We want user namespaces in OpenShift so that we can <em>avoid</em> this exact scenario. So resorting to a permissive SCC (e.g. <code>anyuid</code>) feels like the wrong way to go.</p>
-</blockquote>
-<p>After giving this more thought, my opinion has shifted. This is still an important gap in overall security, and it should be addressed. But even though it currently requires a privileged account to create user-namespaced pods, that fact that you even <em>can</em> is a huge win.</p>
-<p>In other words, the user namespace support in its current form is still a giant leap forward. Previously, many kinds of applications cannot run securely in OpenShift. The service account privileges caveat may be unacceptable to some, but I hope that would be addressed in time.</p>
-<h2 id="inconsistent-treatment-of-securitycontext">Inconsistent treatment of <code>securityContext</code> <a href="#inconsistent-treatment-of-securitycontext" class="section">§</a></h2>
-<p>The PodSpec I used above (with success) is:</p>
-<div class="sourceCode" id="cb8"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="fu">containers</span><span class="kw">:</span></span>
-<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> userns-test</span></span>
-<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">image</span><span class="kw">:</span><span class="at"> freeipa/freeipa-server:fedora-31</span></span>
-<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">command</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="st">&quot;sleep&quot;</span><span class="kw">,</span><span class="at"> </span><span class="st">&quot;3601&quot;</span><span class="kw">]</span></span>
-<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">securityContext</span><span class="kw">:</span></span>
-<span id="cb8-6"><a href="#cb8-6" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">runAsUser</span><span class="kw">:</span><span class="at"> </span><span class="dv">0</span></span>
-<span id="cb8-7"><a href="#cb8-7" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">runAsGroup</span><span class="kw">:</span><span class="at"> </span><span class="dv">0</span></span>
-<span id="cb8-8"><a href="#cb8-8" aria-hidden="true" tabindex="-1"></a><span class="fu">securityContext</span><span class="kw">:</span></span>
-<span id="cb8-9"><a href="#cb8-9" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">sysctls</span><span class="kw">:</span></span>
-<span id="cb8-10"><a href="#cb8-10" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;net.ipv4.ping_group_range&quot;</span></span>
-<span id="cb8-11"><a href="#cb8-11" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">value</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;0 65535&quot;</span></span></code></pre></div>
-<p>Note there are two <code>securityContext</code> fields. The first, in the Container spec, is a <a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.20/#securitycontext-v1-core">SecurityContext</a> object. The second, in the PodSpec, is a <a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.20/#podsecuritycontext-v1-core">PodSecurityContext</a> object.</p>
-<p>The <code>runAsUser</code> and <code>runAsGroup</code> fields can be specified in either of these objects (or both, with SecurityContext taking precedence). I can move these fields to the PodSecurityContext, as below.</p>
-<div class="sourceCode" id="cb9"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="fu">containers</span><span class="kw">:</span></span>
-<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> userns-test</span></span>
-<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">image</span><span class="kw">:</span><span class="at"> freeipa/freeipa-server:fedora-31</span></span>
-<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">command</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="st">&quot;sleep&quot;</span><span class="kw">,</span><span class="at"> </span><span class="st">&quot;3601&quot;</span><span class="kw">]</span></span>
-<span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a><span class="fu">securityContext</span><span class="kw">:</span></span>
-<span id="cb9-6"><a href="#cb9-6" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">runAsUser</span><span class="kw">:</span><span class="at"> </span><span class="dv">0</span></span>
-<span id="cb9-7"><a href="#cb9-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">runAsGroup</span><span class="kw">:</span><span class="at"> </span><span class="dv">0</span></span>
-<span id="cb9-8"><a href="#cb9-8" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">sysctls</span><span class="kw">:</span></span>
-<span id="cb9-9"><a href="#cb9-9" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;net.ipv4.ping_group_range&quot;</span></span>
-<span id="cb9-10"><a href="#cb9-10" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">value</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;0 65535&quot;</span></span></code></pre></div>
-<p>According to the documentation, this object should have the same meaning as the previous one. But there is a critical behavioural difference! I create and examine the pod as before:</p>
-<pre class="shell"><code>$ oc --as test create -f userns-test.yaml
-pod/userns-test created
-
-% oc get -o json pod userns-test \
-    | jq .status.phase
-&quot;Running&quot;
-
-% oc get -o json pod userns-test \
-    | jq .spec.nodeName
-&quot;ft-47dev-1-4kplg-worker-0-qjfcj&quot;
-
-% oc get -o json pod userns-test \
-    | jq &quot;.status.containerStatuses[0].containerID&quot;
-&quot;cri-o://c90760e88ee8493bfdb9af661c18afef139b79541160850ceac125b0c62e1de3&quot;</code></pre>
-<p>And in the node debug shell, I query the <code>uid_map</code> for the container:</p>
-<pre class="shell"><code>sh-4.4# crictl inspect c90760e | jq .info.pid
-1022187
-sh-4.4# cat /proc/1022187/uid_map
-         1     200001      65535
-         0          0          1
-</code></pre>
-<p>This subtle change to the object definition caused OpenShift to run the process as <code>root</code> in the container <strong>and on the host!</strong> Given that the Kubernetes documentation implies that the two configurations are equivalent, this is a dangerous situation. I will file a ticket to bring this to the attention of the developers.</p>
-<h2 id="continuing-investigation">Continuing investigation <a href="#continuing-investigation" class="section">§</a></h2>
-<p>There are two particular lines of investigation I need to pursue from here. The first is to confirm that <code>setuid(2)</code> and related functionality work properly in the namespaced container. This is important for containers that run multiple processes as different users. I do not anticipate any particular issues here. But I still need to verify it.</p>
-<div class="note">
-<p>This is not the <em>cloud native</em> way. But this is the approach we are taking, for now. “Monolithic container” is a reasonable way to bring complex, traditional software systems into the cloud. As long as it can be done securely.</p>
-</div>
-<p>The other line of investigation is to find out how user-namespaced containers interact with volume mounts. If multiple containers, perhaps running on different nodes, read and write the same volume, what are the UIDs on that volume? Do we need stable, cluster-wide subuid/subgid mappings? If so, how can that be achieved? I expect I will much more to say about this in upcoming posts.</p>
-<h2 id="conclusion">Conclusion <a href="#conclusion" class="section">§</a></h2>
-<p>CRI-O annotation-based user namespaces work in OpenShift 4.7. But there are some caveats, and at least one scary “gotcha”. Nevertheless, for simple workloads the feature does work well. It is big leap forward for running more kinds of workloads without compromising the security of your cluster.</p>
-<p>In time, I hope the account privilege (SCC) caveat and <code>securityContext</code> issues can be resolved. I will file tickets and continue to discuss these topics with the OpenShift developers. And my investigations about more complex workloads and multi-node considerations shall continue.</p>]]></summary>
 </entry>
 
 </feed>
