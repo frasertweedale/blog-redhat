@@ -1,19 +1,41 @@
+---
+tags: containers, openshift, security
+---
+
 # Running Pods in user namespaces without privileged SCCs
 
 In [previous posts][] I demonstrated how to run workloads in an
 isolated user namespace on OpenShift.  There are still come caveats
-to doing this.  One of the caveats is that Pods had to be admitted
-by an account that has been granted the right to use the `anyuid`
-SCC (or other SCC that allows containers to run as any user).
+to doing this.  One of these relates to *Security Context
+Constraints (SCCs)*, a security policy mechanism in OpenShift.  In
+particular, it appeared necessary to admit the Pod via the `anyuid`
+SCC, or one with similar high privileges.  This meant that although
+the workload itself runs under unprivileged UIDs, the account that
+creates the Pod would need privileges to create Pods that run under
+arbitrary host UIDs.  This is not a desirable situation.
 
 [previous posts]: 2021-07-22-openshift-systemd-workload-demo.html
 
-It turns out that you *can* run a workload in a user namespace even
-via the default `restricted` SCC.  But the configuration is not
-intuitive, and the reasons *why* it must be configured that way are
-convoluted.  In this post I explain the challenges that arise when
-running a user namespaced Pod under the `restricted` SCC, and
-demonstrate the solution.
+I have investigated that matter further, and it turns out that you
+*can* run a workload in a user namespace even via the default
+`restricted` SCC.  But the configuration is not intuitive, and the
+reasons *why* it must be configured that way are convoluted.  In
+this post I explain the challenges that arise when running a user
+namespaced Pod under the `restricted` SCC, and demonstrate the
+solution.
+
+::: note
+
+This post assumes a basic knowledge of Security Context Constraints.
+If you are unfamiliar with SCCs, the DevConf.cz 2022 presentation
+*Introduction to Security Context Constraints* ([slides][],
+[video][]) by Alberto Losada and Mario Vázquez will bring you up to
+speed.
+
+:::
+
+[slides]: https://static.sched.com/hosted_files/devconfcz2022/d5/%5BDevConf.CZ%2022%5D%20SCCs%20Presentation.pdf
+[video]: https://www.youtube.com/watch?v=MrYSUmk-nr4
 
 ## Cluster configuration
 
