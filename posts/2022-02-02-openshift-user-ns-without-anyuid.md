@@ -136,7 +136,8 @@ the worker nodes before proceeding with Pod creation.  You can use
 `oc wait` to await this condition:
 
 ```shell
-% oc wait mcp/worker --for condition=updated --timeout=-1s
+% oc wait mcp/worker \
+    --for condition=updated --timeout=-1s
 ```
 
 :::
