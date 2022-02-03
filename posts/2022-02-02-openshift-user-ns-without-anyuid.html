@@ -20,14 +20,17 @@
         <div id="content">
             <div class="info">
     
-    Tags: 
+    Tags: <a title="All pages tagged 'containers'." href="../tags/containers.html">containers</a>, <a title="All pages tagged 'openshift'." href="../tags/openshift.html">openshift</a>, <a title="All pages tagged 'security'." href="../tags/security.html">security</a>
     
 </div>
 
 <div id="postContent">
     <h1 id="running-pods-in-user-namespaces-without-privileged-sccs">Running Pods in user namespaces without privileged SCCs</h1>
-<p>In <a href="2021-07-22-openshift-systemd-workload-demo.html">previous posts</a> I demonstrated how to run workloads in an isolated user namespace on OpenShift. There are still come caveats to doing this. One of the caveats is that Pods had to be admitted by an account that has been granted the right to use the <code>anyuid</code> SCC (or other SCC that allows containers to run as any user).</p>
-<p>It turns out that you <em>can</em> run a workload in a user namespace even via the default <code>restricted</code> SCC. But the configuration is not intuitive, and the reasons <em>why</em> it must be configured that way are convoluted. In this post I explain the challenges that arise when running a user namespaced Pod under the <code>restricted</code> SCC, and demonstrate the solution.</p>
+<p>In <a href="2021-07-22-openshift-systemd-workload-demo.html">previous posts</a> I demonstrated how to run workloads in an isolated user namespace on OpenShift. There are still come caveats to doing this. One of these relates to <em>Security Context Constraints (SCCs)</em>, a security policy mechanism in OpenShift. In particular, it appeared necessary to admit the Pod via the <code>anyuid</code> SCC, or one with similar high privileges. This meant that although the workload itself runs under unprivileged UIDs, the account that creates the Pod would need privileges to create Pods that run under arbitrary host UIDs. This is not a desirable situation.</p>
+<p>I have investigated that matter further, and it turns out that you <em>can</em> run a workload in a user namespace even via the default <code>restricted</code> SCC. But the configuration is not intuitive, and the reasons <em>why</em> it must be configured that way are convoluted. In this post I explain the challenges that arise when running a user namespaced Pod under the <code>restricted</code> SCC, and demonstrate the solution.</p>
+<div class="note">
+<p>This post assumes a basic knowledge of Security Context Constraints. If you are unfamiliar with SCCs, the DevConf.cz 2022 presentation <em>Introduction to Security Context Constraints</em> (<a href="https://static.sched.com/hosted_files/devconfcz2022/d5/%5BDevConf.CZ%2022%5D%20SCCs%20Presentation.pdf">slides</a>, <a href="https://www.youtube.com/watch?v=MrYSUmk-nr4">video</a>) by Alberto Losada and Mario Vázquez will bring you up to speed.</p>
+</div>
 <h2 id="cluster-configuration">Cluster configuration <a href="#cluster-configuration" class="section">§</a></h2>
 <p>I am testing on an OpenShift 4.10 (pre-release) cluster. Some changes to worker node configuration are required. The following <code>MachineConfig</code> object defines those changes:</p>
 <div class="sourceCode" id="cb1"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> machineconfiguration.openshift.io/v1</span></span>
