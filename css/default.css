@@ -146,7 +146,11 @@ div p:first-child {
     margin-top: 0;
 }
 
-.note p:last-child, .note div:last-child pre {
+.note :last-child, .note :last-child :last-child {
+    margin-bottom: 0;
+}
+
+li:last-child :last-child {
     margin-bottom: 0;
 }
 
