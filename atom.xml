@@ -84,7 +84,8 @@ clusterrole.rbac.authorization.k8s.io/edit added: &quot;test&quot;</code></pre>
 <p>I did not assign any special SCCs to the <code>test</code> user account.</p>
 <div class="note">
 <p>Remember to wait for the Machine Config Operator to finish updating the worker nodes before proceeding with Pod creation. You can use <code>oc wait</code> to await this condition:</p>
-<pre class="shell"><code>% oc wait mcp/worker --for condition=updated --timeout=-1s</code></pre>
+<pre class="shell"><code>% oc wait mcp/worker \
+    --for condition=updated --timeout=-1s</code></pre>
 </div>
 <h2 id="problem-demonstration">Problem demonstration <a href="#problem-demonstration" class="section">§</a></h2>
 <p>The objective is to run a Pod in a user namespace, with that Pod being admitted via the default <code>restricted</code> SCC. We will start with the following Pod definition:</p>
