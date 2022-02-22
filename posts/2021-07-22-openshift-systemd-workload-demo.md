@@ -378,7 +378,6 @@ metadata:
   labels:
     app: nginx
   annotations:
-    openshift.io/scc: restricted
     io.kubernetes.cri-o.userns-mode: "auto:size=65536"
 spec:
   securityContext:

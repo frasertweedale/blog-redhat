@@ -87,7 +87,6 @@ kind: Pod
 metadata:
   name: multiuser-test
   annotations:
-    openshift.io/scc: restricted
     io.kubernetes.cri-o.userns-mode:
       "auto:size=65536;map-to-root=true"
 spec:

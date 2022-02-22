@@ -27,8 +27,6 @@ apiVersion: v1
 kind: Pod
 metadata:
   name: fedora
-  annotations:
-    openshift.io/scc: restricted
 spec:
   containers:
   - name: fedora

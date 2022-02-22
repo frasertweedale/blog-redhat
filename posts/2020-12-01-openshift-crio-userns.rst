@@ -429,7 +429,6 @@ to include the sysctl::
   metadata:
     name: userns-test
     annotations:
-      openshift.io/scc: restricted
       io.kubernetes.cri-o.userns-mode: "auto:size=65536;map-to-root=true"
   spec:
     containers:
@@ -542,7 +541,6 @@ should be run as uid ``0`` and gid ``0``::
   metadata:
     name: userns-test
     annotations:
-      openshift.io/scc: restricted
       io.kubernetes.cri-o.userns-mode: "auto:size=65536;map-to-root=true"
   spec:
     containers:
