@@ -136,7 +136,7 @@ Kubernetes SRV limitation
 -------------------------
 
 Some services operate over TCP, some over UDP.  And some operate
-over *both* TCP and UDP.  Two examples are DNS and Kerberos.
+over *both* TCP and UDP.  Examples include DNS, Kerberos and SIP.
 ``SRV`` records are of particular importance for Kerberos; they are
 used (widely_, by multiple_ implementations_) for KDC discovery.
 
@@ -182,7 +182,7 @@ ServicePort specs::
   The Service "service-test" is invalid:
   spec.ports[2].name: Duplicate value: "kerberos"
 
-Well, that's a shame.  Kerberos does not admit this important use
+Well, that's a shame.  Kubernetes does not support this important use
 case.
 
 Endpoints do not have the limitation
