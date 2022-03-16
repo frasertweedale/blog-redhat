@@ -26,8 +26,13 @@
 
 <div id="postContent">
     <h1 id="kubernetes-dns-service-discovery-limitations">Kubernetes DNS Service Discovery limitations</h1>
-<p>Kubernetes <em>Service</em> objects expose applications running in Pods as network services. For each combination of service name, port and associated Pod, the Kubernetes DNS system creates a DNS <code>SRV</code> record that can be used for service discovery.</p>
-<p>In this post I demonstrate a deficiency in this system that obstructs important, real-world use cases, and sketch potential solutions.</p>
+<p>Kubernetes <em>Service</em> objects expose applications running in Pods as
+network services. For each combination of service name, port and
+associated Pod, the Kubernetes DNS system creates a DNS <code>SRV</code>
+record that can be used for service discovery.</p>
+<p>In this post I demonstrate a deficiency in this system that
+obstructs important, real-world use cases, and sketch potential
+solutions.</p>
 <h2 id="overview-of-kubernetes-services-and-dns">Overview of Kubernetes Services and DNS <a href="#overview-of-kubernetes-services-and-dns" class="section">§</a></h2>
 <p>The following Service definition defines an LDAP service:</p>
 <pre><code>$ oc create -f service-test.yaml 
@@ -48,7 +53,10 @@ spec:
 
 $ oc create -f service-test.yaml
 service/service-test created</code></pre>
-<p>The Service controller creates <em>Endpoint</em> objects to associating each of the Service <code>ports</code> with each Pod matching the Service <code>selector</code>. If there are no matching pods, there are no endpoints:</p>
+<p>The Service controller creates <em>Endpoint</em> objects to associating
+each of the Service <code>ports</code> with each Pod matching the Service
+<code>selector</code>. If there are no matching pods, there are no
+endpoints:</p>
 <pre><code>$ oc get endpoints service-test
 NAME           ENDPOINTS   AGE
 service-test   &lt;none&gt;      8m1s</code></pre>
@@ -68,7 +76,8 @@ spec:
 
 $ oc create -f pod-service-test.yaml 
 pod/service-test created</code></pre>
-<p>Then the Service controller creates an endpoint that maps the Service to the Pod:</p>
+<p>Then the Service controller creates an endpoint that maps the
+Service to the Pod:</p>
 <pre><code>$ oc get endpoints service-test
 NAME           ENDPOINTS         AGE
 service-test   10.129.2.13:389   16m
@@ -95,10 +104,18 @@ subsets:
   - name: ldap
     port: 389
     protocol: TCP</code></pre>
-<p>Cluster DNS systems (there are different implementations, e.g. <a href="https://github.com/kubernetes/dns">kubedns</a>, and the OpenShift <a href="https://github.com/openshift/cluster-dns-operator">Cluster DNS Operator</a>) use the Endpoints objects to manage DNS records for applications running in the cluster. In particular, it creates <code>SRV</code> records mapping each service <code>name</code> and <code>protocol</code> combination to the pod(s) that provide that service. The behaviour is defined in the <a href>Kubernetes DNS-Based Service Discovery specification</a>.</p>
+<p>Cluster DNS systems (there are different implementations, e.g.
+<a href="https://github.com/kubernetes/dns">kubedns</a>, and the OpenShift <a href="https://github.com/openshift/cluster-dns-operator">Cluster DNS Operator</a>) use the
+Endpoints objects to manage DNS records for applications running in
+the cluster. In particular, it creates <code>SRV</code> records mapping each
+service <code>name</code> and <code>protocol</code> combination to the pod(s) that
+provide that service. The behaviour is defined in the <a href>Kubernetes
+DNS-Based Service Discovery specification</a>.</p>
 <p>The SRV record owner name has the form:</p>
 <pre><code>_&lt;port&gt;._&lt;proto&gt;.&lt;service&gt;.&lt;ns&gt;.svc.&lt;zone&gt;.</code></pre>
-<p>where <code>ns</code> is the project namespace and <code>zone</code> is the cluster DNS zone. The objects created above result in the follow <code>SRV</code> and <code>A</code> records:</p>
+<p>where <code>ns</code> is the project namespace and <code>zone</code> is the cluster
+DNS zone. The objects created above result in the follow <code>SRV</code>
+and <code>A</code> records:</p>
 <pre><code>$ oc rsh service-test
 
 sh-5.0# dig +short SRV \
@@ -110,9 +127,17 @@ sh-5.0# dig +short A \
 10.129.2.13</code></pre>
 <p>For more information above DNS <code>SRV</code> records, see <a href="https://tools.ietf.org/html/rfc2782">RFC 2782</a>.</p>
 <h2 id="kubernetes-srv-limitation">Kubernetes SRV limitation <a href="#kubernetes-srv-limitation" class="section">§</a></h2>
-<p>Some services operate over TCP, some over UDP. And some operate over <em>both</em> TCP and UDP. Two examples are DNS and Kerberos. <code>SRV</code> records are of particular importance for Kerberos; they are used (<a href="https://web.mit.edu/kerberos/krb5-devel/doc/admin/realm_config.html#hostnames-for-kdcs">widely</a>, by <a href="https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-adts/7fcdce70-5205-44d6-9c3a-260e616a2f04">multiple</a> <a href="https://www.freeipa.org/page/V4/DNS_Location_Mechanism">implementations</a>) for KDC discovery.</p>
-<p>So to host a Kerberos KDC in Kubernetes and enable service discovery, we need two sets of SRV records: <code>_kerberos._tcp</code> and <code>_kerberos._udp</code>. And likewise for the <code>kpasswd</code> and <code>kerberos-master</code> service names. There could be (probably are) other protocols where a similar arrangement is required.</p>
-<p>So, let’s update the Service object and add the <code>kerberos</code> ServicePort specs:</p>
+<p>Some services operate over TCP, some over UDP. And some operate
+over <em>both</em> TCP and UDP. Examples include DNS, Kerberos and SIP.
+<code>SRV</code> records are of particular importance for Kerberos; they are
+used (<a href="https://web.mit.edu/kerberos/krb5-devel/doc/admin/realm_config.html#hostnames-for-kdcs">widely</a>, by <a href="https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-adts/7fcdce70-5205-44d6-9c3a-260e616a2f04">multiple</a> <a href="https://www.freeipa.org/page/V4/DNS_Location_Mechanism">implementations</a>) for KDC discovery.</p>
+<p>So to host a Kerberos KDC in Kubernetes and enable service
+discovery, we need two sets of SRV records: <code>_kerberos._tcp</code> and
+<code>_kerberos._udp</code>. And likewise for the <code>kpasswd</code> and
+<code>kerberos-master</code> service names. There could be (probably are)
+other protocols where a similar arrangement is required.</p>
+<p>So, let’s update the Service object and add the <code>kerberos</code>
+ServicePort specs:</p>
 <pre><code>$ cat service-test.yaml 
 apiVersion: v1
 kind: Service
@@ -138,10 +163,16 @@ spec:
 $ oc replace -f service-test.yaml
 The Service &quot;service-test&quot; is invalid:
 spec.ports[2].name: Duplicate value: &quot;kerberos&quot;</code></pre>
-<p>Well, that’s a shame. Kerberos does not admit this important use case.</p>
+<p>Well, that’s a shame. Kubernetes does not support this important use
+case.</p>
 <h3 id="endpoints-do-not-have-the-limitation">Endpoints do not have the limitation <a href="#endpoints-do-not-have-the-limitation" class="section">§</a></h3>
-<p>Interestingly, the Endpoints type does not have this limitation. The Service controller automatically creates Endpoints objects for Services. The ServicePorts are (as far as I can tell) copied across to the Endpoints object.</p>
-<p>I can manually replace the <code>endpoints/service-test</code> object (see above) with the following spec that includes the “duplicate” <code>kerberos</code> port:</p>
+<p>Interestingly, the Endpoints type does not have this limitation. The
+Service controller automatically creates Endpoints objects for
+Services. The ServicePorts are (as far as I can tell) copied across
+to the Endpoints object.</p>
+<p>I can manually replace the <code>endpoints/service-test</code> object (see
+above) with the following spec that includes the “duplicate”
+<code>kerberos</code> port:</p>
 <pre><code>$ cat endpoints.yaml
 apiVersion: v1
 kind: Endpoints
@@ -174,7 +205,9 @@ subsets:
 
 $ oc replace -f endpoints.yaml
 endpoints/service-test replaced</code></pre>
-<p>The object was accepted! Observe that the DNS system responds and creates <em>both</em> the <code>_kerberos._tcp</code> and <code>_kerberos._udp</code> <code>SRV</code> records:</p>
+<p>The object was accepted! Observe that the DNS system responds and
+creates <em>both</em> the <code>_kerberos._tcp</code> and <code>_kerberos._udp</code> <code>SRV</code>
+records:</p>
 <pre><code>$ oc rsh service-test
 
 sh-5.0# dig +short SRV \
@@ -184,11 +217,27 @@ sh-5.0# dig +short SRV \
 sh-5.0# dig +short SRV \
     _kerberos._udp.service-test.test.svc.cluster.local
 0 100 88 10-129-2-13.service-test.test.svc.cluster.local.</code></pre>
-<p>Therefore it seems the scope of this problem is limited to validation and processing of the <code>Service</code> object. Other components of Kubernetes (Endpoint validation and the Cluster DNS Operator, at least) can already handle this use case.</p>
+<p>Therefore it seems the scope of this problem is limited to
+validation and processing of the <code>Service</code> object. Other
+components of Kubernetes (Endpoint validation and the Cluster DNS
+Operator, at least) can already handle this use case.</p>
 <h2 id="possible-resolutions">Possible resolutions <a href="#possible-resolutions" class="section">§</a></h2>
-<p>Besides manually fiddling with the Endpoints (eww) I am not aware of any workarounds, but I see two possible approaches to resolving this issue.</p>
-<p>One approach is to relax the uniqueness check. Instead of checking for uniqueness of ServicePort <code>name</code>, check for the uniqueness of the <code>name</code>/<code>protocol</code> pair. This is conceptually simple but I am not familiar enough with Kubernetes internals to judge the feasibility or technical tradeoffs of this approach. For users, nothing changes (except the example above would work!)</p>
-<p>Another approach is to add a new ServicePort field to specify the actual DNS service label to use. For the sake of discussion I’ll call it <code>serviceName</code>. It would be optional, defaulting to the value of <code>name</code>. This means <code>name</code> can still be the “primary key”, but the approach requires <em>another</em> uniqueness check on the <code>serviceName</code>/<code>protocol</code> pair. In our use case the configuration would look like:</p>
+<p>Besides manually fiddling with the Endpoints (eww) I am not aware of
+any workarounds, but I see two possible approaches to resolving this
+issue.</p>
+<p>One approach is to relax the uniqueness check. Instead of checking
+for uniqueness of ServicePort <code>name</code>, check for the uniqueness of
+the <code>name</code>/<code>protocol</code> pair. This is conceptually simple but I
+am not familiar enough with Kubernetes internals to judge the
+feasibility or technical tradeoffs of this approach. For users,
+nothing changes (except the example above would work!)</p>
+<p>Another approach is to add a new ServicePort field to specify the
+actual DNS service label to use. For the sake of discussion I’ll
+call it <code>serviceName</code>. It would be optional, defaulting to the
+value of <code>name</code>. This means <code>name</code> can still be the “primary
+key”, but the approach requires <em>another</em> uniqueness check on the
+<code>serviceName</code>/<code>protocol</code> pair. In our use case the
+configuration would look like:</p>
 <pre><code>...
 ports:
 - name: ldap
@@ -202,9 +251,19 @@ ports:
   serviceName: kerberos
   protocol: UDP
   port: 88</code></pre>
-<p>From a UX perspective I prefer the first approach, because there are no changes or additions to the ServicePort configuration schema. But to maintain compatibility with programs that assume that <code>name</code> is unique (as is currently enforced), it might be necessary to introduce a new field.</p>
+<p>From a UX perspective I prefer the first approach, because there are
+no changes or additions to the ServicePort configuration schema.
+But to maintain compatibility with programs that assume that
+<code>name</code> is unique (as is currently enforced), it might be necessary
+to introduce a new field.</p>
 <h2 id="next-steps">Next steps <a href="#next-steps" class="section">§</a></h2>
-<p>I <a href="https://github.com/kubernetes/kubernetes/issues/97149">filed a bug report</a> and submitted a <a href>proof-of-concept pull request</a> to bring attention to the problem and solicit feedback from Kubernetes and OpenShift DNS experts. It might be necessary to submit a <a href="https://github.com/kubernetes/enhancements/blob/master/keps/README.md">Kubernetes Enhancement Proposal</a> (KEP), but that seems (as a Kubernetes outsider) a long and windy road to landing what is a conceptually small change.</p>
+<p>I <a href="https://github.com/kubernetes/kubernetes/issues/97149">filed a bug report</a> and submitted a <a href>proof-of-concept pull
+request</a> to bring attention to the problem and solicit feedback
+from
+Kubernetes and OpenShift DNS experts. It might be necessary to
+submit a <a href="https://github.com/kubernetes/enhancements/blob/master/keps/README.md">Kubernetes Enhancement Proposal</a> (KEP), but that seems
+(as a Kubernetes outsider) a long and windy road to landing what is
+a conceptually small change.</p>
 </div>
 <div id="postFooter">
     <div id="recent">

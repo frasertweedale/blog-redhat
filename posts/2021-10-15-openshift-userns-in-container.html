@@ -26,31 +26,40 @@
 
 <div id="postContent">
     <h1 id="creating-user-namespaces-inside-containers">Creating user namespaces inside containers</h1>
-<p>Over the last year I have experiement with user namespace support in OpenShift. That is, making OpenShift run workloads inside a separate user namespace. We’re trying to drive this feature forward, but some people have reservations. Does having processes running as <code>root</code> inside a user namespace present an increased security risk? What if there are kernel bugs…</p>
-<p>If you’re worried about the security of user namespaces, OpenShift or Kubernetes user namespace support doesn’t change the game at all. As I demonstrate in this post, you can create and use user namespaces <em>inside</em> your workloads right now.</p>
+<p>Over the last year I have experimented with user namespace support in
+OpenShift. That is, making OpenShift run workloads inside a
+separate user namespace. We’re trying to drive this feature
+forward, but some people have reservations. Does having processes
+running as <code>root</code> inside a user namespace present an increased
+security risk? What if there are kernel bugs…</p>
+<p>If you’re worried about the security of user namespaces, OpenShift
+or Kubernetes user namespace support doesn’t change the game at all.
+As I demonstrate in this post, you can create and use user
+namespaces <em>inside</em> your workloads right now.</p>
 <h2 id="demo">Demo <a href="#demo" class="section">§</a></h2>
-<p>I tested on OpenShift 4.9.0 in the default configuration. So, no explicit user namespace support. I used a stock Fedora container image with the following Pod spec:</p>
+<p>I tested on OpenShift 4.9.0 in the default configuration. So, no
+explicit user namespace support. I used a stock Fedora container
+image with the following Pod spec:</p>
 <div class="sourceCode" id="cb1"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
 <span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Pod</span></span>
 <span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="fu">metadata</span><span class="kw">:</span></span>
 <span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> fedora</span></span>
-<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">annotations</span><span class="kw">:</span></span>
-<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">openshift.io/scc</span><span class="kw">:</span><span class="at"> restricted</span></span>
-<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a><span class="fu">spec</span><span class="kw">:</span></span>
-<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">containers</span><span class="kw">:</span></span>
-<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> fedora</span></span>
-<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">image</span><span class="kw">:</span><span class="at"> registry.fedoraproject.org/fedora:34-x86_64</span></span>
-<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">command</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="st">&quot;sleep&quot;</span><span class="kw">,</span><span class="at"> </span><span class="st">&quot;3600&quot;</span><span class="kw">]</span></span>
-<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">securityContext</span><span class="kw">:</span></span>
-<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">capabilities</span><span class="kw">:</span></span>
-<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="fu">drop</span><span class="kw">:</span></span>
-<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="kw">-</span><span class="at"> CHOWN</span></span>
-<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="kw">-</span><span class="at"> DAC_OVERRIDE</span></span>
-<span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="kw">-</span><span class="at"> FOWNER</span></span>
-<span id="cb1-18"><a href="#cb1-18" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="kw">-</span><span class="at"> FSETID</span></span>
-<span id="cb1-19"><a href="#cb1-19" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="kw">-</span><span class="at"> SETPCAP</span></span>
-<span id="cb1-20"><a href="#cb1-20" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="kw">-</span><span class="at"> NET_BIND_SERVICE</span></span></code></pre></div>
-<p>The Pod will run under the <code>restricted</code> SCC. I explicitly drop a number of default capabilities.</p>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="fu">spec</span><span class="kw">:</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">containers</span><span class="kw">:</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> fedora</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">image</span><span class="kw">:</span><span class="at"> registry.fedoraproject.org/fedora:34-x86_64</span></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">command</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="st">&quot;sleep&quot;</span><span class="kw">,</span><span class="at"> </span><span class="st">&quot;3600&quot;</span><span class="kw">]</span></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">securityContext</span><span class="kw">:</span></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">capabilities</span><span class="kw">:</span></span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="fu">drop</span><span class="kw">:</span></span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="kw">-</span><span class="at"> CHOWN</span></span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="kw">-</span><span class="at"> DAC_OVERRIDE</span></span>
+<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="kw">-</span><span class="at"> FOWNER</span></span>
+<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="kw">-</span><span class="at"> FSETID</span></span>
+<span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="kw">-</span><span class="at"> SETPCAP</span></span>
+<span id="cb1-18"><a href="#cb1-18" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="kw">-</span><span class="at"> NET_BIND_SERVICE</span></span></code></pre></div>
+<p>The Pod will run under the <code>restricted</code> SCC. I explicitly drop a
+number of default capabilities.</p>
 <p>Next I created a project named <code>userns</code>, and new user <code>me</code>.</p>
 <pre class="shell"><code>% oc new-project userns
 Now using project &quot;userns&quot; on server &quot;https://api.ci-ln-cih2n32-f76d1.origin-ci-int-gce.dev.openshift.com:6443&quot;.
@@ -71,7 +80,8 @@ clusterrole.rbac.authorization.k8s.io/edit added: &quot;me&quot;</code></pre>
 <p>Operating as <code>me</code> I created the pod:</p>
 <pre class="shell"><code>% oc --as me create -f pod-fedora.yaml
 pod/fedora created</code></pre>
-<p>Soon after, the pod is running. I can see what node it is running on, and its CRI-O container ID:</p>
+<p>Soon after, the pod is running. I can see what node it is running
+on, and its CRI-O container ID:</p>
 <pre class="shell"><code>% oc get -o json pod/fedora \
     | jq '.status.phase,
           .spec.nodeName,
@@ -79,10 +89,13 @@ pod/fedora created</code></pre>
 &quot;Running&quot;
 &quot;ci-ln-cih2n32-f76d1-sjtwq-worker-a-qr5hr&quot;
 &quot;cri-o://d164163951604b7fc9506b3a390ec6a14c76dc6077406fc7b5ffcbf81c406f68&quot;</code></pre>
-<p>Next I started a shell in my container. I’ll leave it running for now, and come back to it later:</p>
+<p>Next I started a shell in my container. I’ll leave it running for
+now, and come back to it later:</p>
 <pre class="shell"><code>% oc exec -it pod/fedora /bin/sh
 sh-5.1$</code></pre>
-<p>In another terminal, I opened a debug shell on the worker node. Then I used <code>crictl</code> to find out the process ID (<code>pid</code>) of the main container process.</p>
+<p>In another terminal, I opened a debug shell on the worker node.
+Then I used <code>crictl</code> to find out the process ID (<code>pid</code>) of the main
+container process.</p>
 <pre class="shell"><code>% oc debug node/ci-ln-cih2n32-f76d1-sjtwq-worker-a-qr5hr
 Starting pod/ci-ln-cih2n32-f76d1-sjtwq-worker-a-qr5hr-debug ...
 To use host binaries, run `chroot /host`
@@ -91,38 +104,67 @@ If you don't see a command prompt, try pressing enter.
 sh-4.4# chroot /host
 sh-4.4# crictl inspect d1641639 | jq .info.pid
 18668</code></pre>
-<p>Next I used <code>pgrep</code> to find all the processes that share the same set of namespaces as process <code>18668</code>. In other words, processes running in the same pod sandbox.</p>
+<p>Next I used <code>pgrep</code> to find all the processes that share the same
+set of namespaces as process <code>18668</code>. In other words, processes
+running in the same pod sandbox.</p>
 <pre class="shell"><code>sh-4.4# pgrep --ns 18668 \
     | xargs ps -o user,pid,cmd --sort pid
 USER         PID CMD
 1000580+   18668 sleep 3600
 1000580+   26490 /bin/sh</code></pre>
-<p>There are two processes, running under an unpriviled UID. The UID comes from a unique range allocated for the <code>userns</code> project. These two processes are the main container process (<code>sleep</code>), and the shell that I exected a few steps ago. As expected.</p>
-<p>Now for the fun part. Back to the shell we opened in <code>pod/fedora</code>. Observe that this shell process has an empty capability set:</p>
+<p>There are two processes, running under an unpriviled UID. The UID
+comes from a unique range allocated for the <code>userns</code> project. These
+two processes are the main container process (<code>sleep</code>), and the
+shell that I exected a few steps ago. As expected.</p>
+<p>Now for the fun part. Back to the shell we opened in <code>pod/fedora</code>.
+Observe that this shell process has an empty capability set:</p>
 <pre class="shell"><code>sh-5.1$ grep Cap /proc/$$/status
 CapInh: 0000000000000000
 CapPrm: 0000000000000000
 CapEff: 0000000000000000
 CapBnd: 0000000000000000
 CapAmb: 0000000000000000</code></pre>
-<p>And yet, using <code>unshare(1)</code> I was able to create a new user namespace. The <code>-r</code> option says to map <code>root</code> in the new user namespace to the user that created the namespace. And that is indeed what happens:</p>
+<p>And yet, using <code>unshare(1)</code> I was able to create a new user
+namespace. The <code>-r</code> option says to map <code>root</code> in the new user
+namespace to the user that created the namespace. And that is
+indeed what happens:</p>
 <pre class="shell"><code>sh-5.1$ unshare -U -r
 [root@fedora /]# id
 uid=0(root) gid=0(root) groups=0(root),65534(nobody)</code></pre>
-<p>I confirmed it via the node debug shell. I ran <code>pgrep</code> again, this time restricting the search to processes in the same <code>pid</code> namespace as process <code>18668</code>. The <code>--nslist</code> option gives the list of namespaces to match (all namespaces when not specified).</p>
+<p>I confirmed it via the node debug shell. I ran <code>pgrep</code> again, this
+time restricting the search to processes in the same <code>pid</code> namespace
+as process <code>18668</code>. The <code>--nslist</code> option gives the list of
+namespaces to match (all namespaces when not specified).</p>
 <pre class="shell"><code>sh-4.4# pgrep --ns 18668 --nslist pid \
     | xargs ps -o user,pid,cmd --sort pid
 USER         PID CMD
 1000580+   18668 sleep 3600
 1000580+   26490 /bin/sh
 1000580+   36704 -sh</code></pre>
-<p>The new shell has pid <code>36704</code>. Observe that UID <code>0</code> in the container maps to UID <code>1000580000</code>:</p>
+<p>The new shell has pid <code>36704</code>. Observe that UID <code>0</code> in the
+container maps to UID <code>1000580000</code>:</p>
 <pre class="shell"><code>sh-4.4# cat /proc/36704/uid_map
          0 1000580000          1</code></pre>
 <h2 id="discussion">Discussion <a href="#discussion" class="section">§</a></h2>
-<p>You can create and use user namespaces inside your containers without any special support from OpenShift or Kubernetes. Therefore, the idea of a OpenShift or Kubernetes feature for running a workload in an isolated user namespace <em>by default</em> does not lead to an increased risk of container escapes or privilege escalation related to processes running as uid 0 in a user namespace.</p>
-<p>This is not to gloss over the fact that other parts of a “workloads in user namespaces” feature have to be designed and implemented with care. Particular aspects include pod admission and selection of the unprivileged UIDs to map to. But on the question of the security of the Linux user namespaces feature itself, a first class OpenShift of Kubernetes feature doesn’t introduce any new risk. Whatever risk there is, is there right now.</p>
-<p>If some critical security with user namespaces emerges and you need an urgent mitigation, the only option is to alter the container runtime Seccomp policies to block the <code>unshare(2)</code> syscall. This is an advanced topic, involving changes to node configuration. For details, see <a href="https://docs.openshift.com/container-platform/4.8/security/seccomp-profiles.html"><em>Configuring seccomp profiles</em></a> in the official OpenShift documentation.</p>
+<p>You can create and use user namespaces inside your containers
+without any special support from OpenShift or Kubernetes.
+Therefore, the idea of a OpenShift or Kubernetes feature for running
+a workload in an isolated user namespace <em>by default</em> does not lead
+to an increased risk of container escapes or privilege escalation
+related to processes running as uid 0 in a user namespace.</p>
+<p>This is not to gloss over the fact that other parts of a “workloads
+in user namespaces” feature have to be designed and implemented with
+care. Particular aspects include pod admission and selection of the
+unprivileged UIDs to map to. But on the question of the security of
+the Linux user namespaces feature itself, a first class OpenShift of
+Kubernetes feature doesn’t introduce any new risk. Whatever risk
+there is, is there right now.</p>
+<p>If some critical security with user namespaces emerges and you need
+an urgent mitigation, the only option is to alter the container
+runtime Seccomp policies to block the <code>unshare(2)</code> syscall. This is
+an advanced topic, involving changes to node configuration. For
+details, see <a href="https://docs.openshift.com/container-platform/4.8/security/seccomp-profiles.html"><em>Configuring seccomp profiles</em></a> in the
+official OpenShift documentation.</p>
 </div>
 <div id="postFooter">
     <div id="recent">
