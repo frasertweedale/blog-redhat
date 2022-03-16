@@ -4,7 +4,7 @@ tags: openshift, security, containers
 
 # Creating user namespaces inside containers
 
-Over the last year I have experiement with user namespace support in
+Over the last year I have experimented with user namespace support in
 OpenShift.  That is, making OpenShift run workloads inside a
 separate user namespace.  We're trying to drive this feature
 forward, but some people have reservations.  Does having processes
