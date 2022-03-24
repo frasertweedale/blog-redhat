@@ -8,8 +8,368 @@
         <name>Fraser Tweedale</name>
         <email>frase@frase.id.au</email>
     </author>
-    <updated>2022-02-02T00:00:00Z</updated>
+    <updated>2022-03-24T00:00:00Z</updated>
     <entry>
+    <title>Experimenting with ExternalDNS</title>
+    <link href="https://frasertweedale.github.io/blog-redhat/posts/2022-03-24-k8s-external-dns.html" />
+    <id>https://frasertweedale.github.io/blog-redhat/posts/2022-03-24-k8s-external-dns.html</id>
+    <published>2022-03-24T00:00:00Z</published>
+    <updated>2022-03-24T00:00:00Z</updated>
+    <summary type="html"><![CDATA[<h1 id="experimenting-with-externaldns">Experimenting with ExternalDNS</h1>
+<p>DNS is a critical piece of the puzzle for exposing Kubernetes-hosted
+applications to the Internet. Running the application means nothing
+if you can’t get traffic to it. Keeping public DNS records in sync
+with the deployed applications is important. The Kubernetes
+<a href="https://github.com/kubernetes-sigs/external-dns">ExternalDNS</a> was developed for this purpose.</p>
+<p>ExternalDNS exposes Kubernetes Services and Routes in by managing
+records in external DNS providers. It <a href="https://github.com/kubernetes-sigs/external-dns/blob/570b51659fdc218281e3504a558a437178465f29/README.md#status-of-providers">supports many DNS
+providers</a>, including the DNS services of the popular
+cloud providers (AWS, Google Cloud, Azure, …).</p>
+<p>I have been experimenting with ExternalDNS. My purpose is not only
+to understand installation and basic usage, but also whether it can
+meet the specific DNS requirements of FreeIPA, such as <code>SRV</code>
+records. This post outlines my findings.</p>
+<h2 id="operator-installation">Operator installation <a href="#operator-installation" class="section">§</a></h2>
+<p>The <a href="https://github.com/kubernetes-sigs/external-dns">ExternalDNS</a> controller is a Kubernetes sub-project (or
+SIG—<em>special interest group</em>). In the OpenShift ecosystem, the
+<a href="https://github.com/openshift/external-dns-operator">ExternalDNS Operator</a> creates and manages ExternalDNS controller
+instances defined by <em>custom resources</em> (CRs) of <code>kind: ExternalDNS</code>.</p>
+<p>The ExternalDNS Operator is available as a <em>Tech Preview</em> in
+OpenShift Container Platform 4.10. So, it is visible in the
+<em>OperatorHub</em> catalogue out-of-the-box. The <a href="https://docs.openshift.com/container-platform/4.10/networking/external_dns_operator/nw-installing-external-dns-operator.html">official docs</a>
+explain how to install the operator via the OperatorHub web console.
+The instructions were easy to follow.</p>
+<p>I prefer using the CLI where possible. The OperatorHub system is
+complex but I eventually worked out what commands and objects are
+needed to install the ExternalDNS Operator from the CLI.</p>
+<p>First, create the <em>operand</em> namespaces and RBAC objects. The
+operand namespace is where the ExternalDNS controllers (as opposed
+to the ExternalDNS <em>Operator</em> controller) will live.</p>
+<pre class="shell"><code>$ oc create ns external-dns
+namespace/external-dns created
+
+$ oc apply -f \
+    https://raw.githubusercontent.com/openshift/external-dns-operator/release-0.1/config/rbac/extra-roles.yaml
+role.rbac.authorization.k8s.io/external-dns-operator created
+rolebinding.rbac.authorization.k8s.io/external-dns-operator created
+clusterrole.rbac.authorization.k8s.io/external-dns created
+clusterrolebinding.rbac.authorization.k8s.io/external-dns created</code></pre>
+<p>Next, create the <code>external-dns-operator</code> namespace where the
+operator itself shall live:</p>
+<pre class="shell"><code>% oc create ns external-dns-operator
+namespace/external-dns-operator created</code></pre>
+<p>Finally create the OperatorGroup and OperatorHub Subscription
+objects. Note the contents of <code>external-dns-operator.yaml</code>:</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> operators.coreos.com/v1</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> OperatorGroup</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="fu">metadata</span><span class="kw">:</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">generateName</span><span class="kw">:</span><span class="at"> external-dns-operator-</span></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">namespace</span><span class="kw">:</span><span class="at"> external-dns-operator</span></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a><span class="fu">spec</span><span class="kw">:</span></span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">targetNamespaces</span><span class="kw">:</span></span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> external-dns-operator</span></span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a><span class="pp">---</span></span>
+<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> operators.coreos.com/v1alpha1</span></span>
+<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Subscription</span></span>
+<span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a><span class="fu">metadata</span><span class="kw">:</span></span>
+<span id="cb3-13"><a href="#cb3-13" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> external-dns-operator</span></span>
+<span id="cb3-14"><a href="#cb3-14" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">namespace</span><span class="kw">:</span><span class="at"> external-dns-operator</span></span>
+<span id="cb3-15"><a href="#cb3-15" aria-hidden="true" tabindex="-1"></a><span class="fu">spec</span><span class="kw">:</span></span>
+<span id="cb3-16"><a href="#cb3-16" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> external-dns-operator</span></span>
+<span id="cb3-17"><a href="#cb3-17" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">source</span><span class="kw">:</span><span class="at"> redhat-operators</span></span>
+<span id="cb3-18"><a href="#cb3-18" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">sourceNamespace</span><span class="kw">:</span><span class="at"> openshift-marketplace</span></span></code></pre></div>
+<p>Create the objects:</p>
+<pre class="shell"><code>% oc create -f external-dns-operator.yaml
+operatorgroup.operators.coreos.com/external-dns-operator-8852w created
+subscription.operators.coreos.com/external-dns-operator created</code></pre>
+<p>After a short delay (~1 minute for me) the operator installation
+should finish. Observe the various Kubernetes objects that
+represent the running operator:</p>
+<pre class="shell"><code>% oc get -n external-dns-operator all
+NAME                                         READY   STATUS    RESTARTS      AGE
+pod/external-dns-operator-594b465984-r2pc5   2/2     Running   2 (59s ago)   5m13s
+
+NAME                                            TYPE        CLUSTER-IP       EXTERNAL-IP   PORT(S)    AGE
+service/external-dns-operator-metrics-service   ClusterIP   172.30.151.142   &lt;none&gt;        8443/TCP   5m15s
+service/external-dns-operator-service           ClusterIP   172.30.210.21    &lt;none&gt;        9443/TCP   59s
+
+NAME                                    READY   UP-TO-DATE   AVAILABLE   AGE
+deployment.apps/external-dns-operator   1/1     1            1           5m14s
+
+NAME                                               DESIRED   CURRENT   READY   AGE
+replicaset.apps/external-dns-operator-594b465984   1         1         1       5m15s</code></pre>
+<h2 id="the-externaldns-custom-resource">The <code>ExternalDNS</code> custom resource <a href="#the-externaldns-custom-resource" class="section">§</a></h2>
+<p>Now that the operator is installed, we can define an <code>ExternalDNS</code>
+customer resource (CR). The operator creates an ExternalDNS
+controller instance for each CR. Here is an example
+(<code>externaldns-test.yaml</code>):</p>
+<div class="sourceCode" id="cb6"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> externaldns.olm.openshift.io/v1alpha1</span></span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> ExternalDNS</span></span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a><span class="fu">metadata</span><span class="kw">:</span></span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> test</span></span>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a><span class="fu">spec</span><span class="kw">:</span></span>
+<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">domains</span><span class="kw">:</span></span>
+<span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="kw">-</span><span class="at"> </span><span class="fu">filterType</span><span class="kw">:</span><span class="at"> Include </span></span>
+<span id="cb6-8"><a href="#cb6-8" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">matchType</span><span class="kw">:</span><span class="at"> Exact </span></span>
+<span id="cb6-9"><a href="#cb6-9" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">name</span><span class="kw">:</span><span class="at"> ci-ln-053y10k-72292.origin-ci-int-gce.dev.rhcloud.com</span></span>
+<span id="cb6-10"><a href="#cb6-10" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">provider</span><span class="kw">:</span></span>
+<span id="cb6-11"><a href="#cb6-11" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span><span class="at"> GCP</span></span>
+<span id="cb6-12"><a href="#cb6-12" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">source</span><span class="kw">:</span></span>
+<span id="cb6-13"><a href="#cb6-13" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span><span class="at"> Service</span></span>
+<span id="cb6-14"><a href="#cb6-14" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">service</span><span class="kw">:</span></span>
+<span id="cb6-15"><a href="#cb6-15" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">serviceType</span><span class="kw">:</span></span>
+<span id="cb6-16"><a href="#cb6-16" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="kw">-</span><span class="at"> LoadBalancer</span></span>
+<span id="cb6-17"><a href="#cb6-17" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">labelFilter</span><span class="kw">:</span></span>
+<span id="cb6-18"><a href="#cb6-18" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">matchLabels</span><span class="kw">:</span></span>
+<span id="cb6-19"><a href="#cb6-19" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="fu">app</span><span class="kw">:</span><span class="at"> echo</span></span>
+<span id="cb6-20"><a href="#cb6-20" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">fqdnTemplate</span><span class="kw">:</span></span>
+<span id="cb6-21"><a href="#cb6-21" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">-</span><span class="at"> </span><span class="st">&quot;{{.Name}}.ci-ln-053y10k-72292.origin-ci-int-gce.dev.rhcloud.com&quot;</span></span></code></pre></div>
+<p>Breaking down the <code>spec</code>, we see the following fields:</p>
+<ul>
+<li><p><strong><code>domains</code></strong> gives a rule for which domains this <code>ExternalDNS</code>
+controller must manage. In this case, any domain name with a
+<em>suffix</em> matching the <code>name</code> subfield will match the rule.</p></li>
+<li><p><strong><code>provider</code></strong> specifies the cloud provider—in this case GCP
+(Google Cloud). For GCP there is nothing else to configure; the
+controller will use the main cluster secret to authenticate to
+Google Cloud.</p></li>
+<li><p><strong><code>source</code></strong> specifies which kinds of objects the controller will
+monitor to determine the DNS records to be created/managed. We
+configure the controller to watch Service objects. Further
+configuration is specified in subfields:</p>
+<ul>
+<li><p><strong><code>serviceType</code></strong> restricts the type(s) of Service objects to be
+considered.</p></li>
+<li><p><strong><code>labelFilter</code></strong> can be set to further restrict the set of
+source objects by matching on the <code>label</code> field. In this
+example, we only match Service objects with label <code>app: echo</code>.</p></li>
+<li><p><strong><code>fqdnTemplate</code></strong> specifies how to derive the fully qualified
+DNS name from the Service object.</p></li>
+<li><p><strong><code>hostnameAnnotation</code></strong> can be set to <code>Allow</code> to allow the FQDN
+to be specified via the
+<code>external-dns.alpha.kubernetes.io/hostname</code> annotation on the
+Service object. The default value is <code>Ignore</code>, in which case
+<code>fqdnTemplate</code> is required.</p></li>
+</ul></li>
+</ul>
+<p>Aside from <code>type: Service</code>, the <code>ExternalDNS</code> CR also recognises
+<code>type: OpenShiftRoute</code>. This type uses <code>Route</code> objects as the
+source, creating <code>CNAME</code> records to alias the FQDN derived from the
+<code>Route</code> object to the canonical DNS name of the ingress controller.
+This isn’t the behaviour I’m looking for, so the rest of this
+article focuses on the behaviour for <code>Service</code> sources.</p>
+<h2 id="creating-the-externaldns-controller">Creating the ExternalDNS controller <a href="#creating-the-externaldns-controller" class="section">§</a></h2>
+<p>Now that we have defined an <code>ExternalDNS</code> custom resource, let’s
+create it and see what happens. I would like to watch the logs of
+the ExternalDNS Operator during this operation.</p>
+<p>Earlier we saw that the name of the operator Pod is
+<code>pod/external-dns-operator-594b465984-r2pc5</code>. This Pod has two
+containers:</p>
+<pre class="shell"><code>% oc get -o json -n external-dns-operator \
+    pod/external-dns-operator-594b465984-r2pc5 \
+    | jq &#39;.status.containerStatuses[].name&#39;
+&quot;kube-rbac-proxy&quot;
+&quot;operator&quot;</code></pre>
+<p>The container named <code>operator</code> is the one we are interested in.
+We can watch its log output like so:</p>
+<pre class="shell"><code>% oc logs -n external-dns-operator --tail 2 --follow \
+    external-dns-operator-594b465984-r2pc5 operator
+2022-03-22T04:41:06.625Z        INFO    controller-runtime.manager.controller.external_dns_controller   Starting workers        {&quot;worker count&quot;: 1}
+2022-03-22T04:41:06.626Z        INFO    controller-runtime.manager.controller.credentials_secret_controller     Starting workers        {&quot;worker count&quot;: 1}
+... (waiting for more output)</code></pre>
+<p>Now, in another terminal, create the <code>ExternalDNS</code> CR object:</p>
+<pre class="shell"><code>% oc create -f externaldns-test.yaml
+externaldns.externaldns.olm.openshift.io/test created</code></pre>
+<p>Log output shows the ExternalDNS Operator responding to the
+appearance of the <code>externaldns/test</code> CR:</p>
+<pre><code>controller-runtime.webhook.webhooks     received request        {&quot;webhook&quot;: &quot;/validate-externaldns-olm-openshift-io-v1alpha1-externaldns&quot;, &quot;UID&quot;: &quot;cf2fb876-9ddd-45a8-88b8-5cc0344fb5cc&quot;, &quot;kind&quot;: &quot;externaldns.olm.openshift.io/v1alpha1, Kind=ExternalDNS&quot;, &quot;resource&quot;: {&quot;group&quot;:&quot;externaldns.olm.openshift.io&quot;,&quot;version&quot;:&quot;v1alpha1&quot;,&quot;resource&quot;:&quot;externaldnses&quot;}}
+validating-webhook      validate create {&quot;name&quot;: &quot;test&quot;}
+controller-runtime.webhook.webhooks     wrote response  {&quot;webhook&quot;: &quot;/validate-externaldns-olm-openshift-io-v1alpha1-externaldns&quot;, &quot;code&quot;: 200, &quot;reason&quot;: &quot;&quot;, &quot;UID&quot;: &quot;cf2fb876-9ddd-45a8-88b8-5cc0344fb5cc&quot;, &quot;allowed&quot;: true}
+external_dns_controller reconciling externalDNS {&quot;externaldns&quot;: &quot;/test&quot;}
+…</code></pre>
+<p>And if we look in the <em>operand</em> namespace (<code>external-dns</code>) we see
+a Pod running:</p>
+<pre class="shell"><code>% oc get -n external-dns pod
+NAME                                 READY   STATUS    RESTARTS   AGE
+external-dns-test-865ffff756-45d44   1/1     Running   0          54s</code></pre>
+<p>And if you want to see what an ExternalDNS <em>controller</em> is up to,
+you can watch its logs:</p>
+<pre class="shell"><code>% oc logs -n external-dns --tail 1 --follow \
+    pod/external-dns-test-865ffff756-45d44
+time=&quot;2022-03-23T12:26:18Z&quot; level=info msg=&quot;All records are already up to date&quot;
+... (waiting for more output)</code></pre>
+<h2 id="observing-record-creation">Observing record creation <a href="#observing-record-creation" class="section">§</a></h2>
+<p>After creating the ExternalDNS instance, I found Google Cloud DNS
+zone for my cluster and queried its records. How to interact with
+the cloud provider depends on which cloud provider the cluster is
+hosted on, so I won’t provide details. The existing records are:</p>
+<pre><code>ci-ln-053y10k-72292.origin-ci-int-gce.dev.rhcloud.com.
+  NS    21600  ns-gcp-private.googledomains.com.
+ci-ln-053y10k-72292.origin-ci-int-gce.dev.rhcloud.com.
+  SOA   21600  ns-gcp-private.googledomains.com.
+api.ci-ln-053y10k-72292.origin-ci-int-gce.dev.rhcloud.com.
+  A     60     10.0.0.2
+api-int.ci-ln-053y10k-72292.origin-ci-int-gce.dev.rhcloud.com.
+  A     60     10.0.0.2
+*.apps.ci-ln-053y10k-72292.origin-ci-int-gce.dev.rhcloud.com.
+  A     30     35.223.148.37</code></pre>
+<div class="note">
+<p>This is a <em>private</em> zone specific to my cluster. Some non-routable
+addresses appear. I haven’t figured out how to update the records
+in the public zone yet. I’m confident this is not a problem with
+ExternalDNS. Rather, I put it down to my lack of familiarity with
+how to configure it, and with Google Cloud DNS.</p>
+</div>
+<p>We can see that in addition to the expected <code>NS</code> and <code>SOA</code> records,
+there are <code>A</code> records for the API server and a wildcard <code>A</code> record
+for the main ingress controller.</p>
+<p>Next I create the following Service:</p>
+<div class="sourceCode" id="cb14"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
+<span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Service</span></span>
+<span id="cb14-3"><a href="#cb14-3" aria-hidden="true" tabindex="-1"></a><span class="fu">metadata</span><span class="kw">:</span></span>
+<span id="cb14-4"><a href="#cb14-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> echo-tcp</span></span>
+<span id="cb14-5"><a href="#cb14-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">labels</span><span class="kw">:</span></span>
+<span id="cb14-6"><a href="#cb14-6" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">app</span><span class="kw">:</span><span class="at"> echo</span></span>
+<span id="cb14-7"><a href="#cb14-7" aria-hidden="true" tabindex="-1"></a><span class="fu">spec</span><span class="kw">:</span></span>
+<span id="cb14-8"><a href="#cb14-8" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">type</span><span class="kw">:</span><span class="at"> LoadBalancer</span></span>
+<span id="cb14-9"><a href="#cb14-9" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">selector</span><span class="kw">:</span></span>
+<span id="cb14-10"><a href="#cb14-10" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">app</span><span class="kw">:</span><span class="at"> echo</span></span>
+<span id="cb14-11"><a href="#cb14-11" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">ports</span><span class="kw">:</span></span>
+<span id="cb14-12"><a href="#cb14-12" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> tcpecho</span></span>
+<span id="cb14-13"><a href="#cb14-13" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">protocol</span><span class="kw">:</span><span class="at"> TCP</span></span>
+<span id="cb14-14"><a href="#cb14-14" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">port</span><span class="kw">:</span><span class="at"> </span><span class="dv">12345</span></span></code></pre></div>
+<p>Note that it has the <code>app: echo</code> label and has <code>type: LoadBalancer</code>,
+satisfying the match criteria of the <code>externaldns/test</code> controller.
+Create the service and observe its public IP address:</p>
+<pre class="shell"><code>% oc create -f service-echo.yaml
+service/echo-tcp created
+
+% oc get service/echo-tcp \
+    -o jsonpath=&#39;{.status.loadBalancer}&#39;
+{&quot;ingress&quot;:[{&quot;ip&quot;:&quot;35.188.22.139&quot;}]}</code></pre>
+<p>After creating the Service, two new records appeared in the zone:</p>
+<pre><code>echo-tcp.ci-ln-053y10k-72292.origin-ci-int-gce.dev.rhcloud.com.
+  A     300    35.188.22.139
+external-dns-echo-tcp.ci-ln-053y10k-72292.origin-ci-int-gce.dev.rhcloud.com.
+  TXT   300    &quot;heritage=external-dns,external-dns/owner=external-dns-test,external-dns/resource=service/test/echo-tcp&quot;</code></pre>
+<p>The <code>A</code> record resolves the DNS name to the load balancer’s IP
+address. Nothing surprising here.</p>
+<p>The <code>TXT</code> record is the for the name <code>external-dns-echo-tcp.…</code> and
+contains some metadata about the “owner” of the corresponding <code>A</code>
+record. Specifically, it identifies the Service object that is the
+<em>source</em> of the record. I am not 100% sure, but it seems to also
+contain information about the ExternalDNS controller that created
+the record.</p>
+<p>When I first saw the TXT records, I theorised that the ExternalDNS
+controller uses the TXT records to find “obsolete” records and
+delete them. This would occur, for example, when the Service is
+deleted. Indeed, deleting <code>service/echo-tcp</code> resulted in the
+removal of both the <code>A</code> and <code>TXT</code> records.</p>
+<h2 id="srv-records-for-loadbalancer-services">SRV records for <code>LoadBalancer</code> Services <a href="#srv-records-for-loadbalancer-services" class="section">§</a></h2>
+<p>Kubernetes’ internal DNS system follows a <a href="https://github.com/kubernetes/dns/blob/master/docs/specification.md">DNS-based service
+discovery</a> specification. In addition to <code>A</code>/<code>AAAA</code>
+records, <code>SRV</code> records are created to locate service endpoints (port
+and target DNS name) based on service name and transport protocol
+(TCP or UDP). SRV records are an important part of several
+protocols as used in the real world, including Kerberos, SIP, LDAP
+and XMPP. <code>SRV</code> records have the following shape:</p>
+<pre><code>_&lt;service&gt;._&lt;proto&gt;.&lt;domain&gt; &lt;ttl&gt;
+    &lt;class&gt; SRV &lt;priority&gt; &lt;weight&gt; &lt;port&gt; &lt;target&gt;</code></pre>
+<p>A record to locate an organisation’s LDAP server might look like:</p>
+<pre><code>_ldap._tcp.example.net 300
+    IN SRV 10 5 389 ldap.corp.example.net</code></pre>
+<p>Although the current system has a critical deficiency for
+applications that use SRV records and operate on both TCP and UDP
+(see my <a href="2020-12-08-k8s-srv-limitation.html">previous blog post</a>)
+for most applications it works well. Unfortunately, ExternalDNS
+does not follow the DNS spec and does not create SRV records for
+Services.</p>
+<p>I am not sure why this is the case. Perhaps ExternalDNS even
+pre-dates the SRV aspects of the Kubernetes DNS specification. Or
+the need might not have been recognised or deemed sufficiently
+critical to address this gap.</p>
+<p>As it happens, there is <a href="https://github.com/kubernetes-sigs/external-dns/pull/1330">an abandoned pull request</a> from two years
+ago that sought to add SRV record generation to ExternalDNS and
+bring it in line with the spec. The maintainers seemed receptive,
+but the PR author no longer needed the feature and closed it. So I
+think there is reason to hope that the feature might eventually make
+it into ExternalDNS. Perhaps our team will drive it… we need SRV
+records, and it would probably be better to enhance ExternalDNS than
+to build our own solution from scratch.</p>
+<h2 id="srv-records-for-nodeport-services">SRV records for <code>NodePort</code> services <a href="#srv-records-for-nodeport-services" class="section">§</a></h2>
+<p>I said that ExternalDNS does not support SRV records, but there is
+one exception to that. ExternalDNS <em>does</em> create SRV records for
+Services of <code>type: NodePort</code>. This is not an appropriate solution
+for our application, but we can still play with it and get a feel
+for how it might work similarly for <code>LoadBalancer</code> Services.</p>
+<p>First, we have to modify <code>externaldns/test</code> to add <code>NodePort</code> to the
+list of Service types. Update <code>externaldns-test.yaml</code>:</p>
+<div class="sourceCode" id="cb19"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a><span class="at">…</span></span>
+<span id="cb19-2"><a href="#cb19-2" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">service</span><span class="kw">:</span></span>
+<span id="cb19-3"><a href="#cb19-3" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">serviceType</span><span class="kw">:</span></span>
+<span id="cb19-4"><a href="#cb19-4" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="kw">-</span><span class="at"> LoadBalancer</span></span>
+<span id="cb19-5"><a href="#cb19-5" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="kw">-</span><span class="at"> NodePort</span></span>
+<span id="cb19-6"><a href="#cb19-6" aria-hidden="true" tabindex="-1"></a><span class="at">…</span></span></code></pre></div>
+<p>And apply updated configuration:</p>
+<pre class="shell"><code>% oc replace -f externaldns-test.yaml
+externaldns.externaldns.olm.openshift.io/test replaced</code></pre>
+<p>Now create a new <code>NodePort</code> Service. <code>service-nodeport.yaml</code>:</p>
+<div class="sourceCode" id="cb21"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb21-1"><a href="#cb21-1" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
+<span id="cb21-2"><a href="#cb21-2" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Service</span></span>
+<span id="cb21-3"><a href="#cb21-3" aria-hidden="true" tabindex="-1"></a><span class="fu">metadata</span><span class="kw">:</span></span>
+<span id="cb21-4"><a href="#cb21-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> nodeport</span></span>
+<span id="cb21-5"><a href="#cb21-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">labels</span><span class="kw">:</span></span>
+<span id="cb21-6"><a href="#cb21-6" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">app</span><span class="kw">:</span><span class="at"> echo</span></span>
+<span id="cb21-7"><a href="#cb21-7" aria-hidden="true" tabindex="-1"></a><span class="fu">spec</span><span class="kw">:</span></span>
+<span id="cb21-8"><a href="#cb21-8" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">type</span><span class="kw">:</span><span class="at"> NodePort</span></span>
+<span id="cb21-9"><a href="#cb21-9" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">selector</span><span class="kw">:</span></span>
+<span id="cb21-10"><a href="#cb21-10" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">app</span><span class="kw">:</span><span class="at"> echo</span></span>
+<span id="cb21-11"><a href="#cb21-11" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">ports</span><span class="kw">:</span></span>
+<span id="cb21-12"><a href="#cb21-12" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> nodeport</span></span>
+<span id="cb21-13"><a href="#cb21-13" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">protocol</span><span class="kw">:</span><span class="at"> TCP</span></span>
+<span id="cb21-14"><a href="#cb21-14" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">port</span><span class="kw">:</span><span class="at"> </span><span class="dv">12345</span></span></code></pre></div>
+<pre class="shell"><code>% oc create -f service-nodeport.yaml
+service/nodeport created</code></pre>
+<p>The ExternalDNS controller log output shows it generating an <code>SRV</code>
+record for the Service (wrapped for clarity):</p>
+<pre><code>…
+time=&quot;…&quot; level=debug msg=&quot;Endpoints generated from service:
+default/nodeport:
+[ _nodeport._tcp.nodeport.ci-ln-8hkfrzk-72292.origin-ci-int-gce.dev.rhcloud.com 0
+    IN SRV  0 50 30632
+    nodeport.ci-ln-8hkfrzk-72292.origin-ci-int-gce.dev.rhcloud.com []
+  nodeport.ci-ln-8hkfrzk-72292.origin-ci-int-gce.dev.rhcloud.com 0
+    IN A  10.0.0.4;10.0.0.5;10.0.128.3;10.0.128.2;10.0.128.4;10.0.0.3 []
+]&quot;
+…</code></pre>
+<p>Unfortunately, the <code>SRV</code> record didn’t actually make it to the
+Google Cloud DNS zone. I haven’t worked out why, yet. The <code>A</code>
+record does get created; it’s only the <code>SRV</code> record that is missing.
+I’ll update this article if/when I work out why the <code>SRV</code> record
+goes.</p>
+<h2 id="conclusion">Conclusion <a href="#conclusion" class="section">§</a></h2>
+<p>The ExternalDNS system is intended to automatically manage public
+DNS records for Kubernetes-hosted applications. It can
+automatically create <code>CNAME</code> records for OpenShift Routes and
+<code>A</code>/<code>AAAA</code> records for Services, including <code>LoadBalancer</code> services.
+For applications that use <code>A</code>/<code>AAAA</code> and <code>CNAME</code> records, it works
+well.</p>
+<p>Unfortunately, <code>SRV</code> records are not well supported. Certainly, it
+does not meet the needs of typical applications that use <code>SRV</code>
+records. Operators of such applications currently have one of two
+options: either manage the records manually (do not want), or
+implement the required automation yourselves (e.g. in the
+application’s <em>operator</em> program).</p>
+<p>The best way forward is to implement better support for <code>SRV</code>
+records in ExternalDNS itself, so everyone can benefit through
+shared effort and maintainership vested in the Kubernetes SIG. I
+shall file a ticket and perhaps restart discussions in the
+<a href="https://github.com/kubernetes-sigs/external-dns/pull/1330">abandoned pull request</a> with a view to getting this
+critical feature on the ExternalDNS roadmap. The extent of
+involvement of myself or my team in implementing or driving this
+feature work will be determined later.</p>]]></summary>
+</entry>
+<entry>
     <title>Running Pods in user namespaces without privileged SCCs</title>
     <link href="https://frasertweedale.github.io/blog-redhat/posts/2022-02-02-openshift-user-ns-without-anyuid.html" />
     <id>https://frasertweedale.github.io/blog-redhat/posts/2022-02-02-openshift-user-ns-without-anyuid.html</id>
@@ -1934,163 +2294,6 @@ sh-5.0$</code></pre>
 <h2 id="next-steps">Next steps <a href="#next-steps" class="section">§</a></h2>
 <p>At this point, I have successfully enabled cgroups v2 on worker nodes. Container sandboxes have their own cgroup namespace. But inside the container, systemd fails with permission errors when it attempts some cgroup management.</p>
 <p>The next step is to test the systemd container in OpenShift with cgroups v2 enabled <em>and</em> <a href="2021-03-03-openshift-4.7-user-namespaces.html">user namespaces enabled</a>. Both of these features are necessary for securely running a complex, systemd-based application in OpenShift. My hope is that enabling them <em>together</em> is the last step to getting systemd-based containers working properly in OpenShift. I will investigate and report the results in an upcoming post.</p>]]></summary>
-</entry>
-<entry>
-    <title>Multiple users in user namespaces on OpenShift</title>
-    <link href="https://frasertweedale.github.io/blog-redhat/posts/2021-03-10-openshift-user-namespace-multi-user.html" />
-    <id>https://frasertweedale.github.io/blog-redhat/posts/2021-03-10-openshift-user-namespace-multi-user.html</id>
-    <published>2021-03-10T00:00:00Z</published>
-    <updated>2021-03-10T00:00:00Z</updated>
-    <summary type="html"><![CDATA[<h1 id="multiple-users-in-user-namespaces-on-openshift">Multiple users in user namespaces on OpenShift</h1>
-<p>In the <a href="2021-03-03-openshift-4.7-user-namespaces.html">previous
-post</a> I confirmed
-that user namespaced pods are working in OpenShift 4.7. There are
-some rough edges, and the feature must be explicitly enabled in the
-cluster. But it fundamentally works.</p>
-<p>One area I identified for a follow-up investigation is the behaviour
-of containers that execute multiple processes as different users.
-The correct and “expected” behaviour is important for
-<em>systemd</em>-based containers (among other scenarios). I did not
-anticipate any problems, but this is something we need to verify as
-part of the effort to bring FreeIPA to OpenShift. This post records
-my steps to verify that multi-user containers work as needed in user
-namespaces on OpenShift.</p>
-<h2 id="setup">Setup <a href="#setup" class="section">§</a></h2>
-<h3 id="cluster-configuration">Cluster configuration <a href="#cluster-configuration" class="section">§</a></h3>
-<p>I configured the cluster as recorded in my earlier post, <a href="2020-12-01-openshift-crio-userns.html"><em>User
-namespaces in OpenShift via CRI-O
-annotations</em></a>.</p>
-<h3 id="test-program">Test program <a href="#test-program" class="section">§</a></h3>
-<p>I wrote a small Python program to serve as the container entrypoint.
-This program will run as <code>root</code> (in the namespace). For each of
-several hardcoded system accounts, it invokes <code>fork(2)</code> to duplicate
-the process. The child process executes <code>setuid(2)</code> to switch user
-account, then <code>execlp(3)</code> to replace itself with the <code>sleep(1)</code>
-program. The duration to sleep depends on the UID of the system
-account that executes it.</p>
-<p>Outside the container, we will be able to observe whether the
-program (and its child processes) are running, and which user
-accounts they are running under.</p>
-<p>The source of the test program:</p>
-<div class="sourceCode" id="cb1"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> os, pwd, time</span>
-<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>users <span class="op">=</span> [<span class="st">&#39;root&#39;</span>, <span class="st">&#39;daemon&#39;</span>, <span class="st">&#39;operator&#39;</span>, <span class="st">&#39;nobody&#39;</span>, <span class="st">&#39;mail&#39;</span>]</span>
-<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> user <span class="kw">in</span> users:</span>
-<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>    ent <span class="op">=</span> pwd.getpwnam(user)</span>
-<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>    uid <span class="op">=</span> ent.pw_uid</span>
-<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> os.fork() <span class="op">!=</span> <span class="dv">0</span>:</span>
-<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>        os.setuid(uid)</span>
-<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>        os.execlp(<span class="st">&#39;sleep&#39;</span>, <span class="st">&#39;sleep&#39;</span>, <span class="bu">str</span>(<span class="dv">3000</span> <span class="op">+</span> uid))</span>
-<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a>time.sleep(<span class="dv">3600</span>)</span></code></pre></div>
-<h3 id="container">Container <a href="#container" class="section">§</a></h3>
-<p>The <code>Containerfile</code> is simple. Based on <code>fedora:33-x86_64</code>, it
-copies the Python program into the container and defines the entry
-point:</p>
-<div class="sourceCode" id="cb2"><pre class="sourceCode dockerfile"><code class="sourceCode dockerfile"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="kw">FROM</span> fedora:33-x86_64</span>
-<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="kw">COPY</span> test_multiuser.py .</span>
-<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="kw">ENTRYPOINT</span> [<span class="st">&quot;python3&quot;</span>, <span class="st">&quot;test_multiuser.py&quot;</span>]</span></code></pre></div>
-<p>I built the container and pushed it to
-<a href="https://quay.io/repository/ftweedal/test-multiuser"><code>quay.io/ftweedal/test-multiuser:latest</code></a>.</p>
-<h3 id="pod-specification">Pod specification <a href="#pod-specification" class="section">§</a></h3>
-<p>The pod YAML is:</p>
-<div class="sourceCode" id="cb3"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
-<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Pod</span></span>
-<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="fu">metadata</span><span class="kw">:</span></span>
-<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> multiuser-test</span></span>
-<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">annotations</span><span class="kw">:</span></span>
-<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">io.kubernetes.cri-o.userns-mode</span><span class="kw">:</span></span>
-<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="st">&quot;auto:size=65536;map-to-root=true&quot;</span></span>
-<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a><span class="fu">spec</span><span class="kw">:</span></span>
-<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">containers</span><span class="kw">:</span></span>
-<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> multiuser-test</span></span>
-<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">image</span><span class="kw">:</span><span class="at"> quay.io/ftweedal/test-multiuser:latest</span></span>
-<span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">securityContext</span><span class="kw">:</span></span>
-<span id="cb3-13"><a href="#cb3-13" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">runAsUser</span><span class="kw">:</span><span class="at"> </span><span class="dv">0</span></span>
-<span id="cb3-14"><a href="#cb3-14" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">runAsGroup</span><span class="kw">:</span><span class="at"> </span><span class="dv">0</span></span>
-<span id="cb3-15"><a href="#cb3-15" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">securityContext</span><span class="kw">:</span></span>
-<span id="cb3-16"><a href="#cb3-16" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">sysctls</span><span class="kw">:</span></span>
-<span id="cb3-17"><a href="#cb3-17" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;net.ipv4.ping_group_range&quot;</span></span>
-<span id="cb3-18"><a href="#cb3-18" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">value</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;0 65535&quot;</span></span></code></pre></div>
-<p>The <code>io.kubernetes.cri-o.userns-mode</code> annotation tells CRI-O to run
-the pod in a user namespace. The <code>runAsUser</code> and <code>runAsGroup</code>
-fields tell CRI-O to execute the entry point process as <code>root</code>
-(inside the namespace).</p>
-<h2 id="verification">Verification <a href="#verification" class="section">§</a></h2>
-<p>I created the pod:</p>
-<pre class="shell"><code>% oc --as test create -f multiuser-test.yaml
-pod/multiuser-test created</code></pre>
-<p>After a short time, I queried the status, node
-and container ID of the pod:</p>
-<pre class="shell"><code>% oc get -o json pod multiuser-test \
-    | jq &#39;.status.phase,
-          .spec.nodeName,
-          .status.containerStatuses[0].containerID&#39;
-&quot;Running&quot;
-&quot;ft-47dev-1-4kplg-worker-0-qjfcj&quot;
-&quot;cri-o://ee693645f41aa5b54b890862778f173ebaf465f741231426c9e80237aa60660b&quot;</code></pre>
-<p>Next I opened a debug shell on the worker node and queried the
-container PID (process ID):</p>
-<pre class="shell"><code>% oc debug node/ft-47dev-1-4kplg-worker-0-qjfcj
-Starting pod/ft-47dev-1-4kplg-worker-0-qjfcj-debug ...
-To use host binaries, run `chroot /host`
-Pod IP: 10.8.0.165
-If you don&#39;t see a command prompt, try pressing enter.
-sh-4.2# chroot /host
-sh-4.4# crictl inspect ee69364 | jq .info.pid
-2445729</code></pre>
-<p>I viewed the user map of the process:</p>
-<pre class="shell"><code>sh-4.4# cat /proc/2445729/uid_map
-         0     265536      65536</code></pre>
-<p>This confirms that the container is in a user namespace. The UID
-range <code>0</code>–<code>65535</code> in the container is mapped to <code>265536</code>–<code>331071</code> on
-the host. That is in line with what I expect.</p>
-<p>Now let’s see what else is running in that namespace. We can use
-<code>pgrep(1)</code> with the <code>--ns PID</code> option, which selects all processes
-in the same namespace(s) as <code>PID</code>. Then <code>ps(1)</code> can tell us which
-users are executing those processes.</p>
-<pre class="shell"><code>sh-4.4# pgrep --ns 2445729 \
-        | xargs ps -o user,pid,cmd --sort pid
-USER         PID CMD
-265536   2445729 sleep 3000
-265538   2445766 sleep 3002
-265547   2445767 sleep 3011
-331070   2445768 sleep 68534
-265544   2445769 sleep 3008
-265536   2445770 python3 stuff.py</code></pre>
-<p>The entry point spawned the expected 5 child processes. Each is
-running as a different user. This is the <em>host</em> view of the
-processes. Subtracting the base of the <code>uid_map</code> from each UID, we
-observe that the UIDs <em>in the namespace</em> are: <code>0</code>, <code>2</code>, <code>11</code>,
-<code>65534</code> and <code>8</code>. These are the UIDs of the five accounts declared
-in the test program.</p>
-<h2 id="conclusion">Conclusion <a href="#conclusion" class="section">§</a></h2>
-<p>Containers that use multiple users work as expected when using user
-namespaces in OpenShift.</p>
-<p>The so far unstated assumption is that the mapped UID range includes
-all the UIDs actually used by the containerised application.
-Different applications use different UIDs, and different operating
-systems define different UIDs. So take care that the UID map hinted
-by the CRI-O annotation suits the container and application.</p>
-<p>Note that mapped UID ranges in Linux need not be contiguous (either
-outside or inside the container). That is, a process may have
-multiple lines in its <code>/proc/&lt;PID&gt;/uid_map</code>, mapping multiple,
-non-overlapping and not-necessarily-adjacent ranges. But I am
-talking about the Linux user namespace feature here. I have not yet
-checked whether CRI-O + OpenShift admits this more complex scenario.
-But it is fundamentally possible.</p>
-<p>The <code>nobody</code> user in Fedora has UID <code>65534</code>. Therefore a “simple
-mapping” must have a size not less than <em>65535</em> to use the <code>nobody</code>
-account in a user namespaced pod. OK, let’s round that up to <em>65536
-= 2<sup>16</sup></em>. With a total UID space of <em>2<sup>16+16</sup></em>, you are limited to
-less than <em>65536</em> separate mappings. It sounds like a lot, but this
-limit could be a problem in large, complex environments. But most
-applications will use only a handful of UIDs. Non-contiguous UID
-mapping could dramatically increase the number of ranges available,
-by not mapping UIDs that applications do not use. But there is
-substantial complexity in defining and managing non-contiguous UID
-mappings.</p>]]></summary>
 </entry>
 
 </feed>
