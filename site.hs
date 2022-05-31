@@ -155,7 +155,7 @@ removeFormatting = query f
     Str s -> [Str s]
     Code _ s -> [Str s]
     Space -> [Space]
-    SoftBreak -> [SoftBreak]
+    SoftBreak -> [Space]
     LineBreak -> [LineBreak]
     Math _ s -> [Str s]
     RawInline _ s -> [Str s]
