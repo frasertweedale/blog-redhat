@@ -26,14 +26,49 @@
 
 <div id="postContent">
     <h1 id="wildcard-certificates-in-freeipa">Wildcard certificates in FreeIPA</h1>
-<p>The FreeIPA team sometimes gets asked about wildcard certificate support. A wildcard certificate is an X.509 certificate where the DNS-ID has a wildcard in it (typically as the most specific domain component, e.g. <code>*.cloudapps.example.com</code>). Most TLS libraries match wildcard domains in the obvious way.</p>
-<p>In this blog post we will discuss the state of wildcard certificates in FreeIPA, but before proceeding it is fitting to point out that <a href="https://tools.ietf.org/html/rfc6125#section-7.2">wildcard certificates are deprecated</a>, and for good reason. While the compromise of any TLS private key is a serious matter, the attacker can only impersonate the entities whose names appear on the certificate (typically one or a handful of DNS addresses). But a wildcard certificate can impersonate <em>any</em> host whose name happens to match the wildcard value.</p>
-<p>In time, validation of wildcard domains will be disabled by default and (hopefully) eventually removed from TLS libraries. The emergence of protocols like ACME that allow automated domain validation and certificate issuance mean that there is no real need for wildcard certificates anymore, but a lot of programs are yet to implement ACME or similar; therefore there is still a perceived need for wildcard certificates. In my opinion some of this boils down to lack of awareness of novel solutions like ACME, but there can also be a lack of willingness to spend the time and money to implement them, or a desire to avoid changing deployed systems, or taking a “wait and see” approach when it comes to new, security-related protocols or technologies. So for the time being, some organisations have good reasons to want wildcard certificates.</p>
-<p>FreeIPA currently has no special support for wildcard certificates, but with support for custom certificate profiles, we can create and use a profile for issuing wildcard certificates.</p>
+<div class="note">
+<p>This post explains how to issue certificates where the <strong>Common Name
+(CN)</strong> attribute contains a wildcard DNS-ID. As of 2022, most
+browsers no longer use the CN attribute for certificate validation,
+<strong>even for private CAs</strong>. See my <a href="2017-06-26-freeipa-wildcard-san.html">follow-up post</a> for how to
+configure a Dogtag certificate profile that creates wildcard DNS-IDs
+in the <strong>Subject Alternative Name</strong> extension.</p>
+</div>
+<p>The FreeIPA team sometimes gets asked about wildcard certificate
+support. A wildcard certificate is an X.509 certificate where the
+DNS-ID has a wildcard in it (typically as the most specific domain
+component, e.g. <code>*.cloudapps.example.com</code>). Most TLS libraries
+match wildcard domains in the obvious way.</p>
+<p>In this blog post we will discuss the state of wildcard certificates
+in FreeIPA, but before proceeding it is fitting to point out that
+<a href="https://tools.ietf.org/html/rfc6125#section-7.2">wildcard certificates are deprecated</a>, and for good
+reason. While the compromise of any TLS private key is a serious
+matter, the attacker can only impersonate the entities whose names
+appear on the certificate (typically one or a handful of DNS
+addresses). But a wildcard certificate can impersonate <em>any</em> host
+whose name happens to match the wildcard value.</p>
+<p>In time, validation of wildcard domains will be disabled by default
+and (hopefully) eventually removed from TLS libraries. The
+emergence of protocols like ACME that allow automated domain
+validation and certificate issuance mean that there is no real need
+for wildcard certificates anymore, but a lot of programs are yet to
+implement ACME or similar; therefore there is still a perceived need
+for wildcard certificates. In my opinion some of this boils down to
+lack of awareness of novel solutions like ACME, but there can also
+be a lack of willingness to spend the time and money to implement
+them, or a desire to avoid changing deployed systems, or taking a
+“wait and see” approach when it comes to new, security-related
+protocols or technologies. So for the time being, some
+organisations have good reasons to want wildcard certificates.</p>
+<p>FreeIPA currently has no special support for wildcard certificates,
+but with support for custom certificate profiles, we can create and
+use a profile for issuing wildcard certificates.</p>
 <h2 id="creating-a-wildcard-certificate-profile-in-freeipa">Creating a wildcard certificate profile in FreeIPA <a href="#creating-a-wildcard-certificate-profile-in-freeipa" class="section">§</a></h2>
 <p>This procedure works on FreeIPA 4.2 (RHEL 7.2) and later.</p>
-<p>First, <code>kinit admin</code> and export an existing service certificate profile configuration to a file:</p>
-<pre><code>ftweedal% ipa certprofile-show caIPAserviceCert --out wildcard.cfg
+<p>First, <code>kinit admin</code> and export an existing service certificate
+profile configuration to a file:</p>
+<pre class="shell"><code>ftweedal% ipa certprofile-show caIPAserviceCert \
+    --out wildcard.cfg
 ---------------------------------------------------
 Profile configuration stored in file 'wildcard.cfg'
 ---------------------------------------------------
@@ -41,16 +76,17 @@ Profile configuration stored in file 'wildcard.cfg'
   Profile description: Standard profile for network services
   Store issued certificates: TRUE</code></pre>
 <p>Modify the profile; the minimal diff is:</p>
-<pre><code>--- wildcard.cfg.bak
-+++ wildcard.cfg
-@@ -19 +19 @@
--policyset.serverCertSet.1.default.params.name=CN=$request.req_subject_name.cn$, o=EXAMPLE.COM
-+policyset.serverCertSet.1.default.params.name=CN=*.$request.req_subject_name.cn$, o=EXAMPLE.COM
-@@ -108 +108 @@
--profileId=caIPAserviceCert
-+profileId=wildcard</code></pre>
-<p>Now import the modified configuration as a new profile called <code>wildcard</code>:</p>
-<pre><code>ftweedal% ipa certprofile-import wildcard \
+<div class="sourceCode" id="cb2"><pre class="sourceCode diff"><code class="sourceCode diff"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="kw">--- wildcard.cfg.bak</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="dt">+++ wildcard.cfg</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="dt">@@ -19 +19 @@</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="st">-policyset.serverCertSet.1.default.params.name=CN=$request.req_subject_name.cn$, o=EXAMPLE.COM</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a><span class="va">+policyset.serverCertSet.1.default.params.name=CN=*.$request.req_subject_name.cn$, o=EXAMPLE.COM</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a><span class="dt">@@ -108 +108 @@</span></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a><span class="st">-profileId=caIPAserviceCert</span></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a><span class="va">+profileId=wildcard</span></span></code></pre></div>
+<p>Now import the modified configuration as a new profile called
+<code>wildcard</code>:</p>
+<pre class="shell"><code>ftweedal% ipa certprofile-import wildcard \
     --file wildcard.cfg \
     --desc 'Wildcard certificates' \
     --store 1
@@ -60,15 +96,17 @@ Imported profile &quot;wildcard&quot;
   Profile ID: wildcard
   Profile description: Wildcard certificates
   Store issued certificates: TRUE</code></pre>
-<p>Next, set up a CA ACL to allow the <code>wildcard</code> profile to be used with the <code>cloudapps.example.com</code> host:</p>
-<pre><code>ftweedal% ipa caacl-add wildcard-hosts
+<p>Next, set up a CA ACL to allow the <code>wildcard</code> profile to be used
+with the <code>cloudapps.example.com</code> host:</p>
+<pre class="shell"><code>ftweedal% ipa caacl-add wildcard-hosts
 -----------------------------
 Added CA ACL &quot;wildcard-hosts&quot;
 -----------------------------
   ACL name: wildcard-hosts
   Enabled: TRUE
 
-ftweedal% ipa caacl-add-profile wildcard-hosts --certprofiles wildcard
+ftweedal% ipa caacl-add-profile wildcard-hosts \
+    --certprofiles wildcard
   ACL name: wildcard-hosts
   Enabled: TRUE
   CAs: ipa
@@ -77,7 +115,8 @@ ftweedal% ipa caacl-add-profile wildcard-hosts --certprofiles wildcard
 Number of members added 1
 -------------------------
 
-ftweedal% ipa caacl-add-host wildcard-hosts --hosts cloudapps.example.com
+ftweedal% ipa caacl-add-host wildcard-hosts \
+    --hosts cloudapps.example.com
   ACL name: wildcard-hosts
   Enabled: TRUE
   CAs: ipa
@@ -86,20 +125,22 @@ ftweedal% ipa caacl-add-host wildcard-hosts --hosts cloudapps.example.com
 -------------------------
 Number of members added 1
 -------------------------</code></pre>
-<p>An additional step is required in FreeIPA 4.4 (RHEL 7.3) and later (it does not apply to FreeIPA &lt; 4.4):</p>
-<pre><code>ftweedal% ipa caacl-add-ca wildcard-hosts --cas ipa
+<p>An additional step is required in FreeIPA 4.4 (RHEL 7.3) and later
+(it does not apply to FreeIPA &lt; 4.4):</p>
+<pre class="shell"><code>ftweedal% ipa caacl-add-ca wildcard-hosts --cas ipa
   ACL name: wildcard-hosts
   Enabled: TRUE
   CAs: ipa
 -------------------------
 Number of members added 1
 -------------------------</code></pre>
-<p>Then create a CSR with subject <code>CN=cloudapps.example.com</code> (details omitted), and issue the certificate:</p>
-<pre><code>ftweedal% ipa cert-request my.csr \
+<p>Then create a CSR with subject <code>CN=cloudapps.example.com</code> (details
+omitted), and issue the certificate:</p>
+<pre class="shell"><code>ftweedal% ipa cert-request my.csr \
     --principal host/cloudapps.example.com \
     --profile wildcard
   Issuing CA: ipa
-  Certificate: MIIEJzCCAw+gAwIBAgIBCzANBgkqhkiG9w0BAQsFADBBMR8...
+  Certificate: MIIEJzCCAw+gAwIBAgIBCzANBgkqhkiG9w0BAQsFAD…
   Subject: CN=*.cloudapps.example.com,O=EXAMPLE.COM
   Issuer: CN=Certificate Authority,O=EXAMPLE.COM
   Not Before: Mon Feb 20 04:21:41 2017 UTC
@@ -107,17 +148,34 @@ Number of members added 1
   Serial number: 11
   Serial number (hex): 0xB</code></pre>
 <p>Alternatively, you can use Certmonger to request the certificate:</p>
-<pre><code>ftweedal% ipa-getcert request \
+<pre class="shell"><code>ftweedal% ipa-getcert request \
   -d /etc/httpd/alias -p /etc/httpd/alias/pwdfile.txt \
   -n wildcardCert \
   -T wildcard</code></pre>
-<p>This will request a certificate for the current host. The <code>-T</code> option specifies the profile to use.</p>
+<p>This will request a certificate for the current host. The <code>-T</code>
+option specifies the profile to use.</p>
 <h2 id="discussion">Discussion <a href="#discussion" class="section">§</a></h2>
-<p>Observe that the subject common name (CN) in the CSR <em>does not contain the wildcard</em>. FreeIPA requires naming information in the CSR to perfectly match the subject principal. As mentioned in the introduction, FreeIPA has no specific support for wildcard certificates, so if a wildcard were included in the CSR, it would not match the subject principal and the request would be rejected.</p>
-<p>When constructing the certificate, Dogtag performs a variable substitution into a subject name string. That string contains the literal wildcard and the period to its right, and the common name (CN) from the CSR gets substituted in after that. The relevant line in the profile configuration is:</p>
+<p>Observe that the subject common name (CN) in the CSR <em>does not
+contain the wildcard</em>. FreeIPA requires naming information in the
+CSR to perfectly match the subject principal. As mentioned in the
+introduction, FreeIPA has no specific support for wildcard
+certificates, so if a wildcard were included in the CSR, it would
+not match the subject principal and the request would be rejected.</p>
+<p>When constructing the certificate, Dogtag performs a variable
+substitution into a subject name string. That string contains the
+literal wildcard and the period to its right, and the common name
+(CN) from the CSR gets substituted in after that. The relevant line
+in the profile configuration is:</p>
 <pre><code>policyset.serverCertSet.1.default.params.name=CN=*.$request.req_subject_name.cn$, o=EXAMPLE.COM</code></pre>
-<p>When it comes to wildcards in <em>Subject Alternative Name</em> DNS-IDs, it might be possible to configure a Dogtag profile to add this in a similar way to the above, but I do not recommend it, nor am I motivated to work out a reliable way to do this, given that wildcard certificates are deprecated. (By the time TLS libraries eventually remove support for treating the subject CN as a DNS-ID, I will have little sympathy for organisations that still haven’t moved away from wildcard certs).</p>
-<p>In conclusion: you shouldn’t use wildcard certificates, and FreeIPA has no special support for them, but if you really need to, you can do it with a custom certificate profile.</p>
+<p>When it comes to wildcards in <em>Subject Alternative Name</em> DNS-IDs, it
+might be possible to configure a Dogtag profile to add this in a
+similar way to the above, but I do not recommend it, nor am I
+motivated to work out a reliable way to do this, given that wildcard
+certificates are deprecated and automation is reducing the overall
+need for them.</p>
+<p>In conclusion: you shouldn’t use wildcard certificates, and FreeIPA
+has no special support for them, but if you really need to, you can
+do it with a custom certificate profile.</p>
 </div>
 <div id="postFooter">
     <div id="recent">
