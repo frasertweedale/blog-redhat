@@ -8,8 +8,196 @@
         <name>Fraser Tweedale</name>
         <email>frase@frase.id.au</email>
     </author>
-    <updated>2022-03-24T00:00:00Z</updated>
+    <updated>2022-08-29T00:00:00Z</updated>
     <entry>
+    <title>Controlling header formatting in JAX-RS applications</title>
+    <link href="https://frasertweedale.github.io/blog-redhat/posts/2022-08-29-jax-rs-header-formatting.html" />
+    <id>https://frasertweedale.github.io/blog-redhat/posts/2022-08-29-jax-rs-header-formatting.html</id>
+    <published>2022-08-29T00:00:00Z</published>
+    <updated>2022-08-29T00:00:00Z</updated>
+    <summary type="html"><![CDATA[<h1 id="controlling-header-formatting-in-jax-rs-applications">Controlling header formatting in JAX-RS applications</h1>
+<p>I’m been implementing an <a href="https://www.rfc-editor.org/rfc/rfc7030"><em>Enrollment over Secure Transport
+(EST)</em></a> service in Dogtag PKI. During testing, I found
+that a notable client implementation parses the response
+<code>Content-Type</code> header in the following way:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> <span class="op">(!</span>strncmp<span class="op">(</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    multipart_get_data_content_type<span class="op">(</span>parser<span class="op">),</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;application/pkcs7-mime; smime-type=certs-only&quot;</span><span class="op">,</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    <span class="dv">45</span><span class="op">)</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>  <span class="op">)</span> <span class="op">{</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>    <span class="op">...</span></span></code></pre></div>
+<p>The Dogtag EST service is a <a href="https://projects.eclipse.org/projects/ee4j.rest"><em>Jakarta RESTful Web Services
+(JAX-RS)</em></a> application. It produces a <code>Content-Type</code> header
+value different from what the client expects (note the lack of
+whitespace):</p>
+<pre><code>application/pkcs7-mime;smime-type=certs-only</code></pre>
+<p>As a consequence, the EST client fails to process the response.
+This is certainly a defect in the EST client implementation. But
+EST is used by many embedded or hard to update network devices. Or
+updates might not be available (now, <em>ever?</em>)</p>
+<p>So, I needed to find a way to override the header default header
+formatting. This blog post describes my solution.</p>
+<h2 id="specifying-the-content-type-header">Specifying the <code>Content-Type</code> header <a href="#specifying-the-content-type-header" class="section">§</a></h2>
+<p>The JAX-RS <code>@Produces</code> annotation specifies the <code>Content-Type</code>
+header value for a particular resource:</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode java"><code class="sourceCode java"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="at">@POST</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="at">@Path</span><span class="op">(</span><span class="st">&quot;simpleenroll&quot;</span><span class="op">)</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="at">@Consumes</span><span class="op">(</span><span class="st">&quot;application/pkcs10&quot;</span><span class="op">)</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a><span class="at">@Produces</span><span class="op">(</span><span class="st">&quot;application/pkcs7-mime; smime-type=certs-only&quot;</span><span class="op">)</span></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a><span class="kw">public</span> <span class="bu">Response</span> <span class="fu">simpleenroll</span><span class="op">(</span><span class="dt">byte</span><span class="op">[]</span> data<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>    <span class="kw">...</span></span></code></pre></div>
+<p>Note that the string value is not used <em>verbatim</em>. Instead, it is
+parsed into a <a href="https://docs.oracle.com/javaee/7/api/javax/ws/rs/core/MediaType.html"><code>MediaType</code></a> value and stored as such in
+the response headers (a <code>MultivaluedMap&lt;String, Object&gt;</code>).</p>
+<p>When serialising the <code>Response</code>, header values are stringified via
+types that implement the
+<a href="https://docs.oracle.com/javaee/7/api/javax/ws/rs/ext/RuntimeDelegate.HeaderDelegate.html"><code>RuntimeDelegate.HeaderDelegate&lt;T&gt;</code></a> interface,
+where <code>T</code> is the real type of the header value <code>Object</code>. To
+serialise a <code>MediaType</code> header value, the JAX-RS machinery uses a
+instance of a a class that implements
+<code>RuntimeDelegate.HeaderDelegate&lt;MediaType&gt;</code>.</p>
+<p><code>HeaderDelegate</code> <em>implementations</em> are not part of the JAX-RS API.
+They are provided by the JAX-RS implementation. In Dogtag PKI,
+that’s <a href="https://resteasy.dev/">RESTEasy</a>. The class in question is:</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode java"><code class="sourceCode java"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="kw">public</span> <span class="kw">class</span> MediaTypeHeaderDelegate</span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>  <span class="kw">implements</span> RuntimeDelegate<span class="op">.</span><span class="fu">HeaderDelegate</span><span class="op">&lt;</span>MediaType<span class="op">&gt;</span> <span class="op">{</span></span></code></pre></div>
+<p>The <code>toString(MediaType type)</code> method provided by this class prints
+the value without a space character between the subtype and the
+parameters. For the example resource above, it produces the string:</p>
+<pre><code>application/pkcs7-mime;smime-type=certs-only</code></pre>
+<p>This is a legal production in the HTTP grammar, according to <a href="https://www.rfc-editor.org/rfc/rfc7230#section-3.2.3">RFC
+7230</a> and <a href="https://www.rfc-editor.org/rfc/rfc7231#section-3.1.1.1">RFC 7231</a>:</p>
+<pre><code>media-type = type &quot;/&quot; subtype *( OWS &quot;;&quot; OWS parameter )
+OWS = *( SP / HTAB )</code></pre>
+<p>However, we already saw that at least one EST client is unable to
+process this value, because it expects a space character before the
+parameters:</p>
+<pre><code>application/pkcs7-mime; smime-type=certs-only</code></pre>
+<p>This is also a legal production. But the client is using <code>strncmp</code>
+to look for this exact string, instead of properly parsing the
+value. If we can’t fix the client behaviour, we have to find a
+workaround on the server to produce the exact string the client
+expects.</p>
+<h2 id="idea-1-custom-headerdelegate">Idea 1: custom <code>HeaderDelegate</code> <a href="#idea-1-custom-headerdelegate" class="section">§</a></h2>
+<p>My first idea was to override the <code>HeaderDelegate&lt;MediaType&gt;</code> with
+our own implementation. I couldn’t find a general way to do that
+via the JAX-RS API. It does seem that you can do it using RESTEasy
+classes directly:</p>
+<ol type="1">
+<li><p>Implement the custom <code>HeaderDelegate&lt;MediaType&gt;</code>. To avoid
+unnecessary work you could extend RESTEasy’s
+<code>MediaTypeHeaderDelegate</code> and override just the
+<code>toString(MediaType)</code> method.</p></li>
+<li><p>Obtain <code>ResteasyProviderFactory.getInstance()</code>. Invoke
+<code>.addHeaderDelegate(MediaType.class, customInst)</code> to replace the
+<code>HeaderDelegate&lt;MediaType&gt;</code>.</p></li>
+</ol>
+<p>This approach has several disadvantages:</p>
+<ul>
+<li><p>Directly coupled to the RESTEasy implementation. May break if
+RESTEasy implementation details change and will not work with
+other JAX-RS implementations.</p></li>
+<li><p>Need to implement a custom <code>HeaderDelegate&lt;MediaType&gt;</code> with the
+“correct” serialisation behaviour.</p></li>
+<li><p><strong>The “correct” serialisation behaviour might break <em>other</em> clients
+with different bugs/quirks.</strong></p></li>
+</ul>
+<p>For these reasons I rejected the first idea and sought an approach
+that avoids these disadvantages.</p>
+<h2 id="idea-2-response-filter">Idea 2: response filter <a href="#idea-2-response-filter" class="section">§</a></h2>
+<p>My next idea was to use a <em>response filter</em> to reformat the
+<code>Content-Type</code> response header. The Servlet API defines the
+<a href="https://docs.oracle.com/javaee/7/api/javax/ws/rs/container/ContainerResponseFilter.html"><code>ContainerResponseFilter</code></a> interface:</p>
+<div class="sourceCode" id="cb8"><pre class="sourceCode java"><code class="sourceCode java"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="kw">public</span> <span class="kw">interface</span> ContainerResponseFilter <span class="op">{</span></span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">void</span> <span class="fu">filter</span><span class="op">(</span></span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a>      ContainerRequestContext requestContext<span class="op">,</span></span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a>      ContainerResponseContext responseContext<span class="op">)</span></span>
+<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a>    <span class="kw">throws</span> <span class="bu">IOException</span></span>
+<span id="cb8-6"><a href="#cb8-6" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<p>The application applies each registered filter to each response,
+before serialising and sending the response. At the time response
+filters are applied, the <code>Content-Type</code> header value is a
+<code>MediaType</code>. It has not yet been converted to a <code>String</code>.</p>
+<p>A response filter can add, remove, or replace response headers.
+Recall that headers are stored in a <code>MultivaluedMap&lt;String, Object&gt;</code>. This means that we can replace a <code>MediaType</code> value (whose
+serialisation is determined by the <code>HeaderDelegate</code>) with a <code>String</code>
+value (which will be written <em>as is</em>).</p>
+<p>The <code>.equals</code> equality test for <code>MediaType</code> properly compares the
+properties of the instance without regard to string representation.
+As it should. This enables a succinct implementation where we:</p>
+<ol type="1">
+<li><p>Decalre <em>verbatim</em> <code>String</code> header values we want to see in the
+response.</p></li>
+<li><p>Parse those strings into <code>MediaType</code> values.</p></li>
+<li><p>Match the <code>Content-Type</code> value in the response against parsed
+values.</p></li>
+<li><p>Replace matched header values with the corresponding <em>verbatim</em>
+<code>String</code>.</p></li>
+</ol>
+<p>The implementation is straightforward:</p>
+<div class="sourceCode" id="cb9"><pre class="sourceCode java"><code class="sourceCode java"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="at">@Provider</span></span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a><span class="kw">public</span> <span class="kw">class</span> ReformatContentTypeResponseFilter</span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a>    <span class="kw">implements</span> ContainerResponseFilter <span class="op">{</span></span>
+<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a>  <span class="kw">private</span> <span class="dt">static</span> <span class="bu">String</span><span class="op">[]</span> verbatim <span class="op">=</span> <span class="op">{</span></span>
+<span id="cb9-6"><a href="#cb9-6" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;application/pkcs7-mime; smime-type=certs-only&quot;</span></span>
+<span id="cb9-7"><a href="#cb9-7" aria-hidden="true" tabindex="-1"></a>  <span class="op">};</span></span>
+<span id="cb9-8"><a href="#cb9-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-9"><a href="#cb9-9" aria-hidden="true" tabindex="-1"></a>  <span class="kw">private</span> <span class="dt">static</span> <span class="bu">HashMap</span><span class="op">&lt;</span>MediaType<span class="op">,</span> <span class="bu">String</span><span class="op">&gt;</span> substitutions <span class="op">=</span></span>
+<span id="cb9-10"><a href="#cb9-10" aria-hidden="true" tabindex="-1"></a>    <span class="kw">new</span> <span class="bu">HashMap</span><span class="op">&lt;&gt;();</span></span>
+<span id="cb9-11"><a href="#cb9-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-12"><a href="#cb9-12" aria-hidden="true" tabindex="-1"></a>  <span class="dt">static</span> <span class="op">{</span></span>
+<span id="cb9-13"><a href="#cb9-13" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> <span class="op">(</span><span class="bu">String</span> s <span class="op">:</span> verbatim<span class="op">)</span></span>
+<span id="cb9-14"><a href="#cb9-14" aria-hidden="true" tabindex="-1"></a>      substitutions<span class="op">.</span><span class="fu">put</span><span class="op">(</span>MediaType<span class="op">.</span><span class="fu">valueOf</span><span class="op">(</span>s<span class="op">),</span> s<span class="op">);</span></span>
+<span id="cb9-15"><a href="#cb9-15" aria-hidden="true" tabindex="-1"></a>  <span class="op">}</span></span>
+<span id="cb9-16"><a href="#cb9-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-17"><a href="#cb9-17" aria-hidden="true" tabindex="-1"></a>  <span class="at">@Override</span></span>
+<span id="cb9-18"><a href="#cb9-18" aria-hidden="true" tabindex="-1"></a>  <span class="kw">public</span> <span class="dt">void</span> <span class="fu">filter</span><span class="op">(</span></span>
+<span id="cb9-19"><a href="#cb9-19" aria-hidden="true" tabindex="-1"></a>      ContainerRequestContext requestContext<span class="op">,</span></span>
+<span id="cb9-20"><a href="#cb9-20" aria-hidden="true" tabindex="-1"></a>      ContainerResponseContext responseContext<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb9-21"><a href="#cb9-21" aria-hidden="true" tabindex="-1"></a>    MultivaluedMap<span class="op">&lt;</span><span class="bu">String</span><span class="op">,</span> <span class="bu">Object</span><span class="op">&gt;</span> headers <span class="op">=</span></span>
+<span id="cb9-22"><a href="#cb9-22" aria-hidden="true" tabindex="-1"></a>      responseContext<span class="op">.</span><span class="fu">getHeaders</span><span class="op">()</span></span>
+<span id="cb9-23"><a href="#cb9-23" aria-hidden="true" tabindex="-1"></a>    <span class="bu">Object</span> v <span class="op">=</span> headers<span class="op">.</span><span class="fu">getFirst</span><span class="op">(</span>HttpHeaders<span class="op">.</span><span class="fu">CONTENT_TYPE</span><span class="op">);</span></span>
+<span id="cb9-24"><a href="#cb9-24" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> <span class="op">(</span>v <span class="op">!=</span> <span class="kw">null</span> <span class="op">&amp;&amp;</span> v <span class="kw">instanceof</span> MediaType</span>
+<span id="cb9-25"><a href="#cb9-25" aria-hidden="true" tabindex="-1"></a>        <span class="op">&amp;&amp;</span> substitutions<span class="op">.</span><span class="fu">containsKey</span><span class="op">(</span>v<span class="op">))</span> <span class="op">{</span></span>
+<span id="cb9-26"><a href="#cb9-26" aria-hidden="true" tabindex="-1"></a>      headers<span class="op">.</span><span class="fu">putSingle</span><span class="op">(</span></span>
+<span id="cb9-27"><a href="#cb9-27" aria-hidden="true" tabindex="-1"></a>        HttpHeaders<span class="op">.</span><span class="fu">CONTENT_TYPE</span><span class="op">,</span> substitutions<span class="op">.</span><span class="fu">get</span><span class="op">(</span>v<span class="op">));</span></span>
+<span id="cb9-28"><a href="#cb9-28" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb9-29"><a href="#cb9-29" aria-hidden="true" tabindex="-1"></a>  <span class="op">}</span></span>
+<span id="cb9-30"><a href="#cb9-30" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-31"><a href="#cb9-31" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<p>There is currently only one header value whose formatting I need to
+precisely control. If we discover more, we only need to add the
+desired string serialisation to the <code>verbatim</code> array.</p>
+<p>We must consider the possible scenario of different clients with
+different quirks. In that case, we could maintain separate
+substitutions maps for each known problematic client. We would use
+the <code>User-Agent</code> header, or other request characteristics, to
+identify the client and select the corresponding substitution map
+(if any). Hopefully this situation does not arise. But if it does,
+the increase in complexity of the solution is tolerable.</p>
+<p>This solution works well and avoids the disadvantages of my first
+idea:</p>
+<ul>
+<li><p>Only uses official Servlet and JAX-RS classes and interfaces.
+This solution will work across all JAX-RS implementations.</p></li>
+<li><p>Does not (re)implement <code>MediaType</code> serialsation. You just declare
+the exact string values you want to see in responses.</p></li>
+<li><p>With a moderate increase in complexity, can handle different
+clients with incompatible quriks.</p></li>
+</ul>
+<h2 id="conclusion">Conclusion <a href="#conclusion" class="section">§</a></h2>
+<p>It’s unfortunate that this workaround was even necessary. But given
+that it was, I’m happy with the solution. It is simple and portable
+across Servlet and JAX-RS implementations.</p>
+<p>The same approach could be used for controlling formatting of any
+header value types, not just <code>Content-Type</code> / <code>MediaType</code>. I hope
+that sharing this solution will help people who encounter similar
+problems. At the very least, I hope that because of this post you
+learned something about Servlet and JAX-RS response header
+processing.</p>]]></summary>
+</entry>
+<entry>
     <title>Experimenting with ExternalDNS</title>
     <link href="https://frasertweedale.github.io/blog-redhat/posts/2022-03-24-k8s-external-dns.html" />
     <id>https://frasertweedale.github.io/blog-redhat/posts/2022-03-24-k8s-external-dns.html</id>
@@ -2027,273 +2215,6 @@ Accept-Ranges: bytes</code></pre>
 <p>Otherwise, I will investigate whether we could use the OCI <code>createRuntime</code> hook to <code>chown(2)</code> the container’s cgroup scope. Unfortunately, the semantics of <code>createRuntime</code> is currently underspecified. The specification is ambiguous about whether the containers cgroup scope exists when this hook is executed. If this approach is valid, we will have to update CRI-O to add the relevant hook command to the OCI config.</p>
 <p>Another possible approach is for the high-level runtime to perform the ownership change itself. This would be done after it invokes the OCI runtime’s <code>create</code> command, but before it invokes <code>start</code>. (See also the OCI <a href="https://github.com/opencontainers/runtime-spec/blob/master/runtime.md#lifecycle">container lifecycle description</a>). However, on OpenShift CRI-O runs as user <code>containers</code> and the container’s cgroup scope is owned by <code>root</code>. So I have doubts about the viability of this approach, as well as the OCI hook approach.</p>
 <p>Whatever the outcome, there will certainly be more blog posts as I continue this long-running investigation. I still have much to learn as I struggle towards the goal of systemd-based workloads running securely on OpenShift.</p>]]></summary>
-</entry>
-<entry>
-    <title>systemd containers on OpenShift with cgroups v2</title>
-    <link href="https://frasertweedale.github.io/blog-redhat/posts/2021-03-30-openshift-cgroupv2-systemd.html" />
-    <id>https://frasertweedale.github.io/blog-redhat/posts/2021-03-30-openshift-cgroupv2-systemd.html</id>
-    <published>2021-03-30T00:00:00Z</published>
-    <updated>2021-03-30T00:00:00Z</updated>
-    <summary type="html"><![CDATA[<h1 id="systemd-containers-on-openshift-with-cgroups-v2">systemd containers on OpenShift with cgroups v2</h1>
-<p><em>systemd</em> in a container is a practical reality of migrating nontrivial applications to container infrastructure. It is not the “cloud native” way, but many applications written in The Before Times cannot be broken up and rearchitected without a huge cost. And so, there is a demand to run containers that run systemd, which in turn manages application services.</p>
-<p>FreeIPA is one example. Its traditional environment is a dedicated Linux server (ignoring replicas). There are <em>many</em> services which both interact among themselves, and process requests from external clients and other FreeIPA servers. The engineering effort to redesign FreeIPA as a suite of several containerised services is expected to be very high. Therefore our small team focused on bringing FreeIPA to OpenShift therefore decided to pursue the “monolithic container” approach.</p>
-<p>Support for systemd containers in OpenShift, <em>without hacks</em>, is a prerequisite for this approach to viable. In this post I experiment with systemd containers in OpenShift and share my results.</p>
-<h2 id="test-application-http-server">Test application: HTTP server <a href="#test-application-http-server" class="section">§</a></h2>
-<p>To test systemd containers on OpenShift, I created a Fedora-based container running the <em>nginx</em> HTTP server. I enable the <code>nginx</code> systemd and set the default command to <code>/sbin/init</code>, which is systemd. The server doesn’t host any interesting content, but if it responds to requests we know that systemd is working.</p>
-<p>The <code>Containerfile</code> definition is:</p>
-<div class="sourceCode" id="cb1"><pre class="sourceCode dockerfile"><code class="sourceCode dockerfile"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="kw">FROM</span> fedora:33-x86_64</span>
-<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="kw">RUN</span> dnf -y install nginx &amp;&amp; dnf clean all &amp;&amp; systemctl enable nginx</span>
-<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="kw">EXPOSE</span> 80</span>
-<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="kw">CMD</span> [ <span class="st">&quot;/sbin/init&quot;</span> ]</span></code></pre></div>
-<p>I built the container on my workstation and tagged it <code>test-nginx</code>. To check that the container works, I ran it locally and performed an HTTP request via <code>curl</code>:</p>
-<pre class="shell"><code>% podman run --detach --publish 8080:80 test-nginx
-2d8059e555c821d9ffcccd84bee88996207794957696c54e8d29787e8c33fab3
-
-% curl --head localhost:8080
-HTTP/1.1 200 OK
-Server: nginx/1.18.0
-Date: Thu, 25 Mar 2021 00:22:23 GMT
-Content-Type: text/html
-Content-Length: 5564
-Last-Modified: Mon, 27 Jul 2020 22:20:49 GMT
-Connection: keep-alive
-ETag: &quot;5f1f5341-15bc&quot;
-Accept-Ranges: bytes
-
-% podman kill 2d8059e5
-2d8059e555c821d9ffcccd84bee88996207794957696c54e8d29787e8c33fab3</code></pre>
-<p>The container works properly in <code>podman</code>. I proceed to testing it on OpenShift.</p>
-<h2 id="running-privileged-user">Running (<strong>privileged</strong> user) <a href="#running-privileged-user" class="section">§</a></h2>
-<p>I performed my testing on an OpenShift 4.8 nightly cluster. The exact build is <code>4.8.0-0.nightly-2021-03-26-010831</code>. As far as I’m aware, with respect to systemd and cgroups there are no major differences between OpenShift 4.7 (which is Generally Available) and the build I’m using. So results should be similar on OpenShift 4.7.</p>
-<p>The Pod definition for my test service is:</p>
-<div class="sourceCode" id="cb3"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
-<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Pod</span></span>
-<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="fu">metadata</span><span class="kw">:</span></span>
-<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> nginx</span></span>
-<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">labels</span><span class="kw">:</span></span>
-<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">app</span><span class="kw">:</span><span class="at"> nginx</span></span>
-<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a><span class="fu">spec</span><span class="kw">:</span></span>
-<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">containers</span><span class="kw">:</span></span>
-<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> nginx</span></span>
-<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">image</span><span class="kw">:</span><span class="at"> quay.io/ftweedal/test-nginx:latest</span></span></code></pre></div>
-<p>I create the Pod, operating with the cluster <code>admin</code> credential. After a few seconds, the pod is running:</p>
-<pre class="shell"><code>% oc create -f pod-nginx.yaml 
-pod/nginx created
-
-% oc get -o json pod/nginx | jq .status.phase
-&quot;Running&quot;</code></pre>
-<h3 id="verifying-that-the-service-is-working">Verifying that the service is working <a href="#verifying-that-the-service-is-working" class="section">§</a></h3>
-<p><code>pod/nginx</code> is running, but it is not exposed to other pods in the cluster, or to the outside world. To test that the server is working, I will expose it on the hostname <code>nginx.apps.ft-48dev-5.idmocp.lab.eng.rdu2.redhat.com</code>. First, observe that performing an HTTP request from my workstation fails because the service is not available:</p>
-<pre class="shell"><code>% curl --head nginx.apps.ft-48dev-5.idmocp.lab.eng.rdu2.redhat.com
-HTTP/1.0 503 Service Unavailable
-pragma: no-cache
-cache-control: private, max-age=0, no-cache, no-store
-content-type: text/html</code></pre>
-<p>Now I create Service and Route objects to expose the nginx server. The Service definition is:</p>
-<div class="sourceCode" id="cb6"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
-<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Service</span></span>
-<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a><span class="fu">metadata</span><span class="kw">:</span></span>
-<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> nginx</span></span>
-<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a><span class="fu">spec</span><span class="kw">:</span></span>
-<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">selector</span><span class="kw">:</span></span>
-<span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">app</span><span class="kw">:</span><span class="at"> nginx</span></span>
-<span id="cb6-8"><a href="#cb6-8" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">ports</span><span class="kw">:</span></span>
-<span id="cb6-9"><a href="#cb6-9" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="kw">-</span><span class="at"> </span><span class="fu">protocol</span><span class="kw">:</span><span class="at"> TCP</span></span>
-<span id="cb6-10"><a href="#cb6-10" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">port</span><span class="kw">:</span><span class="at"> </span><span class="dv">80</span></span></code></pre></div>
-<p>And the Route definition is:</p>
-<div class="sourceCode" id="cb7"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
-<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Route</span></span>
-<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a><span class="fu">metadata</span><span class="kw">:</span></span>
-<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> nginx</span></span>
-<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a><span class="fu">spec</span><span class="kw">:</span></span>
-<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">host</span><span class="kw">:</span><span class="at"> nginx.apps.ft-48dev-5.idmocp.lab.eng.rdu2.redhat.com</span></span>
-<span id="cb7-7"><a href="#cb7-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">to</span><span class="kw">:</span></span>
-<span id="cb7-8"><a href="#cb7-8" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">kind</span><span class="kw">:</span><span class="at"> Service</span></span>
-<span id="cb7-9"><a href="#cb7-9" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">name</span><span class="kw">:</span><span class="at"> nginx</span></span></code></pre></div>
-<p>I create the objects:</p>
-<pre class="shell"><code>% oc create -f service-nginx.yaml 
-service/nginx created
-
-% oc create -f route-nginx.yaml
-route.route.openshift.io/nginx created</code></pre>
-<p>After a few seconds I performed the HTTP request again, and it succeeded:</p>
-<pre class="shell"><code>% curl --head nginx.apps.ft-48dev-5.idmocp.lab.eng.rdu2.redhat.com
-HTTP/1.1 200 OK
-server: nginx/1.18.0
-date: Tue, 30 Mar 2021 08:16:23 GMT
-content-type: text/html
-content-length: 5564
-last-modified: Mon, 27 Jul 2020 22:20:49 GMT
-etag: &quot;5f1f5341-15bc&quot;
-accept-ranges: bytes
-set-cookie: 6cf5f3bc2fa4d24f45018c591d3617c3=6f2f093d36d535f1dde195e08a311bda; path=/; HttpOnly
-cache-control: private</code></pre>
-<p>This confirms that the systemd container is running properly on OpenShift 4.8.</p>
-<h3 id="low-level-details">Low-level details <a href="#low-level-details" class="section">§</a></h3>
-<p>Now I will inspect some low-level details of the container. I’ll do that in a debug shell on the worker node. So first, I query the pod’s worker node name and container ID:</p>
-<pre class="shell"><code>% oc get -o json pod/nginx \
-    | jq &#39;.spec.nodeName,
-          .status.containerStatuses[0].containerID&#39;
-&quot;ft-48dev-5-f24l6-worker-0-q7lff&quot;
-&quot;cri-o://d9d106cb65e4c965737ef66f15bd5b9e0988c386675e3404e24fd36e58284638&quot;</code></pre>
-<p>Now I enter a debug shell on the worker node:</p>
-<pre class="shell"><code>% oc debug node/ft-48dev-5-f24l6-worker-0-q7lff
-Starting pod/ft-48dev-5-f24l6-worker-0-q7lff-debug ...
-To use host binaries, run `chroot /host`
-Pod IP: 10.8.1.64
-If you don&#39;t see a command prompt, try pressing enter.
-sh-4.2# chroot /host
-sh-4.4# </code></pre>
-<p>I use <code>crictl</code> to query the namespaces of the container:</p>
-<pre class="shell"><code>sh-4.4# crictl inspect d9d106 \
-        | jq .info.runtimeSpec.linux.namespaces[].type
-&quot;pid&quot;
-&quot;network&quot;
-&quot;ipc&quot;
-&quot;uts&quot;
-&quot;mount&quot;</code></pre>
-<p>Observe that there are <code>pid</code> and <code>mount</code> namespaces (among others), but no <code>cgroup</code> namespace. The worker node and container are using cgroups v1.</p>
-<p>The <code>container_manage_cgroup</code> SELinux boolean is <code>off</code>:</p>
-<pre class="shell"><code>sh-4.4# getsebool container_manage_cgroup
-container_manage_cgroup --&gt; off</code></pre>
-<p>Now let’s see what processes are running in the container. We can query the PID of the initial container process via <code>crictl inspect</code>. Then I use <code>pgrep(1)</code> with the <code>--ns</code> option, which lists processes executing in the same namespace(s) as the specified PID:</p>
-<pre class="shell"><code>sh-4.4# crictl inspect d9d106 | jq .info.pid
-14591
-
-sh-4.4# pgrep --ns 14591 | xargs ps -o user,pid,cmd --sort pid
-USER         PID CMD
-root       14591 /sbin/init
-root       14625 /usr/lib/systemd/systemd-journald
-systemd+   14636 /usr/lib/systemd/systemd-resolved
-root       14642 /usr/lib/systemd/systemd-homed
-root       14643 /usr/lib/systemd/systemd-logind
-root       14646 /sbin/agetty -o -p -- \u --noclear --keep-baud console 115200,38400,9600 xterm
-dbus       14647 /usr/bin/dbus-broker-launch --scope system --audit
-dbus       14651 dbus-broker --log 4 --controller 9 --machine-id 2f2fcc4033c5428996568ca34219c72a --max-bytes 536870912 --max-fds 4096 --max-matches 16384 --audit
-root       14654 nginx: master process /usr/sbin/nginx
-polkitd    14655 nginx: worker process
-polkitd    14656 nginx: worker process
-polkitd    14657 nginx: worker process
-polkitd    14658 nginx: worker process
-polkitd    14659 nginx: worker process
-polkitd    14660 nginx: worker process
-polkitd    14661 nginx: worker process
-polkitd    14662 nginx: worker process</code></pre>
-<p>The <code>PID</code> column shows the PIDs from the point of view of the host’s PID namespace. The first process (PID 1 <em>inside</em> the container) is systemd (<code>/sbin/init</code>). systemd has started other system services, and also nginx.</p>
-<p>systemd is running as <code>root</code> <strong>on the host</strong>. The other processes run under various system accounts. The container does not have its own user namespace. This pod was created by a privileged account, which allows it to run as <code>root</code> on the host.</p>
-<h2 id="running-unprivileged-user">Running (<strong>unprivileged</strong> user) <a href="#running-unprivileged-user" class="section">§</a></h2>
-<p>I created an unprivileged user called <code>test</code>, and granted it admin privileges (so it can create pods).</p>
-<pre class="shell"><code>% oc create user test
-user.user.openshift.io/test created 
-
-% oc adm policy add-role-to-user admin test
-clusterrole.rbac.authorization.k8s.io/admin added: &quot;test&quot;</code></pre>
-<p>I did not grant to the <code>test</code> account any <em>Security Context Constraints (SCCs)</em> that would allow it to run privileged containers or use host user accounts (including <code>root</code>).</p>
-<p>Now I create the same <code>nginx</code> pod, as this user <code>test</code>. The pod fails to execute:</p>
-<pre class="shell"><code>% oc --as test create -f pod-nginx.yaml
-pod/nginx created
-
-% oc get pod/nginx
-NAME    READY   STATUS             RESTARTS   AGE
-nginx   0/1     CrashLoopBackOff   1          23s</code></pre>
-<p>Let’s inspect the logs to see what went wrong:</p>
-<pre class="shell"><code>% oc logs pod/nginx
-%</code></pre>
-<p>There is no output. This baffled me, at first. Eventually I learned that Kubernetes, by default, does not allocate pseudo-terminal devices to containers. You can overcome this on a per-container basis by including <code>tty: true</code> in the Container object definition:</p>
-<div class="sourceCode" id="cb18"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
-<span id="cb18-2"><a href="#cb18-2" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Pod</span></span>
-<span id="cb18-3"><a href="#cb18-3" aria-hidden="true" tabindex="-1"></a><span class="fu">metadata</span><span class="kw">:</span></span>
-<span id="cb18-4"><a href="#cb18-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> nginx</span></span>
-<span id="cb18-5"><a href="#cb18-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">labels</span><span class="kw">:</span></span>
-<span id="cb18-6"><a href="#cb18-6" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">app</span><span class="kw">:</span><span class="at"> nginx</span></span>
-<span id="cb18-7"><a href="#cb18-7" aria-hidden="true" tabindex="-1"></a><span class="fu">spec</span><span class="kw">:</span></span>
-<span id="cb18-8"><a href="#cb18-8" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">containers</span><span class="kw">:</span></span>
-<span id="cb18-9"><a href="#cb18-9" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> nginx</span></span>
-<span id="cb18-10"><a href="#cb18-10" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">image</span><span class="kw">:</span><span class="at"> quay.io/ftweedal/test-nginx:latest</span></span>
-<span id="cb18-11"><a href="#cb18-11" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">tty</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span></code></pre></div>
-<p>With the pseudo-terminal enabled, <code>oc logs</code> now shows the error output:</p>
-<pre class="shell"><code>% oc logs pod/nginx
-systemd v246.10-1.fc33 running in system mode. (+PAM +AUDIT +SELINUX +IMA -APPARMOR +SMACK +SYSVINIT +UTMP +LIBCRYPTSETUP +GCRYPT +GNUTLS +ACL +XZ +LZ4 +ZSTD +SECCOMP +BLKID +ELFUTILS +KMOD +IDN2 -IDN +PCRE2 default-hierarchy=unified)
-Detected virtualization container-other.
-Detected architecture x86-64.
-
-Welcome to Fedora 33 (Container Image)!
-
-Set hostname to &lt;nginx&gt;.
-Failed to write /run/systemd/container, ignoring: Permission denied
-Failed to create /kubepods.slice/kubepods-besteffort.slice/kubepods-besteffort-pod3bbed45f_634a_4f60_bb07_5f080c483f0f.slice/crio-90dead4cf549b844c4fb704765edfbba9e9e188b30299f484906f15d22b29fbd.scope/init.scope control group: Permission denied
-Failed to allocate manager object: Permission denied
-[!!!!!!] Failed to allocate manager object.
-Exiting PID 1...</code></pre>
-<p>The user executing systemd does not have permissions to write the cgroup filesystem. Although cgroups are heirarchical, cgroups v1 does not support delegating management of part of the heirarchy to unprivileged users. But cgroups v2 does support this.</p>
-<div class="note">
-<p>Set the <a href="https://www.freedesktop.org/software/systemd/man/systemd.html#%24SYSTEMD_LOG_LEVEL"><code>SYSTEMD_LOG_LEVEL</code></a> environment variable to <code>info</code> or <code>debug</code> to get more detail in the systemd log output.</p>
-</div>
-<h2 id="enabling-cgroups-v2">Enabling cgroups v2 <a href="#enabling-cgroups-v2" class="section">§</a></h2>
-<p>We can enable cgroups v2 (only) on worker nodes via the following MachineConfig object:</p>
-<div class="sourceCode" id="cb20"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb20-1"><a href="#cb20-1" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> machineconfiguration.openshift.io/v1</span></span>
-<span id="cb20-2"><a href="#cb20-2" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> MachineConfig</span></span>
-<span id="cb20-3"><a href="#cb20-3" aria-hidden="true" tabindex="-1"></a><span class="fu">metadata</span><span class="kw">:</span></span>
-<span id="cb20-4"><a href="#cb20-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> enable-cgroupv2-workers</span></span>
-<span id="cb20-5"><a href="#cb20-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">labels</span><span class="kw">:</span></span>
-<span id="cb20-6"><a href="#cb20-6" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">machineconfiguration.openshift.io/role</span><span class="kw">:</span><span class="at"> worker</span></span>
-<span id="cb20-7"><a href="#cb20-7" aria-hidden="true" tabindex="-1"></a><span class="fu">spec</span><span class="kw">:</span></span>
-<span id="cb20-8"><a href="#cb20-8" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">kernelArguments</span><span class="kw">:</span></span>
-<span id="cb20-9"><a href="#cb20-9" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="kw">-</span><span class="at"> systemd.unified_cgroup_hierarchy=1</span></span>
-<span id="cb20-10"><a href="#cb20-10" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="kw">-</span><span class="at"> cgroup_no_v1=&quot;all&quot;</span></span>
-<span id="cb20-11"><a href="#cb20-11" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="kw">-</span><span class="at"> psi=1</span></span></code></pre></div>
-<p>After creating the MachineConfig, the <em>Machine Config Operator</em> applies the configuration change and restarts each worker node, one by one. This occurs over several minutes.</p>
-<h2 id="running-unprivileged-cgroups-v2">Running (<strong>unprivileged</strong>; <strong>cgroups v2</strong>) <a href="#running-unprivileged-cgroups-v2" class="section">§</a></h2>
-<p>After some time, all worker nodes have the updated kernel configuration to enable cgroups v2 and disable cgroups v1. I again created the pod as the unprivileged <code>test</code> user. And again, pod execution failed. But this time the error is different:</p>
-<pre class="shell"><code>% oc --as test create -f pod-nginx.yaml
-pod/nginx created
-
-% oc get pod
-NAME    READY   STATUS   RESTARTS   AGE
-nginx   0/1     Error    1          12s
-
-% oc logs pod/nginx
-systemd v246.10-1.fc33 running in system mode. (+PAM +AUDIT +SELINUX +IMA -APPARMOR +SMACK +SYSVINIT +UTMP +LIBCRYPTSETUP +GCRYPT +GNUTLS +ACL +XZ +LZ4 +ZSTD +SECCOMP +BLKID +ELFUTILS +KMOD +IDN2 -IDN +PCRE2 default-hierarchy=unified)
-Detected virtualization container-other.
-Detected architecture x86-64.
-
-Welcome to Fedora 33 (Container Image)!
-
-Set hostname to &lt;nginx&gt;.
-Failed to write /run/systemd/container, ignoring: Permission denied
-Failed to create /init.scope control group: Permission denied
-Failed to allocate manager object: Permission denied
-[!!!!!!] Failed to allocate manager object.
-Exiting PID 1...</code></pre>
-<p>The error suggests that the container now has its own cgroup namespace. I can confirm it by creating a <em>pod</em> debug container…</p>
-<pre class="shell"><code>% oc debug pod/nginx
-Starting pod/nginx-debug ...
-Pod IP: 10.130.2.10
-If you don&#39;t see a command prompt, try pressing enter.
-sh-5.0$</code></pre>
-<p>…finding out the node and container ID…</p>
-<pre class="shell"><code>% oc get -o json pod/nginx-debug \
-    | jq &#39;.spec.nodeName,
-          .status.containerStatuses[0].containerID&#39;
-&quot;ft-48dev-5-f24l6-worker-0-qv7kq&quot;
-&quot;cri-o://e870d022d1c53adf94e36877312fcfef5ef0431ad9cf1fbe9c9d2ace02bee858&quot;</code></pre>
-<p>…and analysing the container sandbox in a <em>node</em> debug shell:</p>
-<pre><code>sh-4.4# crictl inspect e870d02 \
-        | jq .info.runtimeSpec.linux.namespaces[].type
-&quot;pid&quot;
-&quot;network&quot;
-&quot;ipc&quot;
-&quot;uts&quot;
-&quot;mount&quot;
-&quot;cgroup&quot;</code></pre>
-<p>The output confirms that the pod has a cgroup namespace. Despite this, the unprivileged user running systemd in the container does not have permission to manage the namespace. The <code>oc logs</code> output demonstrates this.</p>
-<h3 id="container_manage_cgroups-selinux-boolean"><code>container_manage_cgroups</code> SELinux boolean <a href="#container_manage_cgroups-selinux-boolean" class="section">§</a></h3>
-<p>I have one more thing to try. The <code>container_manage_cgroups</code> SELinux boolean was disabled on the worker nodes (per default configuration). Perhaps it is still needed, even when using cgroups v2. I enabled it on the worker node (directly from the debug shell, for now):</p>
-<pre class="shell"><code>sh-4.4# setsebool container_manage_cgroup on</code></pre>
-<p>I again created the nginx pod as the <code>test</code> user. It failed with the same error as the previous attempt, when <code>container_manage_cgroup</code> was <em>off</em>. So that was not the issue, or at least not the immediate issue.</p>
-<h2 id="next-steps">Next steps <a href="#next-steps" class="section">§</a></h2>
-<p>At this point, I have successfully enabled cgroups v2 on worker nodes. Container sandboxes have their own cgroup namespace. But inside the container, systemd fails with permission errors when it attempts some cgroup management.</p>
-<p>The next step is to test the systemd container in OpenShift with cgroups v2 enabled <em>and</em> <a href="2021-03-03-openshift-4.7-user-namespaces.html">user namespaces enabled</a>. Both of these features are necessary for securely running a complex, systemd-based application in OpenShift. My hope is that enabling them <em>together</em> is the last step to getting systemd-based containers working properly in OpenShift. I will investigate and report the results in an upcoming post.</p>]]></summary>
 </entry>
 
 </feed>

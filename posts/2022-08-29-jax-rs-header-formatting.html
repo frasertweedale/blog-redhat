@@ -1,0 +1,265 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+    <head>
+        <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+        <title>Fraser's IdM Blog - Controlling header formatting in JAX-RS applications</title>
+        <link rel="stylesheet" type="text/css" href="../css/default.css" />
+    </head>
+    <body>
+        <div id="header">
+            <div id="logo">
+                <a href="../">Fraser's IdM Blog</a>
+            </div>
+            <div id="navigation">
+                <a href="../">Home</a>
+                <a href="../archive.html">Archive</a>
+            </div>
+        </div>
+
+        <div id="content">
+            <div class="info">
+    
+    Tags: <a title="All pages tagged 'programming'." href="../tags/programming.html">programming</a>, <a title="All pages tagged 'java'." href="../tags/java.html">java</a>
+    
+</div>
+
+<div id="postContent">
+    <h1 id="controlling-header-formatting-in-jax-rs-applications">Controlling header formatting in JAX-RS applications</h1>
+<p>I’m been implementing an <a href="https://www.rfc-editor.org/rfc/rfc7030"><em>Enrollment over Secure Transport
+(EST)</em></a> service in Dogtag PKI. During testing, I found
+that a notable client implementation parses the response
+<code>Content-Type</code> header in the following way:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> <span class="op">(!</span>strncmp<span class="op">(</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    multipart_get_data_content_type<span class="op">(</span>parser<span class="op">),</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;application/pkcs7-mime; smime-type=certs-only&quot;</span><span class="op">,</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    <span class="dv">45</span><span class="op">)</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>  <span class="op">)</span> <span class="op">{</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>    <span class="op">...</span></span></code></pre></div>
+<p>The Dogtag EST service is a <a href="https://projects.eclipse.org/projects/ee4j.rest"><em>Jakarta RESTful Web Services
+(JAX-RS)</em></a> application. It produces a <code>Content-Type</code> header
+value different from what the client expects (note the lack of
+whitespace):</p>
+<pre><code>application/pkcs7-mime;smime-type=certs-only</code></pre>
+<p>As a consequence, the EST client fails to process the response.
+This is certainly a defect in the EST client implementation. But
+EST is used by many embedded or hard to update network devices. Or
+updates might not be available (now, <em>ever?</em>)</p>
+<p>So, I needed to find a way to override the header default header
+formatting. This blog post describes my solution.</p>
+<h2 id="specifying-the-content-type-header">Specifying the <code>Content-Type</code> header <a href="#specifying-the-content-type-header" class="section">§</a></h2>
+<p>The JAX-RS <code>@Produces</code> annotation specifies the <code>Content-Type</code>
+header value for a particular resource:</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode java"><code class="sourceCode java"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="at">@POST</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="at">@Path</span><span class="op">(</span><span class="st">&quot;simpleenroll&quot;</span><span class="op">)</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="at">@Consumes</span><span class="op">(</span><span class="st">&quot;application/pkcs10&quot;</span><span class="op">)</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a><span class="at">@Produces</span><span class="op">(</span><span class="st">&quot;application/pkcs7-mime; smime-type=certs-only&quot;</span><span class="op">)</span></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a><span class="kw">public</span> <span class="bu">Response</span> <span class="fu">simpleenroll</span><span class="op">(</span><span class="dt">byte</span><span class="op">[]</span> data<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>    <span class="kw">...</span></span></code></pre></div>
+<p>Note that the string value is not used <em>verbatim</em>. Instead, it is
+parsed into a <a href="https://docs.oracle.com/javaee/7/api/javax/ws/rs/core/MediaType.html"><code>MediaType</code></a> value and stored as such in
+the response headers (a <code>MultivaluedMap&lt;String, Object&gt;</code>).</p>
+<p>When serialising the <code>Response</code>, header values are stringified via
+types that implement the
+<a href="https://docs.oracle.com/javaee/7/api/javax/ws/rs/ext/RuntimeDelegate.HeaderDelegate.html"><code>RuntimeDelegate.HeaderDelegate&lt;T&gt;</code></a> interface,
+where <code>T</code> is the real type of the header value <code>Object</code>. To
+serialise a <code>MediaType</code> header value, the JAX-RS machinery uses a
+instance of a a class that implements
+<code>RuntimeDelegate.HeaderDelegate&lt;MediaType&gt;</code>.</p>
+<p><code>HeaderDelegate</code> <em>implementations</em> are not part of the JAX-RS API.
+They are provided by the JAX-RS implementation. In Dogtag PKI,
+that’s <a href="https://resteasy.dev/">RESTEasy</a>. The class in question is:</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode java"><code class="sourceCode java"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="kw">public</span> <span class="kw">class</span> MediaTypeHeaderDelegate</span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>  <span class="kw">implements</span> RuntimeDelegate<span class="op">.</span><span class="fu">HeaderDelegate</span><span class="op">&lt;</span>MediaType<span class="op">&gt;</span> <span class="op">{</span></span></code></pre></div>
+<p>The <code>toString(MediaType type)</code> method provided by this class prints
+the value without a space character between the subtype and the
+parameters. For the example resource above, it produces the string:</p>
+<pre><code>application/pkcs7-mime;smime-type=certs-only</code></pre>
+<p>This is a legal production in the HTTP grammar, according to <a href="https://www.rfc-editor.org/rfc/rfc7230#section-3.2.3">RFC
+7230</a> and <a href="https://www.rfc-editor.org/rfc/rfc7231#section-3.1.1.1">RFC 7231</a>:</p>
+<pre><code>media-type = type &quot;/&quot; subtype *( OWS &quot;;&quot; OWS parameter )
+OWS = *( SP / HTAB )</code></pre>
+<p>However, we already saw that at least one EST client is unable to
+process this value, because it expects a space character before the
+parameters:</p>
+<pre><code>application/pkcs7-mime; smime-type=certs-only</code></pre>
+<p>This is also a legal production. But the client is using <code>strncmp</code>
+to look for this exact string, instead of properly parsing the
+value. If we can’t fix the client behaviour, we have to find a
+workaround on the server to produce the exact string the client
+expects.</p>
+<h2 id="idea-1-custom-headerdelegate">Idea 1: custom <code>HeaderDelegate</code> <a href="#idea-1-custom-headerdelegate" class="section">§</a></h2>
+<p>My first idea was to override the <code>HeaderDelegate&lt;MediaType&gt;</code> with
+our own implementation. I couldn’t find a general way to do that
+via the JAX-RS API. It does seem that you can do it using RESTEasy
+classes directly:</p>
+<ol type="1">
+<li><p>Implement the custom <code>HeaderDelegate&lt;MediaType&gt;</code>. To avoid
+unnecessary work you could extend RESTEasy’s
+<code>MediaTypeHeaderDelegate</code> and override just the
+<code>toString(MediaType)</code> method.</p></li>
+<li><p>Obtain <code>ResteasyProviderFactory.getInstance()</code>. Invoke
+<code>.addHeaderDelegate(MediaType.class, customInst)</code> to replace the
+<code>HeaderDelegate&lt;MediaType&gt;</code>.</p></li>
+</ol>
+<p>This approach has several disadvantages:</p>
+<ul>
+<li><p>Directly coupled to the RESTEasy implementation. May break if
+RESTEasy implementation details change and will not work with
+other JAX-RS implementations.</p></li>
+<li><p>Need to implement a custom <code>HeaderDelegate&lt;MediaType&gt;</code> with the
+“correct” serialisation behaviour.</p></li>
+<li><p><strong>The “correct” serialisation behaviour might break <em>other</em> clients
+with different bugs/quirks.</strong></p></li>
+</ul>
+<p>For these reasons I rejected the first idea and sought an approach
+that avoids these disadvantages.</p>
+<h2 id="idea-2-response-filter">Idea 2: response filter <a href="#idea-2-response-filter" class="section">§</a></h2>
+<p>My next idea was to use a <em>response filter</em> to reformat the
+<code>Content-Type</code> response header. The Servlet API defines the
+<a href="https://docs.oracle.com/javaee/7/api/javax/ws/rs/container/ContainerResponseFilter.html"><code>ContainerResponseFilter</code></a> interface:</p>
+<div class="sourceCode" id="cb8"><pre class="sourceCode java"><code class="sourceCode java"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="kw">public</span> <span class="kw">interface</span> ContainerResponseFilter <span class="op">{</span></span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">void</span> <span class="fu">filter</span><span class="op">(</span></span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a>      ContainerRequestContext requestContext<span class="op">,</span></span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a>      ContainerResponseContext responseContext<span class="op">)</span></span>
+<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a>    <span class="kw">throws</span> <span class="bu">IOException</span></span>
+<span id="cb8-6"><a href="#cb8-6" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<p>The application applies each registered filter to each response,
+before serialising and sending the response. At the time response
+filters are applied, the <code>Content-Type</code> header value is a
+<code>MediaType</code>. It has not yet been converted to a <code>String</code>.</p>
+<p>A response filter can add, remove, or replace response headers.
+Recall that headers are stored in a <code>MultivaluedMap&lt;String, Object&gt;</code>. This means that we can replace a <code>MediaType</code> value (whose
+serialisation is determined by the <code>HeaderDelegate</code>) with a <code>String</code>
+value (which will be written <em>as is</em>).</p>
+<p>The <code>.equals</code> equality test for <code>MediaType</code> properly compares the
+properties of the instance without regard to string representation.
+As it should. This enables a succinct implementation where we:</p>
+<ol type="1">
+<li><p>Decalre <em>verbatim</em> <code>String</code> header values we want to see in the
+response.</p></li>
+<li><p>Parse those strings into <code>MediaType</code> values.</p></li>
+<li><p>Match the <code>Content-Type</code> value in the response against parsed
+values.</p></li>
+<li><p>Replace matched header values with the corresponding <em>verbatim</em>
+<code>String</code>.</p></li>
+</ol>
+<p>The implementation is straightforward:</p>
+<div class="sourceCode" id="cb9"><pre class="sourceCode java"><code class="sourceCode java"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="at">@Provider</span></span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a><span class="kw">public</span> <span class="kw">class</span> ReformatContentTypeResponseFilter</span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a>    <span class="kw">implements</span> ContainerResponseFilter <span class="op">{</span></span>
+<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a>  <span class="kw">private</span> <span class="dt">static</span> <span class="bu">String</span><span class="op">[]</span> verbatim <span class="op">=</span> <span class="op">{</span></span>
+<span id="cb9-6"><a href="#cb9-6" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;application/pkcs7-mime; smime-type=certs-only&quot;</span></span>
+<span id="cb9-7"><a href="#cb9-7" aria-hidden="true" tabindex="-1"></a>  <span class="op">};</span></span>
+<span id="cb9-8"><a href="#cb9-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-9"><a href="#cb9-9" aria-hidden="true" tabindex="-1"></a>  <span class="kw">private</span> <span class="dt">static</span> <span class="bu">HashMap</span><span class="op">&lt;</span>MediaType<span class="op">,</span> <span class="bu">String</span><span class="op">&gt;</span> substitutions <span class="op">=</span></span>
+<span id="cb9-10"><a href="#cb9-10" aria-hidden="true" tabindex="-1"></a>    <span class="kw">new</span> <span class="bu">HashMap</span><span class="op">&lt;&gt;();</span></span>
+<span id="cb9-11"><a href="#cb9-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-12"><a href="#cb9-12" aria-hidden="true" tabindex="-1"></a>  <span class="dt">static</span> <span class="op">{</span></span>
+<span id="cb9-13"><a href="#cb9-13" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> <span class="op">(</span><span class="bu">String</span> s <span class="op">:</span> verbatim<span class="op">)</span></span>
+<span id="cb9-14"><a href="#cb9-14" aria-hidden="true" tabindex="-1"></a>      substitutions<span class="op">.</span><span class="fu">put</span><span class="op">(</span>MediaType<span class="op">.</span><span class="fu">valueOf</span><span class="op">(</span>s<span class="op">),</span> s<span class="op">);</span></span>
+<span id="cb9-15"><a href="#cb9-15" aria-hidden="true" tabindex="-1"></a>  <span class="op">}</span></span>
+<span id="cb9-16"><a href="#cb9-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-17"><a href="#cb9-17" aria-hidden="true" tabindex="-1"></a>  <span class="at">@Override</span></span>
+<span id="cb9-18"><a href="#cb9-18" aria-hidden="true" tabindex="-1"></a>  <span class="kw">public</span> <span class="dt">void</span> <span class="fu">filter</span><span class="op">(</span></span>
+<span id="cb9-19"><a href="#cb9-19" aria-hidden="true" tabindex="-1"></a>      ContainerRequestContext requestContext<span class="op">,</span></span>
+<span id="cb9-20"><a href="#cb9-20" aria-hidden="true" tabindex="-1"></a>      ContainerResponseContext responseContext<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb9-21"><a href="#cb9-21" aria-hidden="true" tabindex="-1"></a>    MultivaluedMap<span class="op">&lt;</span><span class="bu">String</span><span class="op">,</span> <span class="bu">Object</span><span class="op">&gt;</span> headers <span class="op">=</span></span>
+<span id="cb9-22"><a href="#cb9-22" aria-hidden="true" tabindex="-1"></a>      responseContext<span class="op">.</span><span class="fu">getHeaders</span><span class="op">()</span></span>
+<span id="cb9-23"><a href="#cb9-23" aria-hidden="true" tabindex="-1"></a>    <span class="bu">Object</span> v <span class="op">=</span> headers<span class="op">.</span><span class="fu">getFirst</span><span class="op">(</span>HttpHeaders<span class="op">.</span><span class="fu">CONTENT_TYPE</span><span class="op">);</span></span>
+<span id="cb9-24"><a href="#cb9-24" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> <span class="op">(</span>v <span class="op">!=</span> <span class="kw">null</span> <span class="op">&amp;&amp;</span> v <span class="kw">instanceof</span> MediaType</span>
+<span id="cb9-25"><a href="#cb9-25" aria-hidden="true" tabindex="-1"></a>        <span class="op">&amp;&amp;</span> substitutions<span class="op">.</span><span class="fu">containsKey</span><span class="op">(</span>v<span class="op">))</span> <span class="op">{</span></span>
+<span id="cb9-26"><a href="#cb9-26" aria-hidden="true" tabindex="-1"></a>      headers<span class="op">.</span><span class="fu">putSingle</span><span class="op">(</span></span>
+<span id="cb9-27"><a href="#cb9-27" aria-hidden="true" tabindex="-1"></a>        HttpHeaders<span class="op">.</span><span class="fu">CONTENT_TYPE</span><span class="op">,</span> substitutions<span class="op">.</span><span class="fu">get</span><span class="op">(</span>v<span class="op">));</span></span>
+<span id="cb9-28"><a href="#cb9-28" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb9-29"><a href="#cb9-29" aria-hidden="true" tabindex="-1"></a>  <span class="op">}</span></span>
+<span id="cb9-30"><a href="#cb9-30" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-31"><a href="#cb9-31" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<p>There is currently only one header value whose formatting I need to
+precisely control. If we discover more, we only need to add the
+desired string serialisation to the <code>verbatim</code> array.</p>
+<p>We must consider the possible scenario of different clients with
+different quirks. In that case, we could maintain separate
+substitutions maps for each known problematic client. We would use
+the <code>User-Agent</code> header, or other request characteristics, to
+identify the client and select the corresponding substitution map
+(if any). Hopefully this situation does not arise. But if it does,
+the increase in complexity of the solution is tolerable.</p>
+<p>This solution works well and avoids the disadvantages of my first
+idea:</p>
+<ul>
+<li><p>Only uses official Servlet and JAX-RS classes and interfaces.
+This solution will work across all JAX-RS implementations.</p></li>
+<li><p>Does not (re)implement <code>MediaType</code> serialsation. You just declare
+the exact string values you want to see in responses.</p></li>
+<li><p>With a moderate increase in complexity, can handle different
+clients with incompatible quriks.</p></li>
+</ul>
+<h2 id="conclusion">Conclusion <a href="#conclusion" class="section">§</a></h2>
+<p>It’s unfortunate that this workaround was even necessary. But given
+that it was, I’m happy with the solution. It is simple and portable
+across Servlet and JAX-RS implementations.</p>
+<p>The same approach could be used for controlling formatting of any
+header value types, not just <code>Content-Type</code> / <code>MediaType</code>. I hope
+that sharing this solution will help people who encounter similar
+problems. At the very least, I hope that because of this post you
+learned something about Servlet and JAX-RS response header
+processing.</p>
+</div>
+<div id="postFooter">
+    <div id="recent">
+Recent posts:
+<ul>
+    
+        <li>
+            <a href="../posts/2022-08-29-jax-rs-header-formatting.html">Controlling header formatting in JAX-RS applications</a>
+        </li>
+    
+        <li>
+            <a href="../posts/2022-03-24-k8s-external-dns.html">Experimenting with ExternalDNS</a>
+        </li>
+    
+        <li>
+            <a href="../posts/2022-02-02-openshift-user-ns-without-anyuid.html">Running Pods in user namespaces without privileged SCCs</a>
+        </li>
+    
+        <li>
+            <a href="../posts/2021-11-18-k8s-tcp-udp-ingress.html">Bare TCP and UDP ingress on Kubernetes</a>
+        </li>
+    
+        <li>
+            <a href="../posts/2021-10-15-openshift-userns-in-container.html">Creating user namespaces inside containers</a>
+        </li>
+    
+</ul>
+
+<div id="recentLinks">
+    <a type="application/atom+xml" href="../atom.xml">Atom feed</a>
+     <!-- em space -->
+    <a href="../archive.html">All posts…</a>
+</div>
+
+</div>
+
+    <div id="license">
+    <a rel="license" href="https://creativecommons.org/licenses/by/4.0/">
+        <img alt="Creative Commons License" style="border-width:0" src="https://licensebuttons.net/l/by/4.0/88x31.png">
+    </a>
+    <br />
+    Except where otherwise noted, this work is licensed under a
+    <a rel="license" href="https://creativecommons.org/licenses/by/4.0/">
+        Creative Commons Attribution 4.0 International License
+    </a>.
+</div>
+
+</div>
+
+        </div>
+        <div class="clear"></div>
+        <div id="footer">
+            Generated by
+            <a href="https://jaspervdj.be/hakyll">Hakyll</a>
+        </div>
+    </body>
+</html>
