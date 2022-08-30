@@ -122,7 +122,6 @@ classes directly:
    unnecessary work you could extend RESTEasy's
    `MediaTypeHeaderDelegate` and override just the
    `toString(MediaType)` method.
-
 2. Obtain `ResteasyProviderFactory.getInstance()`.  Invoke
    `.addHeaderDelegate(MediaType.class, customInst)` to replace the
    `HeaderDelegate<MediaType>`.
@@ -132,10 +131,8 @@ This approach has several disadvantages:
 - Directly coupled to the RESTEasy implementation.  May break if
   RESTEasy implementation details change and will not work with
   other JAX-RS implementations.
-
 - Need to implement a custom `HeaderDelegate<MediaType>` with the
   "correct" serialisation behaviour.
-
 - **The "correct" serialisation behaviour might break *other* clients
   with different bugs/quirks.**
 
@@ -176,12 +173,9 @@ As it should.  This enables a succinct implementation where we:
 
 1. Decalre *verbatim* `String` header values we want to see in the
    response.
-
 2. Parse those strings into `MediaType` values.
-
 3. Match the `Content-Type` value in the response against parsed
    values.
-
 4. Replace matched header values with the corresponding *verbatim*
    `String`.
 
@@ -238,10 +232,8 @@ idea:
 
 - Only uses official Servlet and JAX-RS classes and interfaces.
   This solution will work across all JAX-RS implementations.
-
 - Does not (re)implement `MediaType` serialsation.  You just declare
   the exact string values you want to see in responses.
-
 - With a moderate increase in complexity, can handle different
   clients with incompatible quriks.
 
