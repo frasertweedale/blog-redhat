@@ -26,31 +26,66 @@
 
 <div id="postContent">
     <h1 id="customising-dogtag-system-certificate-lifetimes">Customising Dogtag system certificate lifetimes</h1>
-<p>Default certificate lifetimes in Dogtag are 20 years for the CA certificate (when self-signed) and about 2 years for other system certificates. These defaults also apply to FreeIPA. It can be desirable to have shorter certificate lifetimes. And although I wouldn’t recommend to use <em>longer</em> lifetimes, people sometimes want that.</p>
-<p>There is no <em>supported</em> mechanism for customising system certificate validity duration during Dogtag or FreeIPA installation. But it can be done. In this post I’ll explain how.</p>
+<p>Default certificate lifetimes in Dogtag are 20 years for the CA
+certificate (when self-signed) and about 2 years for other system
+certificates. These defaults also apply to FreeIPA. It can be
+desirable to have shorter certificate lifetimes. And although I
+wouldn’t recommend to use <em>longer</em> lifetimes, people sometimes want
+that.</p>
+<p>There is no <em>supported</em> mechanism for customising system certificate
+validity duration during Dogtag or FreeIPA installation. But it can
+be done. In this post I’ll explain how.</p>
 <h2 id="profile-configuration-files">Profile configuration files <a href="#profile-configuration-files" class="section">§</a></h2>
-<p>During installation, profile configurations are copied from the RPM install locations under <code>/usr/share</code> to the new Dogtag instance’s configuration directory. If the LDAP profile subsystem is used (FreeIPA uses it) they are further copied from the instance configuration directory into the LDAP database.</p>
-<p>There is no facility or opportunity to modify the profiles during installation. So if you want to customise the certificate lifetimes, you have to modify the files under <code>/usr/share</code>.</p>
+<p>During installation, profile configurations are copied from the RPM
+install locations under <code>/usr/share</code> to the new Dogtag instance’s
+configuration directory. If the LDAP profile subsystem is used
+(FreeIPA uses it) they are further copied from the instance
+configuration directory into the LDAP database.</p>
+<p>There is no facility or opportunity to modify the profiles during
+installation. So if you want to customise the certificate
+lifetimes, you have to modify the files under <code>/usr/share</code>.</p>
 <p>There are two directories that contain profile configurations:</p>
 <dl>
 <dt><code>/usr/share/pki/ca/profiles/ca/*.cfg</code></dt>
-<dd><p>These profile configurations are available during general operation.</p>
+<dd>
+<p>These profile configurations are available during general
+operation.</p>
 </dd>
 <dt><code>/usr/share/pki/ca/conf/*.profile</code></dt>
-<dd><p>These <em>overlay</em> configurations used during installation when issuing system certificates. Each configuration references an underlying profile and can override or extend the configuration.</p>
+<dd>
+<p>These <em>overlay</em> configurations used during installation when
+issuing system certificates. Each configuration references an
+underlying profile and can override or extend the configuration.</p>
 </dd>
 <dt><code>/usr/share/ipa/profiles/*.cfg</code></dt>
-<dd><p>Profiles that are shipped by FreeIPA and imported into Dogtag are defined here. The configurations for the LDAP, Apache HTTPS and KDC certificates are found here.</p>
+<dd>
+<p>Profiles that are shipped by FreeIPA and imported into Dogtag are
+defined here. The configurations for the LDAP, Apache HTTPS and
+KDC certificates are found here.</p>
 </dd>
 </dl>
-<p>I’ll explain which configuration file is used for which certificate later on in this post.</p>
+<p>I’ll explain which configuration file is used for which certificate
+later on in this post.</p>
 <h2 id="specifying-the-validity-period">Specifying the validity period <a href="#specifying-the-validity-period" class="section">§</a></h2>
 <p>The configuration field for setting the validity period are:</p>
 <pre><code>&lt;component&gt;.default.params.range=720
 &lt;component&gt;.constraint.params.range=720</code></pre>
-<p>where <code>&lt;component&gt;</code> is some key, usually a numeric index, that may be different for different profiles. The actual profile component classes are <code>ValidityDefault</code> and <code>ValidityConstraint</code>, or <code>{CA,User}Validity{Default,Constraint}</code> for some profiles.</p>
-<p>The <code>default</code> component sets the default validity period for this profile, whereas the constraint sets the <em>maximum</em> duration in case the user overrides it. Note that if an override configuration overrides the <code>default</code> value such that it exceeds the <code>constraint</code> specified in the underlying configuration, issuance will fail due to constraint violation. It is usually best to specify both the <code>default</code> and <code>constraint</code> together, with the same value.</p>
-<p>The default range unit is <code>day</code>, so the configuration above means <em>720 days</em>. Use the <code>rangeUnit</code> parameter to specify a different unit. The supported units are <code>year</code>, <code>month</code>, <code>day</code>, <code>hour</code> and <code>minute</code>. For example:</p>
+<p>where <code>&lt;component&gt;</code> is some key, usually a numeric index, that may
+be different for different profiles. The actual profile component
+classes are <code>ValidityDefault</code> and <code>ValidityConstraint</code>, or
+<code>{CA,User}Validity{Default,Constraint}</code> for some profiles.</p>
+<p>The <code>default</code> component sets the default validity period for this
+profile, whereas the constraint sets the <em>maximum</em> duration in case
+the user overrides it. Note that if an override configuration
+overrides the <code>default</code> value such that it exceeds the
+<code>constraint</code> specified in the underlying configuration, issuance
+will fail due to constraint violation. It is usually best to
+specify both the <code>default</code> and <code>constraint</code> together, with the
+same value.</p>
+<p>The default range unit is <code>day</code>, so the configuration above means
+<em>720 days</em>. Use the <code>rangeUnit</code> parameter to specify a different
+unit. The supported units are <code>year</code>, <code>month</code>, <code>day</code>,
+<code>hour</code> and <code>minute</code>. For example:</p>
 <pre><code>&lt;component&gt;.default.params.range=3
 &lt;component&gt;.default.params.rangeUnit=month
 &lt;component&gt;.constraint.params.range=3
@@ -58,32 +93,43 @@
 <h2 id="which-configuration-for-which-certificate">Which configuration for which certificate? <a href="#which-configuration-for-which-certificate" class="section">§</a></h2>
 <dl>
 <dt>CA certificate (when self-signed)</dt>
-<dd><p><code>/usr/share/pki/ca/conf/caCert.profile</code></p>
+<dd>
+<p><code>/usr/share/pki/ca/conf/caCert.profile</code></p>
 </dd>
 <dt>OCSP signing certificate</dt>
-<dd><p><code>/usr/share/pki/ca/conf/caOCSPCert.profile</code></p>
+<dd>
+<p><code>/usr/share/pki/ca/conf/caOCSPCert.profile</code></p>
 </dd>
 <dt>Subsystem certificate</dt>
-<dd><p><code>/usr/share/pki/ca/conf/rsaSubsystemCert.profile</code> when using RSA keys (the default)</p>
+<dd>
+<p><code>/usr/share/pki/ca/conf/rsaSubsystemCert.profile</code> when using
+RSA keys (the default)</p>
 </dd>
 <dt>Dogtag HTTPS certificate</dt>
-<dd><p><code>/usr/share/pki/ca/conf/rsaServerCert.profile</code> when using RSA keys (the default)</p>
+<dd>
+<p><code>/usr/share/pki/ca/conf/rsaServerCert.profile</code> when using
+RSA keys (the default)</p>
 </dd>
 <dt>Audit signing</dt>
-<dd><p><code>/usr/share/pki/ca/conf/caAuditSigningCert.profile</code></p>
+<dd>
+<p><code>/usr/share/pki/ca/conf/caAuditSigningCert.profile</code></p>
 </dd>
 <dt>IPA RA agent (FreeIPA-specific)</dt>
-<dd><p><code>/usr/share/pki/ca/profiles/ca/caServerCert.cfg</code></p>
+<dd>
+<p><code>/usr/share/pki/ca/profiles/ca/caServerCert.cfg</code></p>
 </dd>
 <dt>Apache and LDAP certificates (FreeIPA-specific)</dt>
-<dd><p><code>/usr/share/ipa/profiles/caIPAserviceCert.cfg</code></p>
+<dd>
+<p><code>/usr/share/ipa/profiles/caIPAserviceCert.cfg</code></p>
 </dd>
 <dt>KDC certificate (FreeIPA-specific)</dt>
-<dd><p><code>/usr/share/ipa/profiles/KDCs_PKINIT_Certs.cfg</code></p>
+<dd>
+<p><code>/usr/share/ipa/profiles/KDCs_PKINIT_Certs.cfg</code></p>
 </dd>
 </dl>
 <h2 id="testing">Testing <a href="#testing" class="section">§</a></h2>
-<p>I made changes to the files mentioned above, so that certificates would be issued with the following validity periods:</p>
+<p>I made changes to the files mentioned above, so that certificates
+would be issued with the following validity periods:</p>
 <table>
 <tbody>
 <tr class="odd">
@@ -124,7 +170,10 @@
 </tr>
 </tbody>
 </table>
-<p>I installed FreeIPA (with a self-signed CA). After installation completed, I had a look at the certificates that were being tracked by Certmonger. For reference, the installation took place on March 4, 2019 (<strong>2019-03-04</strong>).</p>
+<p>I installed FreeIPA (with a self-signed CA). After installation
+completed, I had a look at the certificates that were being tracked
+by Certmonger. For reference, the installation took place on March
+4, 2019 (<strong>2019-03-04</strong>).</p>
 <pre><code># getcert list |egrep '^Request|certificate:|expires:'
 Request ID '20190304044028':
   certificate: type=FILE,location='/var/lib/ipa/ra-agent.pem'
@@ -155,10 +204,32 @@ Request ID '20190304044234':
   expires: 2020-09-04 15:42:34 AEST</code></pre>
 <p>Observe that the certificate have the intended periods.</p>
 <h2 id="discussion">Discussion <a href="#discussion" class="section">§</a></h2>
-<p>The procedure outlined in this post is not officially supported, and not recommended. But the desire to choose different validity periods is sometimes justified, especially for the CA certificate. So should FreeIPA allow customisation of the system certificate validity periods? To what extent?</p>
-<p>We need to reduce the default CA validity from 20 years, given the 2048-bit key size. (There is a separate issue to support generating a larger CA signing key, too). Whether the CA validity period should be configurable is another question. My personal opinion is that it makes sense to allow the customer to choose the CA lifetime.</p>
-<p>For system certificates, I think that customers should just accept the defaults. PKI systems are trending to shorter lifetimes for end-entity certificates, which is a good thing. For FreeIPA, unfortunately we are still dealing with a lot of certificate renewal issues that arise from the complex architecture. Until we are confident in the robustness of the renewal system, and have observed a reduction in customer issues, it would be a mistake to substantially reduce the validity period for system certificates. Likewise, it is not yet a good idea to let customers choose the certificate validity periods.</p>
-<p>On the other hand, the team is considering changing the default validity period of system certificates <em>a little bit</em>, so that different certificates are on different renewal candences. This would simplify recovery in some scenarios: it is easier to recover when only <em>some</em> of the certificates expired, instead of <em>all</em> of them at once.</p>
+<p>The procedure outlined in this post is not officially supported, and
+not recommended. But the desire to choose different validity
+periods is sometimes justified, especially for the CA certificate.
+So should FreeIPA allow customisation of the system certificate
+validity periods? To what extent?</p>
+<p>We need to reduce the default CA validity from 20 years, given the
+2048-bit key size. (There is a separate issue to support generating
+a larger CA signing key, too). Whether the CA validity period
+should be configurable is another question. My personal opinion is
+that it makes sense to allow the customer to choose the CA lifetime.</p>
+<p>For system certificates, I think that customers should just accept
+the defaults. PKI systems are trending to shorter lifetimes for
+end-entity certificates, which is a good thing. For FreeIPA,
+unfortunately we are still dealing with a lot of certificate renewal
+issues that arise from the complex architecture. Until we are
+confident in the robustness of the renewal system, and have observed
+a reduction in customer issues, it would be a mistake to
+substantially reduce the validity period for system certificates.
+Likewise, it is not yet a good idea to let customers choose the
+certificate validity periods.</p>
+<p>On the other hand, the team is considering changing the default
+validity period of system certificates <em>a little bit</em>, so that
+different certificates are on different renewal candences. This
+would simplify recovery in some scenarios: it is easier to recover
+when only <em>some</em> of the certificates expired, instead of <em>all</em> of
+them at once.</p>
 </div>
 <div id="postFooter">
     <div id="recent">

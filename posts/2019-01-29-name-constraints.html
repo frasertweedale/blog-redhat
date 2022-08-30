@@ -26,55 +26,169 @@
 
 <div id="postContent">
     <h1 id="x.509-name-constraints-and-freeipa">X.509 Name Constraints and FreeIPA</h1>
-<p>The X.509 <em>Name Constraints</em> extension is a mechanism for constraining the name space(s) in which a <em>certificate authority (CA)</em> may (or may not) issue <em>end-entity</em> certificates. For example, a CA could issue to <em>Bob’s Widgets, Inc</em> a contrained CA certificate that only allows the CA to issue server certificates for <code>bobswidgets.com</code>, or subdomains thereof. In a similar way, an enterprise root CA could issue constrained certificates to different departments in a company.</p>
-<p>What is the advantage? Efficiency can be improved without sacrificing security by enabling <em>scoped</em> delegation of certificate issuance capability to subordinate CAs controlled by different organisations. The name constraints extension is essential for the security of such a mechanism. The <em>Bob’s Widgets, Inc</em> CA must not be allowed to issue valid certificates for <code>google.com</code> (and vice versa!)</p>
-<p>FreeIPA supports installation with an externally signed CA. It is possible that such a CA certificate could have a name constraints extension, defined and imposed by the external issuer. Does FreeIPA support this? What are the caveats? In this blog post I will describe in detail how Name Constraints work and the state of FreeIPA support. Along the way I will dive into the state of Name Constraints verfication in the NSS security library. And I will conclude with a discussion of limitations, alternatives and complementary controls.</p>
+<p>The X.509 <em>Name Constraints</em> extension is a mechanism for
+constraining the name space(s) in which a <em>certificate authority
+(CA)</em> may (or may not) issue <em>end-entity</em> certificates. For
+example, a CA could issue to <em>Bob’s Widgets, Inc</em> a contrained CA
+certificate that only allows the CA to issue server certificates for
+<code>bobswidgets.com</code>, or subdomains thereof. In a similar way, an
+enterprise root CA could issue constrained certificates to different
+departments in a company.</p>
+<p>What is the advantage? Efficiency can be improved without
+sacrificing security by enabling <em>scoped</em> delegation of certificate
+issuance capability to subordinate CAs controlled by different
+organisations. The name constraints extension is essential for the
+security of such a mechanism. The <em>Bob’s Widgets, Inc</em> CA must not
+be allowed to issue valid certificates for <code>google.com</code> (and vice
+versa!)</p>
+<p>FreeIPA supports installation with an externally signed CA. It is
+possible that such a CA certificate could have a name constraints
+extension, defined and imposed by the external issuer. Does FreeIPA
+support this? What are the caveats? In this blog post I will
+describe in detail how Name Constraints work and the state of
+FreeIPA support. Along the way I will dive into the state of Name
+Constraints verfication in the NSS security library. And I will
+conclude with a discussion of limitations, alternatives and
+complementary controls.</p>
 <h2 id="name-constraints">Name Constraints <a href="#name-constraints" class="section">§</a></h2>
-<p>The Name Constraints extension is <a href="https://tools.ietf.org/html/rfc5280#section-4.2.1.10">defined in RFC 5280</a>. Just as the <em>Subject Alternative Name (SAN)</em> is a list of <code>GeneralName</code> values with various possible types (DNS name, IP address, DN, etc), the Name Constraints extension also contains a list of <code>GeneralName</code> values. The difference is in interpretation. In the Name Constraints extension:</p>
+<p>The Name Constraints extension is <a href="https://tools.ietf.org/html/rfc5280#section-4.2.1.10">defined in RFC 5280</a>. Just as
+the <em>Subject Alternative Name (SAN)</em> is a list of <code>GeneralName</code>
+values with various possible types (DNS name, IP address, DN, etc),
+the Name Constraints extension also contains a list of
+<code>GeneralName</code> values. The difference is in interpretation. In
+the Name Constraints extension:</p>
 <ul>
-<li>A DNS name means that the CA may issue certificates with DNS names in the given domain, or a subdomain of arbitrary depth.</li>
+<li>A DNS name means that the CA may issue certificates with DNS names
+in the given domain, or a subdomain of arbitrary depth.</li>
 <li>An IP address is interpreted as a CIDR address range.</li>
 <li>A directory name is interpreted as a base DN.</li>
-<li>An RFC822 name can be a single mailbox, all mailboxes at a particular host, or all mailboxes at a particular domain (including subdomains).</li>
-<li>The <code>SRVName</code> name type, and corresponding Name Constraints matching rules, are defined in <a href="https://tools.ietf.org/html/rfc4985#section-4">RFC 4985</a>.</li>
+<li>An RFC822 name can be a single mailbox, all mailboxes at a
+particular host, or all mailboxes at a particular domain
+(including subdomains).</li>
+<li>The <code>SRVName</code> name type, and corresponding Name Constraints
+matching rules, are defined in <a href="https://tools.ietf.org/html/rfc4985#section-4">RFC 4985</a>.</li>
 </ul>
-<p>There are other rules for other name types, but I won’t elaborate them here.</p>
-<p>In X.509 terminology, these name spaces are called <em>subtrees</em>. The Name Constraints extension can define <em>permitted subtrees</em> and/or <em>excluded subtrees</em>. Permitted subtrees is more often used because it defines what is allowed, and anything not explicitly allowed is prohibited. It is possible for a single Name Constraints extension to define both permitted and excluded subtrees. But I have never seen this in the wild, and I will not bother explaining the rules.</p>
-<p>When validating a certificate, the Name Constraints subtrees of all CA certificates in the certification path are merged, and the certificate is checked against the merged results. Name values in the SAN extension are compared to Name Constraint subtrees of the same type (the comparison rules differ for each name type.)</p>
-<p>In addition to comparing SAN names against Name Constraints, there are a couple of additional requirements:</p>
+<p>There are other rules for other name types, but I won’t elaborate
+them here.</p>
+<p>In X.509 terminology, these name spaces are called <em>subtrees</em>. The
+Name Constraints extension can define <em>permitted subtrees</em> and/or
+<em>excluded subtrees</em>. Permitted subtrees is more often used because
+it defines what is allowed, and anything not explicitly allowed is
+prohibited. It is possible for a single Name Constraints extension
+to define both permitted and excluded subtrees. But I have never
+seen this in the wild, and I will not bother explaining the rules.</p>
+<p>When validating a certificate, the Name Constraints subtrees of all
+CA certificates in the certification path are merged, and the
+certificate is checked against the merged results. Name values in
+the SAN extension are compared to Name Constraint subtrees of the
+same type (the comparison rules differ for each name type.)</p>
+<p>In addition to comparing SAN names against Name Constraints, there
+are a couple of additional requirements:</p>
 <ul>
-<li><code>directoryName</code> constraints are checked against the whole Subject DN, in additional to <code>directoryName</code> SAN values.</li>
-<li><code>rfc822Name</code> constraints are checked against the <code>emailAddress</code> Subject DN attribute (if present) in addition to <code>rfc822Name</code> SAN values. (Use of the <code>emailAddress</code> attribute is deprecated in favour of <code>rfc822Name</code> SAN values.)</li>
+<li><code>directoryName</code> constraints are checked against the whole Subject
+DN, in additional to <code>directoryName</code> SAN values.</li>
+<li><code>rfc822Name</code> constraints are checked against the
+<code>emailAddress</code> Subject DN attribute (if present) in addition to
+<code>rfc822Name</code> SAN values. (Use of the <code>emailAddress</code> attribute
+is deprecated in favour of <code>rfc822Name</code> SAN values.)</li>
 </ul>
-<p>Beyond this, because of the legacy <em>de facto</em> use of the Subject DN CN attribute to carry DNS names, several implementations check the CN attribute against <code>dnsName</code> constraints. This behaviour is not defined (let alone required) by RFC 5280. It is reasonable behaviour when dealing with server certificates. But we will see that this behaviour can lead to problems in other scenarios.</p>
-<p>It is important to mention that nothing prevents a constrained CA from issuing a certificate that violates its Name Constraints (either direct or transitive). Validation must be performed by a client. If a client does not validate Name Constraints, then even a (trusted) issuing CA with a <code>permittedSubtrees</code> <code>dnsName</code> constraint of <code>bobswidgets.com</code> could issue a certificate for <code>google.com</code> and the client will accept it. Fortunately, modern web browsers strictly enforce DNS name constraints. For other clients, or other name types, Name Constraint enforcement support is less consistent. I haven’t done a thorough survey yet but you should make your own investigations into the state of Name Constraint validation support in libraries or programs relevant to your use case.</p>
+<p>Beyond this, because of the legacy <em>de facto</em> use of the Subject DN
+CN attribute to carry DNS names, several implementations check the
+CN attribute against <code>dnsName</code> constraints. This behaviour is not
+defined (let alone required) by RFC 5280. It is reasonable
+behaviour when dealing with server certificates. But we will see
+that this behaviour can lead to problems in other scenarios.</p>
+<p>It is important to mention that nothing prevents a constrained CA
+from issuing a certificate that violates its Name Constraints
+(either direct or transitive). Validation must be performed by a
+client. If a client does not validate Name Constraints, then even a
+(trusted) issuing CA with a <code>permittedSubtrees</code> <code>dnsName</code>
+constraint of <code>bobswidgets.com</code> could issue a certificate for
+<code>google.com</code> and the client will accept it. Fortunately, modern
+web browsers strictly enforce DNS name constraints. For other
+clients, or other name types, Name Constraint enforcement support is
+less consistent. I haven’t done a thorough survey yet but you
+should make your own investigations into the state of Name
+Constraint validation support in libraries or programs relevant to
+your use case.</p>
 <h2 id="freeipa-support-for-constrained-ca-certificates">FreeIPA support for constrained CA certificates <a href="#freeipa-support-for-constrained-ca-certificates" class="section">§</a></h2>
-<p>It is common to deploy FreeIPA with a subordinate CA certificate signed by an external CA (e.g. the organisation’s Active Directory CA). If the FreeIPA deployment controls the <code>ipa.bobswidgets.com</code> subdomain, then it is reasonable for the CA administrator to issue the FreeIPA CA certificate with a Name Constraints <code>permittedSubtree</code> of <code>ipa.bobswidgets.com</code>. Will this work?</p>
-<p>The most important thing to consider is that all names in all certificates issued by the FreeIPA CA must conform to whatever Name Constraints are imposed by the external CA. Above all else, the constraints must permit all DNS names used by the IPA servers across the whole topology. Support for DNS name constraint enforcement is widespread, so if this condition is not met, nothing with work. Most likely not even installation with succeed. So if the permitted <code>dnsName</code> constraint is <code>ipa.bobswidgets.com</code>, then every server hostname must be in that subtree. Likewise for SRV names, RFC822 names and so on.</p>
-<p>In a typical deployment scenario this is not a burdensome requirement. And if the requirements change (e.g. needing to add a FreeIPA replica with a hostname excluded by Name Constraints) then the CA certificate could be re-issued with an updated Name Constraints extension to allow it. In some use cases (e.g. FreeIPA issuing certificates for cloud services), Name Constraints in the CA certificate may be untenable.</p>
-<p>If the external issuer imposes a <code>directoryName</code> constraint, more care must be taken, because as mentioned above, these constraints apply to the Subject DN of issued certificates. The deployment’s <em>subject base</em> (an installation parameter that defines the base subject DN used in all default certificate profiles) must correspond to the <code>directoryName</code> constraint. Also, the Subject DN configuration for custom certificate profiles must correspond to the constraint.</p>
-<p>If all of these conditions are met, then there should be no problem having a constrained FreeIPA CA.</p>
+<p>It is common to deploy FreeIPA with a subordinate CA certificate
+signed by an external CA (e.g. the organisation’s Active Directory
+CA). If the FreeIPA deployment controls the <code>ipa.bobswidgets.com</code>
+subdomain, then it is reasonable for the CA administrator to issue
+the FreeIPA CA certificate with a Name Constraints
+<code>permittedSubtree</code> of <code>ipa.bobswidgets.com</code>. Will this work?</p>
+<p>The most important thing to consider is that all names in all
+certificates issued by the FreeIPA CA must conform to whatever Name
+Constraints are imposed by the external CA. Above all else, the
+constraints must permit all DNS names used by the IPA servers across
+the whole topology. Support for DNS name constraint enforcement is
+widespread, so if this condition is not met, nothing with work.
+Most likely not even installation with succeed. So if the permitted
+<code>dnsName</code> constraint is <code>ipa.bobswidgets.com</code>, then every server
+hostname must be in that subtree. Likewise for SRV names, RFC822
+names and so on.</p>
+<p>In a typical deployment scenario this is not a burdensome
+requirement. And if the requirements change (e.g. needing to add a
+FreeIPA replica with a hostname excluded by Name Constraints) then
+the CA certificate could be re-issued with an updated Name
+Constraints extension to allow it. In some use cases (e.g. FreeIPA
+issuing certificates for cloud services), Name Constraints in the CA
+certificate may be untenable.</p>
+<p>If the external issuer imposes a <code>directoryName</code> constraint, more
+care must be taken, because as mentioned above, these constraints
+apply to the Subject DN of issued certificates. The deployment’s
+<em>subject base</em> (an installation parameter that defines the base
+subject DN used in all default certificate profiles) must correspond
+to the <code>directoryName</code> constraint. Also, the Subject DN
+configuration for custom certificate profiles must correspond to the
+constraint.</p>
+<p>If all of these conditions are met, then there should be no problem
+having a constrained FreeIPA CA.</p>
 <h2 id="a-wild-name-constraint-validation-bug-appears">A wild Name Constraint validation bug appears! <a href="#a-wild-name-constraint-validation-bug-appears" class="section">§</a></h2>
-<p>You didn’t think the story would end there, did you? As is often the case, my study of some less commonly used feature of X.509 was inspired by a customer issue. The customer’s external CA issued a CA certificate with <code>dnsName</code> and <code>directoryName</code> constraints. The <code>permittedSubtree</code> values were reasonable. Everything looked fine, but nothing worked (not even installation). Dogtag would not start up, and the debug log showed that the startup self-test was complaining about the OCSP signing certificate:</p>
+<p>You didn’t think the story would end there, did you? As is often
+the case, my study of some less commonly used feature of X.509 was
+inspired by a customer issue. The customer’s external CA issued a
+CA certificate with <code>dnsName</code> and <code>directoryName</code> constraints.
+The <code>permittedSubtree</code> values were reasonable. Everything looked
+fine, but nothing worked (not even installation). Dogtag would not
+start up, and the debug log showed that the startup self-test was
+complaining about the OCSP signing certificate:</p>
 <pre><code>The Certifying Authority for this certificate is not
 permitted to issue a certificate with this name.</code></pre>
-<p>Adding to the mystery, when the <code>certutil(1)</code> program was used to validate the certificate, the result was success:</p>
+<p>Adding to the mystery, when the <code>certutil(1)</code> program was used to
+validate the certificate, the result was success:</p>
 <pre><code># certutil -V -e -u O \
   -d /etc/pki/pki-tomcat/alias \
   -f /etc/pki/pki-tomcat/alias/pwdfile.txt \
   -n &quot;ocspSigningCert cert-pki-ca&quot;
 certutil: certificate is valid</code></pre>
-<p>Furthermore, the customer was experiencing (and I was also able to reproduce) the issue on RHEL 7, but I could not reproduce the issue on recent versions of Fedora or the RHEL 8 beta.</p>
-<p><code>directoryName</code> constraints are uncommon (relative to <code>dnsName</code> constraints). And having in my past encountered many issues caused by DN string encoding mismatches (a valid scenario, but some libraries do not handle it correctly), my initial theory was that this was the cause. Dogtag uses the NSS security library (via the JSS binding for Java), and a search of the NSS commit log uncovered an interesting change that supported my theory:</p>
+<p>Furthermore, the customer was experiencing (and I was also able to
+reproduce) the issue on RHEL 7, but I could not reproduce the issue
+on recent versions of Fedora or the RHEL 8 beta.</p>
+<p><code>directoryName</code> constraints are uncommon (relative to <code>dnsName</code>
+constraints). And having in my past encountered many issues caused
+by DN string encoding mismatches (a valid scenario, but some
+libraries do not handle it correctly), my initial theory was that
+this was the cause. Dogtag uses the NSS security library (via the
+JSS binding for Java), and a search of the NSS commit log uncovered
+an interesting change that supported my theory:</p>
 <pre><code>Author: David Keeler &lt;dkeeler@mozilla.com&gt;
 Date:   Wed Apr 8 16:17:39 2015 -0700
 
   bug 1150114 - allow PrintableString to match UTF8String
                 in name constraints checking r=briansmith</code></pre>
-<p>On closer examination however, this change affected code in the <em>mozpkix</em> library (part of NSS), which is not invoked by the certificate validation routines used by Dogtag and <code>certutil</code> program. But if the <em>mozpkix</em> Name Constraint validation code was not being used, where was the relevant code?</p>
+<p>On closer examination however, this change affected code in the
+<em>mozpkix</em> library (part of NSS), which is not invoked by the
+certificate validation routines used by Dogtag and <code>certutil</code>
+program. But if the <em>mozpkix</em> Name Constraint validation code was
+not being used, where was the relevant code?</p>
 <h3 id="finding-the-source-of-the-problem">Finding the source of the problem <a href="#finding-the-source-of-the-problem" class="section">§</a></h3>
-<p>Some more reading of NSS code showed that the error originated in <em>libpkix</em> (also part of NSS).</p>
-<p>To work out why <code>certutil</code> was succeeding where Dogtag was failing, I launched <code>certutil</code> in a debugger to see what was going on. Eventually I reached the following routine:</p>
+<p>Some more reading of NSS code showed that the error originated in
+<em>libpkix</em> (also part of NSS).</p>
+<p>To work out why <code>certutil</code> was succeeding where Dogtag was
+failing, I launched <code>certutil</code> in a debugger to see what was going
+on. Eventually I reached the following routine:</p>
 <pre><code>SECStatus
 cert_VerifyCertChain(CERTCertDBHandle *handle, CERTCertificate *cert,
                      PRBool checkSig, PRBool *sigerror,
@@ -87,27 +201,145 @@ cert_VerifyCertChain(CERTCertDBHandle *handle, CERTCertificate *cert,
   }
   return cert_VerifyCertChainOld(handle, cert, checkSig, sigerror,
 }</code></pre>
-<p>OK, now I was getting somewhere. It turns out that during library initialisation, NSS reads the <code>NSS_ENABLE_PKIX_VERIFY</code> environment variable and sets a global variable, the value of which determines the return value of <code>CERT_GetUsePKIXForValidation()</code>. The behaviour can also be controlled explicitly via <code>CERT_SetUsePKIXForValidation(PRBool enable)</code>.</p>
-<p>When invoking <code>certutil</code> ourselves, this environment variable was not set so the “old” validation subroutine was invoked. Both routines perform cryptographic validation of a certification path to a trusted CA, and several other important checks. But the <em>libpkix</em> routine is more thorough, performing Name Constraints checks, in addition to OCSP and perhaps other checks that are not also performed by the “old” subroutine.</p>
-<p>If an environment variable or explicit library call is required to enable <em>libpkix</em> validation, why was the error occuring in Dogtag? The answer is simple: as part of <code>ipa-server-install</code>, we update <code>/etc/sysconfig/pki-tomcat</code> to set <code>NSS_ENABLE_PKIX_VERIFY=1</code> in Dogtag’s process environment. This was implemented a few years ago to support OCSP validation of server certificates in connections made by Dogtag (e.g. to the LDAP server).</p>
+<p>OK, now I was getting somewhere. It turns out that during library
+initialisation, NSS reads the <code>NSS_ENABLE_PKIX_VERIFY</code> environment
+variable and sets a global variable, the value of which determines
+the return value of <code>CERT_GetUsePKIXForValidation()</code>. The
+behaviour can also be controlled explicitly via
+<code>CERT_SetUsePKIXForValidation(PRBool enable)</code>.</p>
+<p>When invoking <code>certutil</code> ourselves, this environment variable was
+not set so the “old” validation subroutine was invoked. Both routines
+perform cryptographic validation of a certification path to a
+trusted CA, and several other important checks. But
+the <em>libpkix</em> routine is more thorough, performing Name Constraints
+checks, in addition to OCSP and perhaps other checks that are not also
+performed by the “old” subroutine.</p>
+<p>If an environment variable or explicit library call is required to
+enable <em>libpkix</em> validation, why was the error occuring in Dogtag?
+The answer is simple: as part of <code>ipa-server-install</code>, we update
+<code>/etc/sysconfig/pki-tomcat</code> to set <code>NSS_ENABLE_PKIX_VERIFY=1</code> in
+Dogtag’s process environment. This was implemented a few years ago
+to support OCSP validation of server certificates in connections
+made by Dogtag (e.g. to the LDAP server).</p>
 <h3 id="the-bug">The bug <a href="#the-bug" class="section">§</a></h3>
-<p>Stepping through the code revealed the true nature of the bug. <em>libpkix</em> Name Constraints validation treats the Common Name (CN) attribute of the Subject DN as a DNS name for the purposes of name constraints validation. I already mentioned that this is reasonable behaviour for server certificates. But <em>libpkix</em> has this behaviour for <em>all end-entity certiticates</em>. For an OCSP signing certificate, whose CN attribute carries no special meaning (formally or conventionally), this behaviour is wrong. And it is the bug at the root of this problem. I filed a <a href="https://bugzilla.mozilla.org/show_bug.cgi?id=1523484">bug in the Mozilla tracker</a> along with a patch—my attempt at fixing the issue. Hopefully a fix can be merged soon.</p>
+<p>Stepping through the code revealed the true nature of the bug.
+<em>libpkix</em> Name Constraints validation treats the Common Name (CN)
+attribute of the Subject DN as a DNS name for the purposes of name
+constraints validation. I already mentioned that this is reasonable
+behaviour for server certificates. But <em>libpkix</em> has this behaviour
+for <em>all end-entity certiticates</em>. For an OCSP signing certificate,
+whose CN attribute carries no special meaning (formally or
+conventionally), this behaviour is wrong. And it is the bug at the
+root of this problem. I filed a <a href="https://bugzilla.mozilla.org/show_bug.cgi?id=1523484">bug in the Mozilla tracker</a> along with
+a patch—my attempt at fixing the issue. Hopefully a fix can be
+merged soon.</p>
 <h3 id="why-no-failure-on-newer-releases">Why no failure on newer releases? <a href="#why-no-failure-on-newer-releases" class="section">§</a></h3>
-<p>The issue does not occur on Fedora &gt;= 28 (or maybe earlier, but I haven’t tested), nor the RHEL 8 beta. So was there already a fix for the issue in NSS, or did something change in Dogtag, FreeIPA or elsewhere?</p>
-<p>In fact, the change was in Dogtag. In recent versions we switched to a less comprehensive certificate validation routine—one that does not use <em>libpkix</em>. This is just the default behaviour; the old behaviour can still be enabled. We made this change because in some scenarios the OCSP checking performed by <em>libpkix</em> causes Dogtag startup to hang. Because the OCSP server it is trying to reach to validate certificates during start self-test <em>is the same Dogtag instance that is starting up!</em> Because of the change to the self-test validation behaviour, FreeIPA deployments on Fedora &gt;= 28 and RHEL 8 beta do not experience this issue.</p>
+<p>The issue does not occur on Fedora &gt;= 28 (or maybe earlier, but I
+haven’t tested), nor the RHEL 8 beta. So was there already a fix
+for the issue in NSS, or did something change in Dogtag, FreeIPA or
+elsewhere?</p>
+<p>In fact, the change was in Dogtag. In recent versions we switched
+to a less comprehensive certificate validation routine—one that does
+not use <em>libpkix</em>. This is just the default behaviour; the old
+behaviour can still be enabled. We made this change because in some
+scenarios the OCSP checking performed by <em>libpkix</em> causes Dogtag
+startup to hang. Because the OCSP server it is trying to reach to
+validate certificates during start self-test <em>is the same Dogtag
+instance that is starting up!</em> Because of the change to the
+self-test validation behaviour, FreeIPA deployments on Fedora &gt;= 28
+and RHEL 8 beta do not experience this issue.</p>
 <h3 id="workaround">Workaround? <a href="#workaround" class="section">§</a></h3>
-<p>If you were experiencing this issue in an existing release (e.g. because you <em>renewed</em> the CA certificate on your <em>existing</em> FreeIPA deployment, and the Name Constraints <em>appeared on the new certificate</em>), an obvious workaround would be to remove the environment variable from <code>/etc/sysconfig/pki-tomcat</code>. That would work, and the change will persist even after an <code>ipa-server-upgrade</code>. But that assumes you already had a working installation. Which the customer doesn’t have, becaues installation itself is failing. So apart from modifying the FreeIPA code to avoid setting this environment variable in the first place, I don’t yet know of a reliable workaround.</p>
-<p>This concludes the discussion of constrained CA certificate support in FreeIPA.</p>
+<p>If you were experiencing this issue in an existing release (e.g.
+because you <em>renewed</em> the CA certificate on your <em>existing</em> FreeIPA
+deployment, and the Name Constraints <em>appeared on the new
+certificate</em>), an obvious workaround would be to remove the
+environment variable from <code>/etc/sysconfig/pki-tomcat</code>. That would
+work, and the change will persist even after an
+<code>ipa-server-upgrade</code>. But that assumes you already had a working
+installation. Which the customer doesn’t have, becaues installation
+itself is failing. So apart from modifying the FreeIPA code to
+avoid setting this environment variable in the first place, I don’t
+yet know of a reliable workaround.</p>
+<p>This concludes the discussion of constrained CA certificate support
+in FreeIPA.</p>
 <h2 id="limitiations-alternatives-and-related-topics">Limitiations, alternatives and related topics <a href="#limitiations-alternatives-and-related-topics" class="section">§</a></h2>
-<p>Name Constraints only constrains names. There are other ways you might want to constrain a CA. For example: <em>can only issue certificates with validity period &lt;= δ</em>, or <em>can only issue certificates with Extended Key Usages ∈ S</em>. But there are no mechanisms for constraining CAs in these ways.</p>
-<p>Not all defined <code>GeneralName</code> types have Name Constraints syntax and semantics defined for them. Documents that define <code>otherName</code> types <em>may</em> define corresponding Name Constraints matching rules, but are not required to. For example <a href="https://tools.ietf.org/html/rfc4985#section-4">RFC 4985</a>, which defines the <code>SRVName</code> type, also defines Name Constraints rules for it. But <a href="https://tools.ietf.org/html/rfc4556">RFC 4556</a>, which specifies the Kerberos PKINIT protocol, defines the <code>KRB5PrincipalName</code> <code>otherName</code> type but no Name Constraints semantics.</p>
-<p>For applications where the set of domains (or other names) is volatile, a constrained CA certificate is likely to be more of a problem than a solution. An example might be a cloud or Platform-as-a-Service provider wanting to issue certificates on behalf of customers, who bring their own domains. For this use case it would be better to use an existing CA that supports automated domain validation and issuance, such as <a href="https://letsencrypt.org/">Let’s Encrypt</a>.</p>
-<p>Name Constraints say which names a CA is or is not allowed to issue certificates for. But this restriction is controlled by the superior CA(s), not the end-entity. Interestingly there is a way for a domain owner to indicate which CAs are authorised to issue certificates for names in the domain. The DNS <a href="https://tools.ietf.org/html/rfc6844">CAA record (RFC 6844)</a> can anoint one more CAs, implicitly prohibiting other CAs from issuing certificates for that domain. The CA itself can check for these records, as a control against mis-issuance. For publicly-trusted CAs, the CA-Browser Forum <em>Baseline Requirements</em> <strong>requires</strong> CAs to check and obey CAA records. DNSSEC is recommended but not required.</p>
-<p>CAA is an <em>authorisation</em> control—relying parties do not consult or care about CAA records when verifying certificates. The verification counterpart of CAA is <em>DANE—DNS-based Authentication of Named Entities</em>, defined in <a href="https://tools.ietf.org/html/rfc6698">RFC 6698</a>. Like CAA, DANE uses DNS (the <em>TLSA</em> record type), but DNSSEC is required. TLSA records can be used to indicate the authorised CA(s) for a certificate. Or they can specify the exact certificate(s) for the domain, a kind of <em>certificate pinning</em>. So DANE can work hand-in-hand with the existing public PKI infrastructure, or it can do an end-run around it. Depending on who you talk to, the reliance on DNSSEC makes it a non-starter, or humanity’s last hope! In any case, support is not yet widespread. Today DANE can be used in some browsers via add-ons, and the OpenSSL and GnuTLS libraries have some support.</p>
-<p>Nowadays all publicly-trusted CAs, and some private PKIs, log all issued certificates to <em>Certificate Transparency (CT)</em> logs. These logs are auditable (publicly if the log is public), cryptographically verifiable logs of CA activity. CT was imposed after the detection of many serious misissuances by several publicly-trusted CAs (most of whom are no longer trusted by anyone). Now, even failure to log a certificate to a CT log is reason enough to revoke trust (because <em>what else</em> might they have failed to log? Certificates for <code>google.com</code> or <code>yourbank.ch</code>?) What does CT have to do with Name Constraints? When you consider that client Name Constraints validation support is patchy at best, a CT-based logging and audit solution is a credible alternative to Name Constraints, or at least a valuable complementary control.</p>
+<p>Name Constraints only constrains names. There are other ways you
+might want to constrain a CA. For example: <em>can only issue
+certificates with validity period &lt;= δ</em>, or <em>can only issue
+certificates with Extended Key Usages ∈ S</em>. But there are no
+mechanisms for constraining CAs in these ways.</p>
+<p>Not all defined <code>GeneralName</code> types have Name Constraints syntax
+and semantics defined for them. Documents that define <code>otherName</code>
+types <em>may</em> define corresponding Name Constraints matching rules,
+but are not required to. For example <a href="https://tools.ietf.org/html/rfc4985#section-4">RFC 4985</a>, which defines the
+<code>SRVName</code> type, also defines Name Constraints rules for it. But
+<a href="https://tools.ietf.org/html/rfc4556">RFC 4556</a>, which specifies the Kerberos PKINIT protocol, defines
+the <code>KRB5PrincipalName</code> <code>otherName</code> type but no Name Constraints
+semantics.</p>
+<p>For applications where the set of domains (or other names) is
+volatile, a constrained CA certificate is likely to be more of a
+problem than a solution. An example might be a cloud or
+Platform-as-a-Service provider wanting to issue certificates on
+behalf of customers, who bring their own domains. For this use case
+it would be better to use an existing CA that supports automated
+domain validation and issuance, such as <a href="https://letsencrypt.org/">Let’s Encrypt</a>.</p>
+<p>Name Constraints say which names a CA is or is not allowed to issue
+certificates for. But this restriction is controlled by the
+superior CA(s), not the end-entity. Interestingly there is a way
+for a domain owner to indicate which CAs are authorised to issue
+certificates for names in the domain. The DNS <a href="https://tools.ietf.org/html/rfc6844">CAA record (RFC
+6844)</a> can anoint one more
+CAs, implicitly prohibiting other CAs from issuing certificates for
+that domain. The CA itself can check for these records, as a
+control against mis-issuance. For publicly-trusted CAs, the
+CA-Browser Forum <em>Baseline Requirements</em> <strong>requires</strong> CAs to check
+and obey CAA records. DNSSEC is recommended but not required.</p>
+<p>CAA is an <em>authorisation</em> control—relying parties do not consult or
+care about CAA records when verifying certificates. The
+verification counterpart of CAA is <em>DANE—DNS-based Authentication of
+Named Entities</em>, defined in <a href="https://tools.ietf.org/html/rfc6698">RFC 6698</a>. Like CAA, DANE uses DNS
+(the <em>TLSA</em> record type), but DNSSEC is required. TLSA records can
+be used to indicate the authorised CA(s) for a certificate. Or they
+can specify the exact certificate(s) for the domain, a kind of
+<em>certificate pinning</em>. So DANE can work hand-in-hand with the
+existing public PKI infrastructure, or it can do an end-run around
+it. Depending on who you talk to, the reliance on DNSSEC makes it a
+non-starter, or humanity’s last hope! In any case, support is not
+yet widespread. Today DANE can be used in some browsers via
+add-ons, and the OpenSSL and GnuTLS libraries have some support.</p>
+<p>Nowadays all publicly-trusted CAs, and some private PKIs, log all
+issued certificates to <em>Certificate Transparency (CT)</em> logs. These
+logs are auditable (publicly if the log is public),
+cryptographically verifiable logs of CA activity. CT was imposed
+after the detection of many serious misissuances by several
+publicly-trusted CAs (most of whom are no longer trusted by anyone).
+Now, even failure to log a certificate to a CT log is reason enough
+to revoke trust (because <em>what else</em> might they have failed to log?
+Certificates for <code>google.com</code> or <code>yourbank.ch</code>?) What does CT
+have to do with Name Constraints? When you consider that client
+Name Constraints validation support is patchy at best, a CT-based
+logging and audit solution is a credible alternative to Name
+Constraints, or at least a valuable complementary control.</p>
 <h2 id="conclusion">Conclusion <a href="#conclusion" class="section">§</a></h2>
-<p>So, we have looked at what the Name Constraints extension does, and why it can be useful. We have discussed its limitations and some alternative or related mechanisms. We looked at the state of FreeIPA support, and did a deep dive into NSS to investigate the one bug that seems to be getting in the way.</p>
-<p>Name Constraints is one of the many complex features that makes X.509 both so versatile yet so painful to work with. It’s a necessary feature, but support is not consistent and where it exists, there are usually bugs. Although I did discuss some “alternatives”, a big reason you might look for an alternative is because the support is not great in the first place. In my opinion, the best way forward is to ensure Name Constraints validation is performed more often, and more correctly, while (separately) preparing the way for comprehensive CT logging in enterprise CAs. A combination of monitoring (CT) and validation controls (browsers correctly validating names, Name Constraints and requiring evidence of CT logging) seems to be improving security in the public PKI. If we fix the client libraries and make CT logging and monitoring easy, it could work well for enterprise PKIs too.</p>
+<p>So, we have looked at what the Name Constraints extension does, and
+why it can be useful. We have discussed its limitations and some
+alternative or related mechanisms. We looked at the state of
+FreeIPA support, and did a deep dive into NSS to investigate the one
+bug that seems to be getting in the way.</p>
+<p>Name Constraints is one of the many complex features that makes
+X.509 both so versatile yet so painful to work with. It’s a
+necessary feature, but support is not consistent and where it
+exists, there are usually bugs. Although I did discuss some
+“alternatives”, a big reason you might look for an alternative is
+because the support is not great in the first place. In my opinion,
+the best way forward is to ensure Name Constraints validation is
+performed more often, and more correctly, while (separately)
+preparing the way for comprehensive CT logging in enterprise CAs. A
+combination of monitoring (CT) and validation controls (browsers
+correctly validating names, Name Constraints and requiring evidence
+of CT logging) seems to be improving security in the public PKI. If
+we fix the client libraries and make CT logging and monitoring easy,
+it could work well for enterprise PKIs too.</p>
 </div>
 <div id="postFooter">
     <div id="recent">

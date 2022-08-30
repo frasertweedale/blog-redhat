@@ -26,13 +26,33 @@
 
 <div id="postContent">
     <h1 id="running-pods-in-user-namespaces-without-privileged-sccs">Running Pods in user namespaces without privileged SCCs</h1>
-<p>In <a href="2021-07-22-openshift-systemd-workload-demo.html">previous posts</a> I demonstrated how to run workloads in an isolated user namespace on OpenShift. There are still come caveats to doing this. One of these relates to <em>Security Context Constraints (SCCs)</em>, a security policy mechanism in OpenShift. In particular, it appeared necessary to admit the Pod via the <code>anyuid</code> SCC, or one with similar high privileges. This meant that although the workload itself runs under unprivileged UIDs, the account that creates the Pod would need privileges to create Pods that run under arbitrary host UIDs. This is not a desirable situation.</p>
-<p>I have investigated that matter further, and it turns out that you <em>can</em> run a workload in a user namespace even via the default <code>restricted</code> SCC. But the configuration is not intuitive, and the reasons <em>why</em> it must be configured that way are convoluted. In this post I explain the challenges that arise when running a user namespaced Pod under the <code>restricted</code> SCC, and demonstrate the solution.</p>
+<p>In <a href="2021-07-22-openshift-systemd-workload-demo.html">previous posts</a> I demonstrated how to run workloads in an
+isolated user namespace on OpenShift. There are still come caveats
+to doing this. One of these relates to <em>Security Context
+Constraints (SCCs)</em>, a security policy mechanism in OpenShift. In
+particular, it appeared necessary to admit the Pod via the <code>anyuid</code>
+SCC, or one with similar high privileges. This meant that although
+the workload itself runs under unprivileged UIDs, the account that
+creates the Pod would need privileges to create Pods that run under
+arbitrary host UIDs. This is not a desirable situation.</p>
+<p>I have investigated that matter further, and it turns out that you
+<em>can</em> run a workload in a user namespace even via the default
+<code>restricted</code> SCC. But the configuration is not intuitive, and the
+reasons <em>why</em> it must be configured that way are convoluted. In
+this post I explain the challenges that arise when running a user
+namespaced Pod under the <code>restricted</code> SCC, and demonstrate the
+solution.</p>
 <div class="note">
-<p>This post assumes a basic knowledge of Security Context Constraints. If you are unfamiliar with SCCs, the DevConf.cz 2022 presentation <em>Introduction to Security Context Constraints</em> (<a href="https://static.sched.com/hosted_files/devconfcz2022/d5/%5BDevConf.CZ%2022%5D%20SCCs%20Presentation.pdf">slides</a>, <a href="https://www.youtube.com/watch?v=MrYSUmk-nr4">video</a>) by Alberto Losada and Mario Vázquez will bring you up to speed.</p>
+<p>This post assumes a basic knowledge of Security Context Constraints.
+If you are unfamiliar with SCCs, the DevConf.cz 2022 presentation
+<em>Introduction to Security Context Constraints</em> (<a href="https://static.sched.com/hosted_files/devconfcz2022/d5/%5BDevConf.CZ%2022%5D%20SCCs%20Presentation.pdf">slides</a>,
+<a href="https://www.youtube.com/watch?v=MrYSUmk-nr4">video</a>) by Alberto Losada and Mario Vázquez will bring you up to
+speed.</p>
 </div>
 <h2 id="cluster-configuration">Cluster configuration <a href="#cluster-configuration" class="section">§</a></h2>
-<p>I am testing on an OpenShift 4.10 (pre-release) cluster. Some changes to worker node configuration are required. The following <code>MachineConfig</code> object defines those changes:</p>
+<p>I am testing on an OpenShift 4.10 (pre-release) cluster. Some
+changes to worker node configuration are required. The following
+<code>MachineConfig</code> object defines those changes:</p>
 <div class="sourceCode" id="cb1"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> machineconfiguration.openshift.io/v1</span></span>
 <span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> MachineConfig</span></span>
 <span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="fu">metadata</span><span class="kw">:</span></span>
@@ -76,12 +96,26 @@
 <span id="cb1-41"><a href="#cb1-41" aria-hidden="true" tabindex="-1"></a><span class="at">          </span><span class="fu">source</span><span class="kw">:</span><span class="at"> data:text/plain;charset=utf-8;base64,W2NyaW8ucnVudGltZS53b3JrbG9hZHMub3BlbnNoaWZ0LXVzZXJuc10KYWN0aXZhdGlvbl9hbm5vdGF0aW9uID0gImlvLm9wZW5zaGlmdC51c2VybnMiCmFsbG93ZWRfYW5ub3RhdGlvbnMgPSBbCiAgImlvLmt1YmVybmV0ZXMuY3JpLW8udXNlcm5zLW1vZGUiLAogICJpby5rdWJlcm5ldGVzLmNyaS1vLmNncm91cDItbW91bnQtaGllcmFyY2h5LXJ3IiwKICAiaW8ua3ViZXJuZXRlcy5jcmktby5EZXZpY2VzIgpdCg==</span></span></code></pre></div>
 <p>The main parts of this <code>MachineConfig</code> are:</p>
 <ul>
-<li><p>The <strong><code>kernelArguments</code></strong> enable cgroupsv2, which are not strictly required for this demo, but are required for running systemd-based workloads.</p></li>
-<li><p>The <strong><code>override-runc.service</code></strong> systemd unit installs a custom version of runc that implements the new <a href="https://github.com/opencontainers/runtime-spec/blob/8958f93039ab90be53d803cd7e231a775f644451/config-linux.md#cgroup-ownership">OCI Runtime Specification cgroup ownership semantics</a>. This should be the default behaviour in future versions of OpenShift, perhaps as soon as OpenShift 4.11.</p></li>
-<li><p><strong><code>/etc/subuid</code></strong> and <strong><code>/etc/subgid</code></strong> provide a sub-id mapping range for CRI-O to use when creating Pods with user namespaces.</p></li>
-<li><p><strong><code>/etc/crio/crio.conf.d/99-crio-userns.conf</code></strong> defines the <code>io.openshift.userns</code> workload type for CRI-O. It is also not strictly necessary for this demo but is required for systemd-based workloads to run successfully. The default CRI-O configuration in OpenShift 4.10 provides the <code>io.openshift.builder</code> workload type, which is sufficient if your workload does not need to manage cgroups.</p></li>
+<li><p>The <strong><code>kernelArguments</code></strong> enable cgroupsv2, which are not strictly
+required for this demo, but are required for running systemd-based
+workloads.</p></li>
+<li><p>The <strong><code>override-runc.service</code></strong> systemd unit installs a custom
+version of runc that implements the new <a href="https://github.com/opencontainers/runtime-spec/blob/8958f93039ab90be53d803cd7e231a775f644451/config-linux.md#cgroup-ownership">OCI Runtime Specification
+cgroup ownership semantics</a>.
+This should be the default behaviour in future versions of
+OpenShift, perhaps as soon as OpenShift 4.11.</p></li>
+<li><p><strong><code>/etc/subuid</code></strong> and <strong><code>/etc/subgid</code></strong> provide a sub-id mapping range
+for CRI-O to use when creating Pods with user namespaces.</p></li>
+<li><p><strong><code>/etc/crio/crio.conf.d/99-crio-userns.conf</code></strong> defines the
+<code>io.openshift.userns</code> workload type for CRI-O. It is also not
+strictly necessary for this demo but is required for systemd-based
+workloads to run successfully. The default CRI-O configuration in
+OpenShift 4.10 provides the <code>io.openshift.builder</code> workload type,
+which is sufficient if your workload does not need to manage
+cgroups.</p></li>
 </ul>
-<p>Aside from the node configuration changes, I (as cluster admin) also created project and user account to use for the subsequent steps:</p>
+<p>Aside from the node configuration changes, I (as cluster admin) also
+created project and user account to use for the subsequent steps:</p>
 <pre class="shell"><code>% oc new-project test
 Now using project &quot;test&quot; on server &quot;https://api.ci-ln-5rkyxfb-72292.origin-ci-int-gce.dev.rhcloud.com:6443&quot;.
 …
@@ -93,12 +127,16 @@ user.user.openshift.io/test created
 clusterrole.rbac.authorization.k8s.io/edit added: &quot;test&quot;</code></pre>
 <p>I did not assign any special SCCs to the <code>test</code> user account.</p>
 <div class="note">
-<p>Remember to wait for the Machine Config Operator to finish updating the worker nodes before proceeding with Pod creation. You can use <code>oc wait</code> to await this condition:</p>
+<p>Remember to wait for the Machine Config Operator to finish updating
+the worker nodes before proceeding with Pod creation. You can use
+<code>oc wait</code> to await this condition:</p>
 <pre class="shell"><code>% oc wait mcp/worker \
     --for condition=updated --timeout=-1s</code></pre>
 </div>
 <h2 id="problem-demonstration">Problem demonstration <a href="#problem-demonstration" class="section">§</a></h2>
-<p>The objective is to run a Pod in a user namespace, with that Pod being admitted via the default <code>restricted</code> SCC. We will start with the following Pod definition:</p>
+<p>The objective is to run a Pod in a user namespace, with that Pod
+being admitted via the default <code>restricted</code> SCC. We will start with
+the following Pod definition:</p>
 <div class="sourceCode" id="cb4"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
 <span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Pod</span></span>
 <span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a><span class="fu">metadata</span><span class="kw">:</span></span>
@@ -111,7 +149,13 @@ clusterrole.rbac.authorization.k8s.io/edit added: &quot;test&quot;</code></pre>
 <span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> fedora</span></span>
 <span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">image</span><span class="kw">:</span><span class="at"> registry.fedoraproject.org/fedora:35-x86_64</span></span>
 <span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">command</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="st">&quot;sleep&quot;</span><span class="kw">,</span><span class="at"> </span><span class="st">&quot;3600&quot;</span><span class="kw">]</span></span></code></pre></div>
-<p>The <strong><code>io.openshift.userns</code></strong> annotation selects the CRI-O workload profile that we added via the <code>MachineConfig</code> above. This profile enables several other annotations, but does not automatically execute the Pod in a user namespace. For that, you must <em>also</em> supply the <strong><code>io.kubernetes.cri-o.userns-mode</code></strong> annotation. Its argument tells CRI-O to automatically select unique host UID range of size 65536 to map into the container’s user namespace.</p>
+<p>The <strong><code>io.openshift.userns</code></strong> annotation selects the CRI-O workload
+profile that we added via the <code>MachineConfig</code> above. This profile
+enables several other annotations, but does not automatically
+execute the Pod in a user namespace. For that, you must <em>also</em>
+supply the <strong><code>io.kubernetes.cri-o.userns-mode</code></strong> annotation. Its
+argument tells CRI-O to automatically select unique host UID range
+of size 65536 to map into the container’s user namespace.</p>
 <p>I created the Pod as user <code>test</code>:</p>
 <pre class="shell"><code>% oc --as test create -f pod-fedora.yaml
 pod/fedora created</code></pre>
@@ -128,20 +172,31 @@ pod/fedora created</code></pre>
     &quot;reason&quot;: &quot;CreateContainerError&quot;
   }
 }</code></pre>
-<p>The core error message is: <strong><em>cannot set uid to unmapped user in user namespace</em></strong>. This arises because, in the absense of a <code>runAsUser</code> specification in the PodSpec, the <code>restricted</code> SCC has defaulted it to a value from the UID range assigned to the project:</p>
+<p>The core error message is: <strong><em>cannot set uid to unmapped user in
+user namespace</em></strong>. This arises because, in the absense of a
+<code>runAsUser</code> specification in the PodSpec, the <code>restricted</code> SCC has
+defaulted it to a value from the UID range assigned to the project:</p>
 <pre class="shell"><code>% oc get -o json pod/fedora \
   | jq '.spec.containers[].securityContext.runAsUser'
 1000650000</code></pre>
-<p>The project UID range allocation is recorded in the project and namespace annotations:</p>
+<p>The project UID range allocation is recorded in the project and
+namespace annotations:</p>
 <pre class="shell"><code>% oc get -o json project/test namespace/test \
     | jq '.items[].metadata.annotations.&quot;openshift.io/sa.scc.uid-range&quot;'
 &quot;1000650000/10000&quot;
 &quot;1000650000/10000&quot;</code></pre>
-<p>OpenShift allocated to project <code>test</code> a range of 10000 UIDs starting at <code>1000650000</code>. The error arises because UID <code>1000650000</code> is not mapped in the user namespace. The host UID range may be something like <code>200000</code>–<code>265535</code>, whereas the sandbox’s UID range is <code>0</code>–<code>65535</code>.</p>
+<p>OpenShift allocated to project <code>test</code> a range of 10000 UIDs starting
+at <code>1000650000</code>. The error arises because UID <code>1000650000</code> is not
+mapped in the user namespace. The host UID range may be something
+like <code>200000</code>–<code>265535</code>, whereas the sandbox’s UID range is
+<code>0</code>–<code>65535</code>.</p>
 <p>I deleted the Pod and will try something different:</p>
 <pre class="shell"><code>% oc delete pod/fedora
 pod &quot;fedora&quot; deleted</code></pre>
-<p>Let’s say that we want to run the container process as UID <code>0</code> <em>in the Pod’s user namespace</em>, as would be required for a systemd-based workload. Instead of leaving it to the SCC machinery, I’ll set <code>runAsUser: 0</code> in the PodSpec myself:</p>
+<p>Let’s say that we want to run the container process as UID <code>0</code> <em>in
+the Pod’s user namespace</em>, as would be required for a systemd-based
+workload. Instead of leaving it to the SCC machinery, I’ll set
+<code>runAsUser: 0</code> in the PodSpec myself:</p>
 <div class="sourceCode" id="cb11"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
 <span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Pod</span></span>
 <span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a><span class="fu">metadata</span><span class="kw">:</span></span>
@@ -162,10 +217,24 @@ Error from server (Forbidden): error when creating &quot;pod-fedora.yaml&quot;�
 <p>I’ve trimmed the rather long error message, but the core problem is:</p>
 <pre><code>spec.containers[0].securityContext.runAsUser: Invalid value:
 0: must be in the ranges: [1000650000, 1000659999]</code></pre>
-<p>The <code>restricted</code> SCC only allows <code>runAsUser</code> values that fall in the projects assigned UID range. And this is what we would expect. The problem is that the admission machinery has no awareness of user namespaces. It cannot discern that <code>runAsUser: 0</code> means that we want to run as UID <code>0</code> <em>inside the user namespace</em>, whilst mapped to an unprivileged UID on the host.</p>
-<p>The problem is twofold. First, we are unable to control the UID mapping that CRI-O gives us, so that it would coincide with the project’s UID range. Second, the SCC admission checks and defaulting is oblivious to user namespace. <code>runAsUser</code> is interpreted as referring to host UIDs, and the <code>restricted</code> SCC restricts (or defaults) us to values that are not mapped in the Pod’s user namespace.</p>
+<p>The <code>restricted</code> SCC only allows <code>runAsUser</code> values that fall in the
+projects assigned UID range. And this is what we would expect. The
+problem is that the admission machinery has no awareness of user
+namespaces. It cannot discern that <code>runAsUser: 0</code> means that we
+want to run as UID <code>0</code> <em>inside the user namespace</em>, whilst mapped to
+an unprivileged UID on the host.</p>
+<p>The problem is twofold. First, we are unable to control the UID
+mapping that CRI-O gives us, so that it would coincide with the
+project’s UID range. Second, the SCC admission checks and
+defaulting is oblivious to user namespace. <code>runAsUser</code> is
+interpreted as referring to host UIDs, and the <code>restricted</code> SCC
+restricts (or defaults) us to values that are not mapped in the
+Pod’s user namespace.</p>
 <h2 id="solution">Solution <a href="#solution" class="section">§</a></h2>
-<p>The <code>map-to-root</code> option in the <code>userns-mode</code> annotation provides a solution to this dilemma. It takes whatever value <code>runAsUser</code> is, and ensures that that host UID gets mapped to UID <code>0</code> in the Pod user namespace. The updated PodSpec is:</p>
+<p>The <code>map-to-root</code> option in the <code>userns-mode</code> annotation provides a
+solution to this dilemma. It takes whatever value <code>runAsUser</code> is,
+and ensures that that host UID gets mapped to UID <code>0</code> in the Pod
+user namespace. The updated PodSpec is:</p>
 <div class="sourceCode" id="cb14"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
 <span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Pod</span></span>
 <span id="cb14-3"><a href="#cb14-3" aria-hidden="true" tabindex="-1"></a><span class="fu">metadata</span><span class="kw">:</span></span>
@@ -197,21 +266,81 @@ pod/fedora created
 <pre class="shell"><code>% oc rsh pod/fedora cat /proc/self/uid_map
          1     265536      65535
          0 1000650000          1</code></pre>
-<p>This shows that UID <code>0</code> in the Pod’s user namespace maps to UID <code>10000650000</code> in the parent (host) user namespace. The remaining UIDs <code>1</code>–<code>65536</code> in the Pod’s user namespace are mapped contiguously from UID <code>265536</code> in the host user namespace.</p>
+<p>This shows that UID <code>0</code> in the Pod’s user namespace maps to UID
+<code>10000650000</code> in the parent (host) user namespace. The remaining
+UIDs <code>1</code>–<code>65536</code> in the Pod’s user namespace are mapped contiguously
+from UID <code>265536</code> in the host user namespace.</p>
 <p>Objective achieved.</p>
 <h3 id="why-runasuser-must-be-specified">Why <code>runAsUser</code> must be specified <a href="#why-runasuser-must-be-specified" class="section">§</a></h3>
-<p>Referring back to the PodSpec, why is it necessary to explicitly specify <code>runAsUser</code>? Doesn’t the SCC admission machinery automatically set the default value? Well… yes, and no. The SCC machinery defaults <code>runAsUser</code> in each <em>container’s</em> <code>securityContext</code> field. But it does not set it in the <em>Pod’s</em> <code>securityContext</code>. And it is the <em>Pod</em> <code>securityContext</code> that CRI-O examines when processing the <code>map-to-root</code> option. If it is unset, <code>CRI-O</code> will not set the mapping up properly and container(s) will fail to run.</p>
-<p>The consequence of this is that the user or operator creating the Pod must first examing the Project or Namespace object to learn what its assigned UID range is. Then it must set the <code>spec.securityContext.runAsUser</code> field to the start value of that range. The range assignment will certainly differ from project to project so it cannot be hardcoded. This is a bit annoying: more work for the human operator, or more automation behaviour to implement and maintain.</p>
-<p>The simplest solution I can think of is to enhance the SCC processing to also set <code>spec.securityContext.runAsUser</code> if it is unset. Then CRI-O would see the value it needs to see. Alternatively CRI-O could be enhanced to check the container <code>securityContext</code> if the <code>runAsUser</code> is not specified in the Pod <code>securityContext</code>. But to me this seems ill principled because different containers (in the same Pod) could specify different values, and there is no obvious “right” way to resolve the ambiguities.</p>
+<p>Referring back to the PodSpec, why is it necessary to explicitly
+specify <code>runAsUser</code>? Doesn’t the SCC admission machinery
+automatically set the default value? Well… yes, and no. The SCC
+machinery defaults <code>runAsUser</code> in each <em>container’s</em>
+<code>securityContext</code> field. But it does not set it in the <em>Pod’s</em>
+<code>securityContext</code>. And it is the <em>Pod</em> <code>securityContext</code> that CRI-O
+examines when processing the <code>map-to-root</code> option. If it is unset,
+<code>CRI-O</code> will not set the mapping up properly and container(s) will
+fail to run.</p>
+<p>The consequence of this is that the user or operator creating the
+Pod must first examing the Project or Namespace object to learn what
+its assigned UID range is. Then it must set the
+<code>spec.securityContext.runAsUser</code> field to the start value of that
+range. The range assignment will certainly differ from project to
+project so it cannot be hardcoded. This is a bit annoying: more
+work for the human operator, or more automation behaviour to
+implement and maintain.</p>
+<p>The simplest solution I can think of is to enhance the SCC
+processing to also set <code>spec.securityContext.runAsUser</code> if it is
+unset. Then CRI-O would see the value it needs to see.
+Alternatively CRI-O could be enhanced to check the container
+<code>securityContext</code> if the <code>runAsUser</code> is not specified in the Pod
+<code>securityContext</code>. But to me this seems ill principled because
+different containers (in the same Pod) could specify different
+values, and there is no obvious “right” way to resolve the
+ambiguities.</p>
 <h2 id="using-multiple-uids">Using multiple UIDs <a href="#using-multiple-uids" class="section">§</a></h2>
-<p>Although I have a nice range of 65536 UIDs mapped in the Pod’s user namespace, I am not able to run processes as any UID other than <code>0</code>. This is beacuse the <code>restricted</code> SCC forcibly omits <code>CAP_SETUID</code> (among others) from the capability bounding set of the container process. Complex workloads, including any based on systemd, will fail to run properly under such a constraint.</p>
-<p>The simplest workaround is to admit the Pod via the <code>anyuid</code> SCC. But that undoes the good outcome achieved in this post!</p>
-<p>An intermediate workaround is the create a new SCC that does not forcibly deprive containers of <code>CAP_SETUID</code>. This entails administrative overhead.</p>
-<p>It also increases the attack surface. The <code>setuid(2)</code> system call is restricted to UIDs mapped in the UID namespace of the calling process. If the calling process is in an isolated user namespace that maps to unprivileged host UIDs, it is safe (up to kernel bugs) to grant <code>CAP_SETUID</code> to that process. But recall that user namespaces are still opt-in; by default Pods use the host user namespace. An SCC can use <code>MustRunAsRange</code> to restrict the <em>initial</em> container process to running as a user in the project’s assigned UID range. But if that SCC also lets containers use <code>CAP_SETUID</code>, then it doesn’t really provide more protection than <code>anyuid</code></p>
-<p>A more robust solution would be to modify CRI-O to <em>reinstate</em> <code>CAP_SETUID</code> and related capapbilities when the Pod runs in a user namespace. I will raise the topic with the CRI-O maintainers, as solving this problem is important for our use case, and probably other “legacy” workloads too.</p>
+<p>Although I have a nice range of 65536 UIDs mapped in the Pod’s user
+namespace, I am not able to run processes as any UID other than <code>0</code>.
+This is beacuse the <code>restricted</code> SCC forcibly omits <code>CAP_SETUID</code>
+(among others) from the capability bounding set of the container
+process. Complex workloads, including any based on systemd, will
+fail to run properly under such a constraint.</p>
+<p>The simplest workaround is to admit the Pod via the <code>anyuid</code> SCC.
+But that undoes the good outcome achieved in this post!</p>
+<p>An intermediate workaround is the create a new SCC that does not
+forcibly deprive containers of <code>CAP_SETUID</code>. This entails
+administrative overhead.</p>
+<p>It also increases the attack surface. The <code>setuid(2)</code> system call
+is restricted to UIDs mapped in the UID namespace of the calling
+process. If the calling process is in an isolated user namespace
+that maps to unprivileged host UIDs, it is safe (up to kernel bugs)
+to grant <code>CAP_SETUID</code> to that process. But recall that user
+namespaces are still opt-in; by default Pods use the host user
+namespace. An SCC can use <code>MustRunAsRange</code> to restrict the
+<em>initial</em> container process to running as a user in the project’s
+assigned UID range. But if that SCC also lets containers use
+<code>CAP_SETUID</code>, then it doesn’t really provide more protection than
+<code>anyuid</code></p>
+<p>A more robust solution would be to modify CRI-O to <em>reinstate</em>
+<code>CAP_SETUID</code> and related capapbilities when the Pod runs in a user
+namespace. I will raise the topic with the CRI-O maintainers, as
+solving this problem is important for our use case, and probably
+other “legacy” workloads too.</p>
 <h2 id="conclusion">Conclusion <a href="#conclusion" class="section">§</a></h2>
-<p>In this post I demonstrated how to run workloads in a user namespace on OpenShift, under the default <code>restricted</code> SCC. The <code>map-to-root</code> option is critical to accomplishing this. There is an unfortunate “rough edge” in that the workload must specifically refer to the UID range assigned to the namespace in which the Pod will live, which means additional work for or complexity in the operator (human or otherwise).</p>
-<p>Despite this progress, if you need to run processes under different UIDs in the container(s), the <code>restricted</code> UID won’t work because it deprives the container process of the <code>CAP_SETUID</code> capability. You must go back to admitting the workload via <code>anyuid</code> or a similar SCC, which is a significant erosion of the security boundaries between containers and the host. This issue will be the subject of future investigations.</p>
+<p>In this post I demonstrated how to run workloads in a user namespace
+on OpenShift, under the default <code>restricted</code> SCC. The <code>map-to-root</code>
+option is critical to accomplishing this. There is an unfortunate
+“rough edge” in that the workload must specifically refer to the UID
+range assigned to the namespace in which the Pod will live, which
+means additional work for or complexity in the operator (human or
+otherwise).</p>
+<p>Despite this progress, if you need to run processes under different
+UIDs in the container(s), the <code>restricted</code> UID won’t work because it
+deprives the container process of the <code>CAP_SETUID</code> capability. You
+must go back to admitting the workload via <code>anyuid</code> or a similar
+SCC, which is a significant erosion of the security boundaries
+between containers and the host. This issue will be the subject of
+future investigations.</p>
 </div>
 <div id="postFooter">
     <div id="recent">

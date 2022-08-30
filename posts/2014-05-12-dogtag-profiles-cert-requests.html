@@ -26,11 +26,25 @@
 
 <div id="postContent">
     <h1 id="dogtag-certificate-profiles---certificate-requests">Dogtag certificate profiles - certificate requests</h1>
-<p>The <em>certificate enrolment profiles</em> feature of Dogtag PKI can be used to specify default values and constraints for X.509 certificate fields. This post explores Dogtag certificate profiles and their relationship with the PKCS #10 certificate signing request (CSR) format with a focus on signing request submission. Future posts in this series will focus on the Certificate Authority (CA) side of the profiles feature, and on modifying and defining profiles for specialised use cases.</p>
-<p>Let us begin by generating a CSR. This occurs in isolation from Dogtag profiles or certificate enrolment, and is done using <code>certutil</code> (CSRs can also be generated with <code>openssl req</code>).</p>
+<p>The <em>certificate enrolment profiles</em> feature of Dogtag PKI can be
+used to specify default values and constraints for X.509 certificate
+fields. This post explores Dogtag certificate profiles and their
+relationship with the PKCS #10 certificate signing request (CSR)
+format with a focus on signing request submission. Future posts in
+this series will focus on the Certificate Authority (CA) side of the
+profiles feature, and on modifying and defining profiles for
+specialised use cases.</p>
+<p>Let us begin by generating a CSR. This occurs in isolation from
+Dogtag profiles or certificate enrolment, and is done using
+<code>certutil</code> (CSRs can also be generated with <code>openssl req</code>).</p>
 <pre><code>certutil -R -d .pki/nssdb -o no-CN.req -a -s 'C=AU, ST=Queensland, L=Brisbane, O=Red Hat'</code></pre>
-<p>The <code>-o no-CN.req</code> instructs <code>certutil</code> to output the CSR to a file, while <code>-a</code> specifies ASCII output. Note that the subject (given by <code>-s</code>) does not contain a common name (CN) component.</p>
-<p>CSRs are submitted to Dogtag in the context of some certificate profile. Available profiles can be listed via <code>pki cert-request-profile-find ""</code>, and the Certificate Enrolment Request template for a profile can be retrieved via <code>pki cert-request-profile-show &lt;profile ID&gt; --output &lt;filename&gt;</code>. Let’s have a look at the <code>caServerCert</code> profile template:</p>
+<p>The <code>-o no-CN.req</code> instructs <code>certutil</code> to output the CSR to a file,
+while <code>-a</code> specifies ASCII output. Note that the subject (given
+by <code>-s</code>) does not contain a common name (CN) component.</p>
+<p>CSRs are submitted to Dogtag in the context of some certificate
+profile. Available profiles can be listed via <code>pki cert-request-profile-find ""</code>, and the Certificate Enrolment
+Request template for a profile can be retrieved via <code>pki cert-request-profile-show &lt;profile ID&gt; --output &lt;filename&gt;</code>.
+Let’s have a look at the <code>caServerCert</code> profile template:</p>
 <div class="sourceCode" id="cb2"><pre class="sourceCode xml"><code class="sourceCode xml"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="fu">&lt;?xml</span><span class="ot"> version=</span><span class="st">&quot;1.0&quot;</span><span class="ot"> encoding=</span><span class="st">&quot;UTF-8&quot;</span><span class="ot"> standalone=</span><span class="st">&quot;yes&quot;</span><span class="fu">?&gt;</span></span>
 <span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>&lt;<span class="kw">CertEnrollmentRequest</span>&gt;</span>
 <span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    &lt;<span class="kw">ProfileID</span>&gt;caServerCert&lt;/<span class="kw">ProfileID</span>&gt;</span>
@@ -82,7 +96,10 @@
 <span id="cb2-49"><a href="#cb2-49" aria-hidden="true" tabindex="-1"></a>        &lt;/<span class="kw">Attribute</span>&gt;</span>
 <span id="cb2-50"><a href="#cb2-50" aria-hidden="true" tabindex="-1"></a>    &lt;/<span class="kw">Input</span>&gt;</span>
 <span id="cb2-51"><a href="#cb2-51" aria-hidden="true" tabindex="-1"></a>&lt;/<span class="kw">CertEnrollmentRequest</span>&gt;</span></code></pre></div>
-<p>The template is XML, containing <em>fields</em> with <em>attributes</em> whose values are not yet specified. Filling out these attributes with the content of the CSR generated earlier along with some ancillary information, we end up with the following:</p>
+<p>The template is XML, containing <em>fields</em> with <em>attributes</em> whose
+values are not yet specified. Filling out these attributes with
+the content of the CSR generated earlier along with some ancillary
+information, we end up with the following:</p>
 <div class="sourceCode" id="cb3"><pre class="sourceCode xml"><code class="sourceCode xml"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="fu">&lt;?xml</span><span class="ot"> version=</span><span class="st">&quot;1.0&quot;</span><span class="ot"> encoding=</span><span class="st">&quot;UTF-8&quot;</span><span class="ot"> standalone=</span><span class="st">&quot;yes&quot;</span><span class="fu">?&gt;</span></span>
 <span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>&lt;<span class="kw">CertEnrollmentRequest</span>&gt;</span>
 <span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>    &lt;<span class="kw">ProfileID</span>&gt;caServerCert&lt;/<span class="kw">ProfileID</span>&gt;</span>
@@ -144,7 +161,8 @@
 <span id="cb3-59"><a href="#cb3-59" aria-hidden="true" tabindex="-1"></a>        &lt;/<span class="kw">Attribute</span>&gt;</span>
 <span id="cb3-60"><a href="#cb3-60" aria-hidden="true" tabindex="-1"></a>    &lt;/<span class="kw">Input</span>&gt;</span>
 <span id="cb3-61"><a href="#cb3-61" aria-hidden="true" tabindex="-1"></a>&lt;/<span class="kw">CertEnrollmentRequest</span>&gt;</span></code></pre></div>
-<p>With these fields filled out, the enrolment request can now be submitted to Dogtag:</p>
+<p>With these fields filled out, the enrolment request can now be
+submitted to Dogtag:</p>
 <pre><code>$ pki cert-request-submit no-CN-req.xml
 -----------------------------
 Submitted certificate request
@@ -153,8 +171,19 @@ Submitted certificate request
   Type: enrollment
   Request Status: rejected
   Operation Result: success</code></pre>
-<p>Boo! The enrolment request was rejected. Why? Certificate profiles can specify constraints on user-supplied values in a certificate request. In this case, it was the lack of a <code>CN</code> field in the subject, but profiles can also summarily reject an enrolment request based on other aspects of the embedded CSR, including key type and size.</p>
-<p>Let’s now bring some extensions into the mix by generating a new signing request - this time with a valid subject, and with the <em>Key Usage</em> extension configured to indicate a certificate signing certificate (i.e., an intermediate CA). It obviously makes no sense to have this extensions on a server certificate, but let’s submit it with the <code>caServerCert</code> profile again and see what happens.</p>
+<p>Boo! The enrolment request was rejected. Why? Certificate
+profiles can specify constraints on user-supplied values in a
+certificate request. In this case, it was the lack of a <code>CN</code>
+field in the subject, but profiles can also summarily reject an
+enrolment request based on other aspects of the embedded CSR,
+including key type and size.</p>
+<p>Let’s now bring some extensions into the mix by generating a new
+signing request - this time with a valid subject, and with the <em>Key
+Usage</em> extension configured to indicate a certificate signing
+certificate (i.e., an intermediate CA). It obviously makes no
+sense to have this extensions on a server certificate, but let’s
+submit it with the <code>caServerCert</code> profile again and see what
+happens.</p>
 <pre><code>$ certutil -R -d .pki/nssdb -o usage-ca.req -a --keyUsage certSigning -s 'CN=c2.vm-096.idm.lab.bos.redhat.com'
 ...
 $ openssl req -text &lt; usage-ca.req
@@ -177,7 +206,9 @@ Certificate Request:
     Signature Algorithm: sha1WithRSAEncryption
          b0:4a:19:2c:c1:36:07:db:6a:bb:a9:36:0b:a4:53:c9:39:6d:
          ...</code></pre>
-<p>We can see that Key Usage extension is present in the request, and contains (only) the <em>Certificate Sign</em> declaration. We fill out and submit the enrolment request with this CSR:</p>
+<p>We can see that Key Usage extension is present in the request, and
+contains (only) the <em>Certificate Sign</em> declaration. We fill out and
+submit the enrolment request with this CSR:</p>
 <pre><code>$ pki cert-request-submit usage-ca-req.xml
 -----------------------------
 Submitted certificate request
@@ -186,10 +217,30 @@ Submitted certificate request
   Type: enrollment
   Request Status: pending
   Operation Result: success</code></pre>
-<p>Perhaps surprisingly, this succeeds and the enrolment request is now <em>pending</em>, waiting for approval (or rejection) by a CA agent. It seems that, at least for the <code>caServerCert</code> profile, the value of the Key Usage extension in a CSR is ignored. The agent interface does allow adjustment of the Key Usage extension, however, and enforces sensible constraints, so no request submitted in the <code>caServerCert</code> profile will ever result in a certificate that could be used as an intermediate CA.</p>
-<p>We have seen that Dogtag ignores the Key Usage extension information present in a CSR, but in fact, Dogtag ignores <em>all</em> information in the CSR except for what it specifically extracts. Therefore, requesting a particular key signing algorithm does not necessarily result in a certificate signed using that algorithm, and requesting some extension unknown in the selected profile (e.g., the <em>Certificate Policies</em> extension, which can be included in a CSR via the <code>--extCP</code> argument to <code>certmonger</code>) will <strong>certainly not</strong> be present in the certificate.</p>
-<p>As a newcomer to the Dogtag PKI I find this behaviour somewhat limiting and would like to investigate whether the profiles system supports profiles that afford more control over the presense of extensions or the signing process, or what it would take to get this support.</p>
-<p>The next post in this series will investigate how profiles are defined and the kinds of inputs and constraints they support.</p>
+<p>Perhaps surprisingly, this succeeds and the enrolment request is now
+<em>pending</em>, waiting for approval (or rejection) by a CA agent. It
+seems that, at least for the <code>caServerCert</code> profile, the value of
+the Key Usage extension in a CSR is ignored. The agent interface
+does allow adjustment of the Key Usage extension, however, and
+enforces sensible constraints, so no request submitted in the
+<code>caServerCert</code> profile will ever result in a certificate that
+could be used as an intermediate CA.</p>
+<p>We have seen that Dogtag ignores the Key Usage extension information
+present in a CSR, but in fact, Dogtag ignores <em>all</em> information in
+the CSR except for what it specifically extracts. Therefore,
+requesting a particular key signing algorithm does not necessarily
+result in a certificate signed using that algorithm, and requesting
+some extension unknown in the selected profile (e.g., the
+<em>Certificate Policies</em> extension, which can be included in a CSR via
+the <code>--extCP</code> argument to <code>certmonger</code>) will <strong>certainly not</strong>
+be present in the certificate.</p>
+<p>As a newcomer to the Dogtag PKI I find this behaviour somewhat
+limiting and would like to investigate whether the profiles system
+supports profiles that afford more control over the presense of
+extensions or the signing process, or what it would take to get this
+support.</p>
+<p>The next post in this series will investigate how profiles are
+defined and the kinds of inputs and constraints they support.</p>
 </div>
 <div id="postFooter">
     <div id="recent">

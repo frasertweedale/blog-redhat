@@ -26,63 +26,154 @@
 
 <div id="postContent">
     <h1 id="ip-address-san-support-in-freeipa">IP address SAN support in FreeIPA</h1>
-<p>The X.509 <em>Subject Alternative Name (SAN)</em> certificate extension carries subject names that cannot (or cannot easily) be expressed in the Subject Distinguished Name field. The extension supports various name types, including DNS names (the most common), IP addresses, email addresses (for users) and Kerberos principal names, among others.</p>
-<p>When issuing a certificate, FreeIPA has to validate that requested SAN name values match the principal to whom the certificate is being issued. There has long been support for DNS names, Kerberos and Microsoft principal names, and email addresses. Over the years we have received many requests to support IP address SAN names. And now we are finally <a href="https://pagure.io/freeipa/issue/7451">adding support</a>!</p>
-<p>In this post I will explain the context and history of this feature, and demonstrate how to use it. At time of writing the work is <a href="https://github.com/freeipa/freeipa/pull/1843">not yet merged</a>, but substantive changes are not expected.</p>
+<p>The X.509 <em>Subject Alternative Name (SAN)</em> certificate extension
+carries subject names that cannot (or cannot easily) be expressed in
+the Subject Distinguished Name field. The extension supports
+various name types, including DNS names (the most common), IP
+addresses, email addresses (for users) and Kerberos principal names,
+among others.</p>
+<p>When issuing a certificate, FreeIPA has to validate that requested
+SAN name values match the principal to whom the certificate is being
+issued. There has long been support for DNS names, Kerberos and
+Microsoft principal names, and email addresses. Over the years we
+have received many requests to support IP address SAN names. And
+now we are finally <a href="https://pagure.io/freeipa/issue/7451">adding support</a>!</p>
+<p>In this post I will explain the context and history of this feature,
+and demonstrate how to use it. At time of writing the work is <a href="https://github.com/freeipa/freeipa/pull/1843">not
+yet merged</a>, but substantive changes are not expected.</p>
 <h2 id="acknowledgement">Acknowledgement <a href="#acknowledgement" class="section">§</a></h2>
-<p>First and foremost, I must thank <strong>Ian Pilcher</strong> who drove this work. DNS name validation is tricky, but Ian proposed a regime that was acceptable to the FreeIPA team from a philosophical and security standpoint. Then he cut the initial patch for the feature. The work was of a high quality; my subsequent changes and enhancements were minor. Above all, Ian and others had great patience as the pull request sat in limbo for nearly a year! Thank you Ian.</p>
+<p>First and foremost, I must thank <strong>Ian Pilcher</strong> who drove this
+work. DNS name validation is tricky, but Ian proposed a regime that
+was acceptable to the FreeIPA team from a philosophical and security
+standpoint. Then he cut the initial patch for the feature. The
+work was of a high quality; my subsequent changes and enhancements
+were minor. Above all, Ian and others had great patience as the
+pull request sat in limbo for nearly a year! Thank you Ian.</p>
 <h2 id="ip-address-validation">IP address validation <a href="#ip-address-validation" class="section">§</a></h2>
-<p>There is a reason we kicked the SAN IP address support can down the road for so long. Unlike some name types, validating IP addresses is far from straightforward.</p>
-<p>Let’s first consider the already-supported name types. FreeIPA is an <em>identity management system</em>. It <em>knows</em> the various identities (principal name, email address, hostname) of the subjects/principals it knows about. Validation of these name types reduces to the question <em>“does this name belong to the subject principal object?”</em></p>
-<p>For IP addresses is not so simple. There are several complicating factors:</p>
+<p>There is a reason we kicked the SAN IP address support can down the
+road for so long. Unlike some name types, validating IP addresses
+is far from straightforward.</p>
+<p>Let’s first consider the already-supported name types. FreeIPA is
+an <em>identity management system</em>. It <em>knows</em> the various identities
+(principal name, email address, hostname) of the subjects/principals
+it knows about. Validation of these name types reduces to the
+question <em>“does this name belong to the subject principal object?”</em></p>
+<p>For IP addresses is not so simple. There are several complicating
+factors:</p>
 <ul>
-<li>FreeIPA <em>can</em> manage DNS entries, but it doesn’t have to. If FreeIPA is not a source of authoritative DNS information, should it trust information from external resolvers? Only with DNSSEC?</li>
-<li>There may be multiple, conflicting sources of DNS records. The DNS <em>view</em> presented to FreeIPA clients may differ from that seen by other clients. The FreeIPA DNS may “shadow” public (or other) DNS records.</li>
-<li>For validation, what should be the treatment of forward (<code>A</code> / <code>AAAA</code>) and reverse (<code>PTR</code>) records pertaining to the names involved?</li>
+<li>FreeIPA <em>can</em> manage DNS entries, but it doesn’t have to. If
+FreeIPA is not a source of authoritative DNS information, should
+it trust information from external resolvers? Only with DNSSEC?</li>
+<li>There may be multiple, conflicting sources of DNS records. The
+DNS <em>view</em> presented to FreeIPA clients may differ from that
+seen by other clients. The FreeIPA DNS may “shadow” public (or
+other) DNS records.</li>
+<li>For validation, what should be the treatment of forward (<code>A</code> /
+<code>AAAA</code>) and reverse (<code>PTR</code>) records pertaining to the names
+involved?</li>
 <li>Should <code>CNAME</code> records be followed? How many times?</li>
-<li>The issued certificate may be used in or presented to clients in environments with a different DNS view from the environment in which validation was performed.</li>
-<li>Does the request have to come from, or does the requesting entity have to prove control of, the IP address(es) requested for inclusion in the certificate?</li>
-<li>IP addresses often change and a reassigned much more often than the typical lifetime of a certificate.</li>
-<li>If you query external DNS systems, how do you handle failures or slowness?</li>
+<li>The issued certificate may be used in or presented to clients in
+environments with a different DNS view from the environment in
+which validation was performed.</li>
+<li>Does the request have to come from, or does the requesting entity
+have to prove control of, the IP address(es) requested for
+inclusion in the certificate?</li>
+<li>IP addresses often change and a reassigned much more often than
+the typical lifetime of a certificate.</li>
+<li>If you query external DNS systems, how do you handle failures or
+slowness?</li>
 <li>The need to mitigate DNS or BGP poisoning attacks</li>
 </ul>
-<p>Taking these factors into account, it is plain to see why we put this feature off for so long. It is just hard to determine what the correct behaviour should be. Nevertheless use cases exist so the feature request is legitimate. The difference with <span class="title-ref">Ian's RFE</span> was that he proposed a strict validation regime that only uses data defined in FreeIPA. It is a fair assumption that the data managed by a FreeIPA instance is <em>trustworthy</em>. That assumption, combined with some sanity checks, gives the validation requirements:</p>
+<p>Taking these factors into account, it is plain to see why we put
+this feature off for so long. It is just hard to determine what the
+correct behaviour should be. Nevertheless use cases exist so the
+feature request is legitimate. The difference with <span class="title-ref">Ian's RFE</span> was
+that he proposed a strict validation regime that only uses data
+defined in FreeIPA. It is a fair assumption that the data managed
+by a FreeIPA instance is <em>trustworthy</em>. That assumption, combined
+with some sanity checks, gives the validation requirements:</p>
 <ol type="1">
-<li>Only FreeIPA-managed DNS records are considered. There is no communication with external DNS resolvers.</li>
-<li>For each IP address in the SAN, there is a DNS name in the SAN that resolves to it. (As an implementation decision, we permit one level of CNAME indirection).</li>
-<li>For each IP address in the SAN, there is a valid PTR (reverse DNS) record.</li>
-<li>SAN IP addresses are only supported for host and service principals.</li>
+<li>Only FreeIPA-managed DNS records are considered. There is no
+communication with external DNS resolvers.</li>
+<li>For each IP address in the SAN, there is a DNS name in the SAN
+that resolves to it. (As an implementation decision, we permit
+one level of CNAME indirection).</li>
+<li>For each IP address in the SAN, there is a valid PTR (reverse
+DNS) record.</li>
+<li>SAN IP addresses are only supported for host and service
+principals.</li>
 </ol>
-<p>Requirement <strong>1</strong> avoids dealing with any conflicts or communication issues with external resolvers. Requirements <strong>2</strong> and <strong>3</strong> together enforce a tight association between the subject principal (every DNS name is verified to belong to it) and the IP address (through forward and reverse resolution to the DNS name(s)).</p>
+<p>Requirement <strong>1</strong> avoids dealing with any conflicts or communication
+issues with external resolvers. Requirements <strong>2</strong> and <strong>3</strong>
+together enforce a tight association between the subject principal
+(every DNS name is verified to belong to it) and the IP address
+(through forward and reverse resolution to the DNS name(s)).</p>
 <h3 id="caveats-and-limitations">Caveats and limitations <a href="#caveats-and-limitations" class="section">§</a></h3>
-<p>FreeIPA’s SAN IP address validation regime leads to the following caveats and limitations:</p>
+<p>FreeIPA’s SAN IP address validation regime leads to the following
+caveats and limitations:</p>
 <ul>
-<li>The FreeIPA DNS component must be used. (It can be enabled during installation, or at any time after installation.)</li>
-<li>Forward and reverse records of addresses to be included in certificates must be added and maintained.</li>
-<li>SAN IP addresses must be accompanied by at least one DNS name. Requests with <em>only</em> IP addresses will be rejected.</li>
+<li>The FreeIPA DNS component must be used. (It can be enabled during
+installation, or at any time after installation.)</li>
+<li>Forward and reverse records of addresses to be included in
+certificates must be added and maintained.</li>
+<li>SAN IP addresses must be accompanied by at least one DNS name.
+Requests with <em>only</em> IP addresses will be rejected.</li>
 </ul>
 <p>SAN IP address names in general have some limitations, too:</p>
 <ul>
-<li>The addresses in the certificate were correct at validation time, but might have changed. The only mitigations are to use short-lived certificates, or revoke certificates if DNS changes render them invalid. There is no detection or automation to assist with that.</li>
-<li>The certificate could be misused by services in other networks with the same IP address. A well-behaved client would still have to trust the FreeIPA CA in order for this impersonation attack to work.</li>
+<li>The addresses in the certificate were correct at validation time,
+but might have changed. The only mitigations are to use
+short-lived certificates, or revoke certificates if DNS changes
+render them invalid. There is no detection or automation to
+assist with that.</li>
+<li>The certificate could be misused by services in other networks
+with the same IP address. A well-behaved client would still have
+to trust the FreeIPA CA in order for this impersonation attack to
+work.</li>
 </ul>
 <h2 id="comparison-with-the-public-pki">Comparison with the public PKI <a href="#comparison-with-the-public-pki" class="section">§</a></h2>
-<p>SAN IP address names are supported by browsers. The CA/Browser Forum’s <a href="https://cabforum.org/baseline-requirements-documents/">Baseline Requirements</a> permit publicly-trusted CAs to issue end-entity certificates with SAN IP address values. CAs have to verify that the applicant controls (or has been granted the right to use) the IP address. There are several acceptable verification methods:</p>
+<p>SAN IP address names are supported by browsers. The CA/Browser
+Forum’s <a href="https://cabforum.org/baseline-requirements-documents/">Baseline Requirements</a> permit publicly-trusted CAs to
+issue end-entity certificates with SAN IP address values. CAs have
+to verify that the applicant controls (or has been granted the right
+to use) the IP address. There are several acceptable verification
+methods:</p>
 <ol type="1">
-<li>The applicant make some agreed-upon change to a network resource at the IP address in question;</li>
+<li>The applicant make some agreed-upon change to a network resource
+at the IP address in question;</li>
 <li>Consulting IANA or regional NIC assignment information;</li>
 <li>Performing reverse lookup then verifying control over the DNS name.</li>
 </ol>
-<p>The IETF <em>Automated Certificate Management Environment (ACME)</em> working group has an <a href="https://tools.ietf.org/html/draft-ietf-acme-ip">Internet-Draft for automated IP address validation</a> in the ACME protocol. It defines an automated approach to method <strong>1</strong> above. SAN IP addresses are <a href="https://community.letsencrypt.org/t/certificate-for-public-ip-without-domain-name/6082/91">not yet supported</a> by the most popular ACME CA, <em>Let’s Encrypt</em> (and might never be).</p>
-<p>Depending on an organisation’s security goals, the verification methods mentioned above may or may not be appropriate for enterprise use (i.e. behind the firewall). Likewise, the decision about whether a particular kind of validation could or should be automated might have different answers for different organisations. It is not really a question of technical constraints; rather, one of philosophy and security doctrine. When it comes to certificate request validation, the public PKI and FreeIPA are asking different questions:</p>
+<p>The IETF <em>Automated Certificate Management Environment (ACME)</em>
+working group has an <a href="https://tools.ietf.org/html/draft-ietf-acme-ip">Internet-Draft for automated IP address
+validation</a> in the ACME protocol. It defines an automated approach
+to method <strong>1</strong> above. SAN IP addresses are <a href="https://community.letsencrypt.org/t/certificate-for-public-ip-without-domain-name/6082/91">not yet supported</a> by
+the most popular ACME CA, <em>Let’s Encrypt</em> (and might never be).</p>
+<p>Depending on an organisation’s security goals, the verification
+methods mentioned above may or may not be appropriate for enterprise
+use (i.e. behind the firewall). Likewise, the decision about
+whether a particular kind of validation could or should be automated
+might have different answers for different organisations. It is not
+really a question of technical constraints; rather, one of
+philosophy and security doctrine. When it comes to certificate
+request validation, the public PKI and FreeIPA are asking different
+questions:</p>
 <ul>
-<li>FreeIPA asks: <em>does the indicated subject principal own the requested names?</em></li>
-<li>The public PKI asks: <em>does the (potentially anonymous) applicant control the names they’re requestion?</em></li>
+<li>FreeIPA asks: <em>does the indicated subject principal own the
+requested names?</em></li>
+<li>The public PKI asks: <em>does the (potentially anonymous) applicant
+control the names they’re requestion?</em></li>
 </ul>
-<p>In a few words, it’s <em>ownership</em> versus <em>control</em>. In the future it might be possible for a FreeIPA CA to ask the latter question and issue certificates (or not) accordingly. But that isn’t the focus right now.</p>
+<p>In a few words, it’s <em>ownership</em> versus <em>control</em>. In the future it
+might be possible for a FreeIPA CA to ask the latter question and
+issue certificates (or not) accordingly. But that isn’t the focus
+right now.</p>
 <h2 id="demonstration">Demonstration <a href="#demonstration" class="section">§</a></h2>
 <h3 id="preliminaries">Preliminaries <a href="#preliminaries" class="section">§</a></h3>
-<p>The scene is set. Let’s see this feature in action! The domain of my FreeIPA deployment is <code>ipa.local</code>. I will add a host called <code>iptest.example.com</code>, with the IP address <code>192.168.2.1</code>. The first step is to add the reverse zone for this IP address:</p>
+<p>The scene is set. Let’s see this feature in action! The domain of
+my FreeIPA deployment is <code>ipa.local</code>. I will add a host called
+<code>iptest.example.com</code>, with the IP address <code>192.168.2.1</code>. The
+first step is to add the reverse zone for this IP address:</p>
 <pre><code>% ipa dnszone-add --name-from-ip 192.168.2.1
 Zone name [2.168.192.in-addr.arpa.]:
   Zone name: 2.168.192.in-addr.arpa.
@@ -98,8 +189,11 @@ Zone name [2.168.192.in-addr.arpa.]:
   Dynamic update: FALSE
   Allow query: any;
   Allow transfer: none;</code></pre>
-<p>If the reverse zone for the IP address already exists, there would be no need to do this first step.</p>
-<p>Next I add the host entry. Supplying <code>--ip-address</code> causes forward and reverse records to be added for the supplied address (assuming the relevant zones are managed by FreeIPA):</p>
+<p>If the reverse zone for the IP address already exists, there would
+be no need to do this first step.</p>
+<p>Next I add the host entry. Supplying <code>--ip-address</code> causes
+forward and reverse records to be added for the supplied address
+(assuming the relevant zones are managed by FreeIPA):</p>
 <pre><code>% ipa host-add iptest.ipa.local \
       --ip-address 192.168.2.1
 -----------------------------
@@ -112,14 +206,25 @@ Added host &quot;iptest.ipa.local&quot;
   Keytab: False
   Managed by: iptest.ipa.local</code></pre>
 <h3 id="csr-generation">CSR generation <a href="#csr-generation" class="section">§</a></h3>
-<p>There are several options for creating a certificate signing request (CSR) with IP addresses in the SAN extension.</p>
+<p>There are several options for creating a certificate signing request
+(CSR) with IP addresses in the SAN extension.</p>
 <ul>
-<li>Lots of devices (routers, middleboxes, etc) generate CSRs containing their IP address. This is the significant driving use case for this feature, but there’s no point going into details because every device is different.</li>
-<li>The <a href="https://pagure.io/certmonger">Certmonger</a> utility makes it easy to add DNS names and IP addresses to a CSR, via command line arguments. Several other name types are also supported. See <code>getcert-request(1)</code> for details.</li>
-<li>OpenSSL requires a config file to specify SAN values for inclusing in CSRs and certificates. See <code>req(1)</code> and <code>x509v3_config(5)</code> for details.</li>
-<li>The NSS <code>certutil(1)</code> command provides the <code>--extSAN</code> option for specifying SAN names, including DNS names and IP addresses.</li>
+<li>Lots of devices (routers, middleboxes, etc) generate CSRs
+containing their IP address. This is the significant driving use
+case for this feature, but there’s no point going into details
+because every device is different.</li>
+<li>The <a href="https://pagure.io/certmonger">Certmonger</a> utility makes it easy to add DNS names and IP
+addresses to a CSR, via command line arguments. Several other
+name types are also supported. See <code>getcert-request(1)</code> for
+details.</li>
+<li>OpenSSL requires a config file to specify SAN values for inclusing
+in CSRs and certificates. See <code>req(1)</code> and <code>x509v3_config(5)</code>
+for details.</li>
+<li>The NSS <code>certutil(1)</code> command provides the <code>--extSAN</code> option
+for specifying SAN names, including DNS names and IP addresses.</li>
 </ul>
-<p>For this demonstration I use NSS and <code>certutil</code>. First I initialise a new certificate database:</p>
+<p>For this demonstration I use NSS and <code>certutil</code>. First I
+initialise a new certificate database:</p>
 <pre><code>% mkdir nssdb ; cd nssdb ; certutil -d . -N
 Enter a password which will be used to encrypt your keys.
 The password should be at least 8 characters long,
@@ -127,7 +232,9 @@ and should contain at least one non-alphabetic character.
 
 Enter new password:
 Re-enter password:</code></pre>
-<p>Next, I generate a key and create CSR with the desired names in the SAN extension. We do not specify a key type or size we get the default (2048-bit RSA).</p>
+<p>Next, I generate a key and create CSR with the desired names in the
+SAN extension. We do not specify a key type or size we get the
+default (2048-bit RSA).</p>
 <pre><code>% certutil -d . -R -a -o ip.csr \
       -s CN=iptest.ipa.local \
       --extSAN dns:iptest.ipa.local,ip:192.168.2.1
@@ -149,7 +256,8 @@ Finished.  Press enter to continue:
 
 
 Generating key.  This may take a few moments...</code></pre>
-<p>The output file <code>ip.csr</code> contains the generated CSR. Let’s use OpenSSL to pretty-print it:</p>
+<p>The output file <code>ip.csr</code> contains the generated CSR. Let’s use
+OpenSSL to pretty-print it:</p>
 <pre><code>% openssl req -text &lt; ip.csr
 Certificate Request:
     Data:
@@ -165,7 +273,9 @@ Certificate Request:
          &lt; elided &gt;</code></pre>
 <p>It all looks correct.</p>
 <h3 id="issuing-the-certificate">Issuing the certificate <a href="#issuing-the-certificate" class="section">§</a></h3>
-<p>I use the <code>ipa cert-request</code> command to request a certificate. The host <code>iptest.ipa.local</code> is the subject principal. The default profile is appropriate.</p>
+<p>I use the <code>ipa cert-request</code> command to request a certificate.
+The host <code>iptest.ipa.local</code> is the subject principal. The default
+profile is appropriate.</p>
 <pre><code>% ipa cert-request ip.csr \
       --principal host/iptest.ipa.local \
       --certificate-out ip.pem
@@ -178,7 +288,8 @@ Certificate Request:
   Not After: Thu Feb 18 03:24:48 2021 UTC
   Serial number: 10
   Serial number (hex): 0xA</code></pre>
-<p>The command succeeded. As requested, the issued certificate has been written to <code>ip.pem</code>. Again we’ll use OpenSSL to inspect it:</p>
+<p>The command succeeded. As requested, the issued certificate has
+been written to <code>ip.pem</code>. Again we’ll use OpenSSL to inspect it:</p>
 <pre><code>% openssl x509 -text &lt; ip.pem
 Certificate:                                                                                                                                                                                               [42/694]
     Data:
@@ -220,22 +331,38 @@ Certificate:                                                                    
                 DNS:iptest.ipa.local, IP Address:192.168.2.1
     Signature Algorithm: sha256WithRSAEncryption
          &lt; elided &gt;</code></pre>
-<p>We can see that the Subject Alternative Name extension is present, and included the expected values.</p>
+<p>We can see that the Subject Alternative Name extension is present,
+and included the expected values.</p>
 <h3 id="error-scenarios">Error scenarios <a href="#error-scenarios" class="section">§</a></h3>
-<p>It’s nice to see that we can get a certificate with IP address names. But it’s more important to know that we <em>cannot</em> get an IP address certificate when the validation requirements are not satisfied. I’ll run through a number of scenarios and show the results (without showing the whole procedure, which would repeat a lot of information).</p>
-<p>If we omit the DNS name from the SAN extension, there is nothing linking the IP address to the subject principal and the request will be rejected. Note that the Subject DN Common Name (CN) attribute is ignored for the purposes of SAN IP address validation. The CSR was generated using <code>--extSAN ip:192.168.2.1</code>.</p>
+<p>It’s nice to see that we can get a certificate with IP address
+names. But it’s more important to know that we <em>cannot</em> get an IP
+address certificate when the validation requirements are not
+satisfied. I’ll run through a number of scenarios and show the
+results (without showing the whole procedure, which would repeat a
+lot of information).</p>
+<p>If we omit the DNS name from the SAN extension, there is nothing
+linking the IP address to the subject principal and the request will
+be rejected. Note that the Subject DN Common Name (CN) attribute is
+ignored for the purposes of SAN IP address validation. The CSR was
+generated using <code>--extSAN ip:192.168.2.1</code>.</p>
 <pre><code>% ipa cert-request ip-bad.csr --principal host/iptest.ipa.local
 ipa: ERROR: invalid 'csr': IP address in
   subjectAltName (192.168.2.1) unreachable from DNS names</code></pre>
-<p>If we reinstate the DNS name but add an extra IP address that does not relate to the hostname, the request gets rejected. The CSR was generated using <code>--extSAN dns:iptest.ipa.local,ip:192.168.2.1,ip:192.168.2.2</code>.</p>
+<p>If we reinstate the DNS name but add an extra IP address that does
+not relate to the hostname, the request gets rejected. The CSR was
+generated using <code>--extSAN dns:iptest.ipa.local,ip:192.168.2.1,ip:192.168.2.2</code>.</p>
 <pre><code>% ipa cert-request ip-bad.csr --principal host/iptest.ipa.local
 ipa: ERROR: invalid 'csr': IP address in
   subjectAltName (192.168.2.2) unreachable from DNS names</code></pre>
-<p>Requesting a certificate for a user principal fails. The CSR has Subject DN <code>CN=alice</code> and the SAN extension contain an IP address. The user principal <code>alice</code> does exist.</p>
+<p>Requesting a certificate for a user principal fails. The CSR has
+Subject DN <code>CN=alice</code> and the SAN extension contain an IP address.
+The user principal <code>alice</code> does exist.</p>
 <pre><code>% ipa cert-request ip-bad.csr --principal alice
 ipa: ERROR: invalid 'csr': subject alt name type
   IPAddress is forbidden for user principals</code></pre>
-<p>Let’s return to our original, working CSR. If we alter the relevant PTR record so that it no longer points a DNS name in the SAN (or the canonical name thereof), the request will fail:</p>
+<p>Let’s return to our original, working CSR. If we alter the relevant
+PTR record so that it no longer points a DNS name in the SAN (or the
+canonical name thereof), the request will fail:</p>
 <pre><code>% ipa dnsrecord-mod 2.168.192.in-addr.arpa. 1 \
       --ptr-rec f29-0.ipa.local.
   Record name: 1
@@ -244,7 +371,8 @@ ipa: ERROR: invalid 'csr': subject alt name type
 % ipa cert-request ip.csr --principal host/iptest.ipa.local
 ipa: ERROR: invalid 'csr': IP address in
   subjectAltName (192.168.2.1) does not match A/AAAA records</code></pre>
-<p>Similarly if we delete the PTR record, the request fails (with a different message):</p>
+<p>Similarly if we delete the PTR record, the request fails (with a
+different message):</p>
 <pre><code>% ipa dnsrecord-del 2.168.192.in-addr.arpa. 1 \
       --ptr-rec f29-0.ipa.local.
 ------------------
@@ -255,7 +383,11 @@ Deleted record &quot;1&quot;
 ipa: ERROR: invalid 'csr': IP address in
   subjectAltName (192.168.2.1) does not have PTR record</code></pre>
 <h3 id="ipv6">IPv6 <a href="#ipv6" class="section">§</a></h3>
-<p>Assuming the relevant reverse zone is managed by FreeIPA and contains the correct records, FreeIPA can issue certificates with IPv6 names. First I have to add the relevant zones and records. I’m using the machine’s link-local address but the commands will be similar for other IPv6 addresses.</p>
+<p>Assuming the relevant reverse zone is managed by FreeIPA and
+contains the correct records, FreeIPA can issue certificates with
+IPv6 names. First I have to add the relevant zones and records.
+I’m using the machine’s link-local address but the commands will be
+similar for other IPv6 addresses.</p>
 <pre><code>% ipa dnsrecord-mod ipa.local. iptest \
       --a-rec=192.168.2.1 \
       --aaaa-rec=fe80::8f18:bdab:4299:95fa
@@ -286,7 +418,9 @@ Zone name [0.0.0.0.0.0.0.0.0.0.0.0.0.8.e.f.ip6.arpa.]:
       --ptr-rec iptest.ipa.local.
   Record name: a.f.5.9.9.9.2.4.b.a.d.b.8.1.f.8
   PTR record: iptest.ipa.local.</code></pre>
-<p>With these in place I’ll generate the CSR and issue the certificate. (This time I’ve used the <code>-f</code> and <code>-z</code> options to reduce user interaction.)</p>
+<p>With these in place I’ll generate the CSR and issue the certificate.
+(This time I’ve used the <code>-f</code> and <code>-z</code> options to reduce user
+interaction.)</p>
 <pre><code>% certutil -d . -f pwdfile.txt \
     -z &lt;(dd if=/dev/random bs=2048 count=1 status=none) \
     -R -a -o ip.csr -s CN=iptest.ipa.local \
@@ -307,19 +441,41 @@ Generating key.  This may take a few moments...
   Not After: Thu Feb 18 05:49:01 2021 UTC
   Serial number: 12
   Serial number (hex): 0xC</code></pre>
-<p>The issuance succeeded. Observe that the IPv6 address is present in the certificate:</p>
+<p>The issuance succeeded. Observe that the IPv6 address is present in
+the certificate:</p>
 <pre><code>% openssl x509 -text &lt; ip.pem | grep -A 1 &quot;Subject Alt&quot;
     X509v3 Subject Alternative Name:
       DNS:iptest.ipa.local, IP Address:FE80:0:0:0:8F18:BDAB:4299:95FA</code></pre>
-<p>Of course, it is possible to issue certificates with multiple IP addresses, including a mix of IPv4 and IPv6. Assuming all the necessary DNS records exist, with</p>
+<p>Of course, it is possible to issue certificates with multiple IP
+addresses, including a mix of IPv4 and IPv6. Assuming all the
+necessary DNS records exist, with</p>
 <pre><code>--extSAN ip:fe80::8f18:bdab:4299:95fa,ip:192.168.2.1,dns:iptest.ipa.local</code></pre>
 <p>The resulting certificate will have the SAN:</p>
 <pre><code>IP Address:FE80:0:0:0:8F18:BDAB:4299:95FA, IP Address:192.168.2.1, DNS:iptest.ipa.local</code></pre>
 <h2 id="conclusion">Conclusion <a href="#conclusion" class="section">§</a></h2>
-<p>In this post I discussed the challenges of verifying IP addresses for inclusion in X.509 certificates. I discussed the approach we are taking in FreeIPA to finally support this, including its caveats and limitations. For comparison, I outlined how IP address verification is done by CAs on the open internet.</p>
-<p>I then demonstrated how the feature will work in FreeIPA. Importantly, I showed (though not <em>exhaustively</em>), that FreeIPA refuses to issue the certificate if the verification requirements are not met. It is a bit hard to demonstrate, from a user perspective, that we only consult FreeIPA’s own DNS records and never consult another DNS server. But hey, <a href="https://github.com/freeipa/freeipa/pull/1843">the code is open source</a> so you can satisfy yourself that the behaviour fulfils the requirements (or leave a review / file an issue if you find that it does not!)</p>
-<p>When will the feature land in <code>master</code>? Before the feature can be merged, I still need to write acceptance tests and have the feature reviewed by another FreeIPA developer. I am hoping to finish the work this week.</p>
-<p>As a final remark, I must again acknowledge Ian Pilcher’s significant contribution. Were it not for him, it is likely that this longstanding RFE would still be in our <em>“too hard”</em> basket. Ian, thank you for your patience and I hope that your efforts are rewarded very soon with the feature finally being merged.</p>
+<p>In this post I discussed the challenges of verifying IP addresses
+for inclusion in X.509 certificates. I discussed the approach we
+are taking in FreeIPA to finally support this, including its caveats
+and limitations. For comparison, I outlined how IP address
+verification is done by CAs on the open internet.</p>
+<p>I then demonstrated how the feature will work in FreeIPA.
+Importantly, I showed (though not <em>exhaustively</em>), that FreeIPA
+refuses to issue the certificate if the verification requirements
+are not met. It is a bit hard to demonstrate, from a user
+perspective, that we only consult FreeIPA’s own DNS records and
+never consult another DNS server. But hey, <a href="https://github.com/freeipa/freeipa/pull/1843">the code is open
+source</a> so you can satisfy yourself that the behaviour fulfils the
+requirements (or leave a review / file an issue if you find that it
+does not!)</p>
+<p>When will the feature land in <code>master</code>? Before the feature can be
+merged, I still need to write acceptance tests and have the feature
+reviewed by another FreeIPA developer. I am hoping to finish the
+work this week.</p>
+<p>As a final remark, I must again acknowledge Ian Pilcher’s
+significant contribution. Were it not for him, it is likely that
+this longstanding RFE would still be in our <em>“too hard”</em> basket.
+Ian, thank you for your patience and I hope that your efforts are
+rewarded very soon with the feature finally being merged.</p>
 </div>
 <div id="postFooter">
     <div id="recent">

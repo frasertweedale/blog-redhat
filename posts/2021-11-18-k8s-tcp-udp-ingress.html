@@ -26,9 +26,16 @@
 
 <div id="postContent">
     <h1 id="bare-tcp-and-udp-ingress-on-kubernetes">Bare TCP and UDP ingress on Kubernetes</h1>
-<p>Kubernetes and OpenShift have good solutions for routing HTTP/HTTPS traffic to the right applications. But for ingress of bare TCP (that is, not HTTP(S) or TLS with SNI) or UDP traffic, the situation is more complicated. In this post I demonstrate how to use <code>LoadBalancer</code> Service objects to route bare TCP and UDP traffic to your Kubernetes applications.</p>
+<p>Kubernetes and OpenShift have good solutions for routing HTTP/HTTPS
+traffic to the right applications. But for ingress of bare TCP
+(that is, not HTTP(S) or TLS with SNI) or UDP traffic, the situation
+is more complicated. In this post I demonstrate how to use
+<code>LoadBalancer</code> Service objects to route bare TCP and UDP traffic to
+your Kubernetes applications.</p>
 <h2 id="example-service">Example service <a href="#example-service" class="section">§</a></h2>
-<p>For testing purposes I wrote a basic echo server. It listens on both TCP and UDP port 12345, and merely upper-cases and returns the data it receives:</p>
+<p>For testing purposes I wrote a basic echo server. It listens on
+both TCP and UDP port 12345, and merely upper-cases and returns the
+data it receives:</p>
 <div class="sourceCode" id="cb1"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> socketserver</span>
 <span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> threading</span>
 <span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a></span>
@@ -55,11 +62,13 @@
 <span id="cb1-24"><a href="#cb1-24" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> <span class="va">__name__</span> <span class="op">==</span> <span class="st">&quot;__main__&quot;</span>:</span>
 <span id="cb1-25"><a href="#cb1-25" aria-hidden="true" tabindex="-1"></a>    threading.Thread(target<span class="op">=</span>serve_tcp).start()</span>
 <span id="cb1-26"><a href="#cb1-26" aria-hidden="true" tabindex="-1"></a>    threading.Thread(target<span class="op">=</span>serve_udp).start()</span></code></pre></div>
-<p>The <code>Containerfile</code> adds this program to the official Fedora 35 container and declares the entry point:</p>
+<p>The <code>Containerfile</code> adds this program to the official Fedora 35
+container and declares the entry point:</p>
 <div class="sourceCode" id="cb2"><pre class="sourceCode dockerfile"><code class="sourceCode dockerfile"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="kw">FROM</span> fedora:35-x86_64</span>
 <span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="kw">COPY</span> echo.py .</span>
 <span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="kw">CMD</span> [ <span class="st">&quot;python3&quot;</span>, <span class="st">&quot;echo.py&quot;</span> ]</span></code></pre></div>
-<p>I published the container <a href="https://quay.io/repository/ftweedal/udpecho.">image on Quay.io</a>. The Pod spec references it:</p>
+<p>I published the container <a href="https://quay.io/repository/ftweedal/udpecho.">image on Quay.io</a>. The Pod spec
+references it:</p>
 <div class="sourceCode" id="cb3"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
 <span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Pod</span></span>
 <span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="fu">metadata</span><span class="kw">:</span></span>
@@ -80,11 +89,21 @@ Now using project &quot;echo&quot; on server
 % oc create -f pod-echo.yaml
 pod/echo created</code></pre>
 <h2 id="create-service-object">Create Service object <a href="#create-service-object" class="section">§</a></h2>
-<p>My application is not talking HTTP, so I can’t use the normal Ingress or Route facilities to get traffic to my app.</p>
+<p>My application is not talking HTTP, so I can’t use the normal
+Ingress or Route facilities to get traffic to my app.</p>
 <div class="note">
-<p>HTTP and HTTPS traffic includes the <strong><code>Host</code></strong> header, which the ingress system can inspect to route requests to a particular Pod. Similarly, TLS with the <strong><em>Server Name (SNI)</em></strong> extension allows TLS traffic to be routed to a particular Pod (the Pod will perform the handshake). Neither approach works for UDP packets or “bare” TCP connections.</p>
+<p>HTTP and HTTPS traffic includes the <strong><code>Host</code></strong> header, which the
+ingress system can inspect to route requests to a particular Pod.
+Similarly, TLS with the <strong><em>Server Name (SNI)</em></strong> extension allows TLS
+traffic to be routed to a particular Pod (the Pod will perform the
+handshake). Neither approach works for UDP packets or “bare” TCP
+connections.</p>
 </div>
-<p>Therefore, I define a <code>LoadBalancer</code> Service. The service controller will ask the cloud provider to create a load balancer that routes external traffic into the cluster. For example, on AWS it will (by default) create an ELB (<em>Elastic Load Balancer</em>) instance.</p>
+<p>Therefore, I define a <code>LoadBalancer</code> Service. The service
+controller will ask the cloud provider to create a load balancer
+that routes external traffic into the cluster. For example, on AWS
+it will (by default) create an ELB (<em>Elastic Load Balancer</em>)
+instance.</p>
 <div class="sourceCode" id="cb5"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
 <span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Service</span></span>
 <span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a><span class="fu">metadata</span><span class="kw">:</span></span>
@@ -111,9 +130,20 @@ AppProtocol:(*string)(nil), Port:12345,
 TargetPort:intstr.IntOrString{Type:0, IntVal:12345, StrVal:&quot;&quot;},
 NodePort:0}}: may not contain more than 1 protocol when type is
 'LoadBalancer'</code></pre>
-<p>Well, that’s unfortunate. Kubernetes does not support <code>LoadBalancer</code> services with mixed <code>protocol</code>. <a href="https://github.com/kubernetes/enhancements/issues/1435">KEP 1435</a> is in progress to address this. It is a gated “alpha” feature <a href="https://github.com/kubernetes/kubernetes/blob/master/CHANGELOG/CHANGELOG-1.20.md">since Kubernetes 1.20</a>. Cloud provider support is currently <a href="https://github.com/kubernetes/enhancements/issues/1435#issuecomment-969523031">mixed</a> but work is ongoing.</p>
-<p>So for now, I have to create separate Service objects for UDP and TCP ingress. As a consequence, there will be <strong>different public IP addresses for TCP and UDP</strong>. Whether this is a problem depends on the application. Applications that use <code>SRV</code> records to locate servers can handle this scenario. Kerberos is such an application (modern implementations, at least). Applications that use <code>A</code> or <code>AAAA</code> records directly might have problems.</p>
-<p>The other downside is cost. Cloud providers charge money for load balancer instances. The more you use, the more you pay.</p>
+<p>Well, that’s unfortunate. Kubernetes does not support
+<code>LoadBalancer</code> services with mixed <code>protocol</code>. <a href="https://github.com/kubernetes/enhancements/issues/1435">KEP 1435</a> is in
+progress to address this. It is a gated “alpha” feature <a href="https://github.com/kubernetes/kubernetes/blob/master/CHANGELOG/CHANGELOG-1.20.md">since
+Kubernetes 1.20</a>. Cloud provider support is
+currently <a href="https://github.com/kubernetes/enhancements/issues/1435#issuecomment-969523031">mixed</a> but work is ongoing.</p>
+<p>So for now, I have to create separate Service objects for UDP and
+TCP ingress. As a consequence, there will be <strong>different public IP
+addresses for TCP and UDP</strong>. Whether this is a problem depends on
+the application. Applications that use <code>SRV</code> records to locate
+servers can handle this scenario. Kerberos is such an application
+(modern implementations, at least). Applications that use <code>A</code> or
+<code>AAAA</code> records directly might have problems.</p>
+<p>The other downside is cost. Cloud providers charge money for load
+balancer instances. The more you use, the more you pay.</p>
 <p>Below is the definition of my decomposed Service objects:</p>
 <div class="sourceCode" id="cb7"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
 <span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Service</span></span>
@@ -144,30 +174,38 @@ NodePort:0}}: may not contain more than 1 protocol when type is
 <pre class="shell"><code>% oc create -f service-echo.yaml 
 service/echo-udp created
 service/echo-tcp created</code></pre>
-<p>To find out the hostname or IP address of the load balancer ingress endpoint, inspect the <code>status</code> field of the Service object:</p>
+<p>To find out the hostname or IP address of the load balancer ingress
+endpoint, inspect the <code>status</code> field of the Service object:</p>
 <pre class="shell"><code>% oc get -o json service \
     | jq -c '.items[] | (.metadata.name, .status)'
 &quot;echo-tcp&quot;
 {&quot;loadBalancer&quot;:{&quot;ingress&quot;:[{&quot;ip&quot;:&quot;34.136.55.93&quot;}]}}
 &quot;echo-udp&quot;
 {&quot;loadBalancer&quot;:{&quot;ingress&quot;:[{&quot;ip&quot;:&quot;34.71.82.205&quot;}]}}</code></pre>
-<p>Most cloud providers report an IP address. That includes Google Cloud (GCP) where this cluster was deployed. On the other hand, AWS reports a DNS name. Below is the result of creating my service objects on an cluster hosted on AWS:</p>
+<p>Most cloud providers report an IP address. That includes Google
+Cloud (GCP) where this cluster was deployed. On the other hand, AWS
+reports a DNS name. Below is the result of creating my service
+objects on an cluster hosted on AWS:</p>
 <pre class="shell"><code>% oc get -o json service \
     | jq -c '.items[] | (.metadata.name, .status)'
 &quot;echo-tcp&quot;
 {&quot;loadBalancer&quot;:{&quot;ingress&quot;:[{&quot;hostname&quot;:&quot;a095e8e1ebb9e4c64ae71e0f3c688ad4-608097611.us-east-2.elb.amazonaws.com&quot;}]}}
 &quot;echo-udp&quot;
 {&quot;loadBalancer&quot;:{}}</code></pre>
-<p>ELB successfully created a load balancer for the TCP port. But something is wrong with the UDP service. The events give more information:</p>
+<p>ELB successfully created a load balancer for the TCP port. But
+something is wrong with the UDP service. The events give more
+information:</p>
 <pre class="shell"><code>% oc get event --field-selector involvedObject.name=echo-udp
 LAST SEEN   TYPE      REASON                   OBJECT             MESSAGE
 94s         Normal    EnsuringLoadBalancer     service/echo-udp   Ensuring load balancer
 94s         Warning   SyncLoadBalancerFailed   service/echo-udp   Error syncing load balancer: failed to ensure load balancer: Protocol UDP not supported by LoadBalancer</code></pre>
 <p>Load balancer creation failed with the error:</p>
 <blockquote>
-<p>Error syncing load balancer: failed to ensure load balancer: Protocol UDP not supported by LoadBalancer</p>
+<p>Error syncing load balancer: failed to ensure load balancer:
+Protocol UDP not supported by LoadBalancer</p>
 </blockquote>
-<p>The workaround is to add an annotation to request a <em>Network Load Balancer (NLB)</em> instance instead of ELB (the default):</p>
+<p>The workaround is to add an annotation to request a <em>Network Load
+Balancer (NLB)</em> instance instead of ELB (the default):</p>
 <div class="sourceCode" id="cb12"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
 <span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Service</span></span>
 <span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a><span class="fu">metadata</span><span class="kw">:</span></span>
@@ -184,10 +222,13 @@ LAST SEEN   TYPE      REASON                   OBJECT             MESSAGE
 &quot;echo-udp&quot;
 {&quot;loadBalancer&quot;:{&quot;ingress&quot;:[{&quot;hostname&quot;:&quot;af7f7ed0f44c9461dbb54a9a4aedca2c-0c5861432365c726.elb.us-east-2.amazonaws.com&quot;}]}}</code></pre>
 <div class="note">
-<p><code>aws-load-balancer-type</code> is one of several annotations for modifying AWS load balancer configuration. See the <a href="https://cloud-provider-aws.sigs.k8s.io/service_controller/">AWS Cloud Provider documentation</a> for the full list.</p>
+<p><code>aws-load-balancer-type</code> is one of several annotations for modifying
+AWS load balancer configuration. See the <a href="https://cloud-provider-aws.sigs.k8s.io/service_controller/">AWS Cloud Provider
+documentation</a> for the full list.</p>
 </div>
 <h2 id="testing-the-ingress">Testing the ingress <a href="#testing-the-ingress" class="section">§</a></h2>
-<p>Using the IP address or DNS name from the <code>status</code> field, you can use <code>nc(1)</code> to verify that the server is contactable.</p>
+<p>Using the IP address or DNS name from the <code>status</code> field, you can
+use <code>nc(1)</code> to verify that the server is contactable.</p>
 <pre class="shell"><code>% echo hello | nc 34.136.55.93 12345
 HELLO
 
@@ -197,13 +238,25 @@ HELLO                             -- response
 ^D</code></pre>
 <p>I was able to talk to my echo server via both TCP and UDP.</p>
 <div class="note">
-<p>If using TLS or DTLS, you could instead use OpenSSL’s <code>s_client(1)</code> to test connectivity.</p>
+<p>If using TLS or DTLS, you could instead use OpenSSL’s <code>s_client(1)</code>
+to test connectivity.</p>
 </div>
-<p>Use hostname instead of IP address if that is how the cloud provider reports the ingress endpoint.</p>
+<p>Use hostname instead of IP address if that is how the cloud provider
+reports the ingress endpoint.</p>
 <h2 id="reaching-the-service-via-dns">Reaching the service via DNS <a href="#reaching-the-service-via-dns" class="section">§</a></h2>
-<p>The cloud provider has set up the load balancer and the ingress IP addresses or hostnames are reported in the <code>status</code> field of the Service object(s). Now you probably wish to set up DNS records so that clients can use an established domain name to find the server.</p>
-<p>I can’t go deep into this topic in this post, because I am still exploring this problem space myself. But I can describe some possible solutions at a high level.</p>
-<p>One possibility is to teach your application controller to manage the required DNS records. It would monitor the Service objects and reconcile the external DNS configuration with what it sees. The number and kind of records to be created will vary depending on whether the cloud providers reports the ingress points as hostnames or IP addresses:</p>
+<p>The cloud provider has set up the load balancer and the ingress IP
+addresses or hostnames are reported in the <code>status</code> field of the
+Service object(s). Now you probably wish to set up DNS records so
+that clients can use an established domain name to find the server.</p>
+<p>I can’t go deep into this topic in this post, because I am still
+exploring this problem space myself. But I can describe some
+possible solutions at a high level.</p>
+<p>One possibility is to teach your application controller to manage
+the required DNS records. It would monitor the Service objects and
+reconcile the external DNS configuration with what it sees. The
+number and kind of records to be created will vary depending on
+whether the cloud providers reports the ingress points as hostnames
+or IP addresses:</p>
 <table>
 <thead>
 <tr class="header">
@@ -235,10 +288,22 @@ HELLO                             -- response
 </tr>
 </tbody>
 </table>
-<p>Most applications have similar needs, so it would make sense to encapsulate this behaviour in a controller that configures arbitrary external DNS providers. That’s what the Kubernetes <a href="https://github.com/kubernetes-sigs/external-dns">ExternalDNS</a> project is all about. <a href="https://github.com/kubernetes-sigs/external-dns#status-of-providers">Provider stability varies</a>; at time of writing the only <em>stable</em> providers are Google Cloud DNS and AWS Route 53.</p>
-<p>Integration with OpenShift is via the <a href="https://github.com/openshift/external-dns-operator">ExternalDNS Operator</a>. This is an active area of work and ExternalDNS will hopefully be an officially supported part of OpenShift in a future release.</p>
-<p>I haven’t actually played with ExternalDNS yet so can’t say much more about it at this time. Only that it looks like a very useful solution!</p>
-<p>Finally, recall the caveats I mentioned earlier about applications that require ingress of <strong>both TCP and UDP</strong> traffic. <a href="https://github.com/kubernetes/enhancements/issues/1435">KEP 1435</a>, along with cloud provider support, should resolve this issue eventually.</p>
+<p>Most applications have similar needs, so it would make sense to
+encapsulate this behaviour in a controller that configures arbitrary
+external DNS providers. That’s what the Kubernetes <a href="https://github.com/kubernetes-sigs/external-dns">ExternalDNS</a>
+project is all about. <a href="https://github.com/kubernetes-sigs/external-dns#status-of-providers">Provider stability varies</a>; at
+time of writing the only <em>stable</em> providers are Google Cloud DNS and
+AWS Route 53.</p>
+<p>Integration with OpenShift is via the <a href="https://github.com/openshift/external-dns-operator">ExternalDNS Operator</a>.
+This is an active area of work and ExternalDNS will hopefully be an
+officially supported part of OpenShift in a future release.</p>
+<p>I haven’t actually played with ExternalDNS yet so can’t say much
+more about it at this time. Only that it looks like a very useful
+solution!</p>
+<p>Finally, recall the caveats I mentioned earlier about applications
+that require ingress of <strong>both TCP and UDP</strong> traffic. <a href="https://github.com/kubernetes/enhancements/issues/1435">KEP 1435</a>,
+along with cloud provider support, should resolve this issue
+eventually.</p>
 </div>
 <div id="postFooter">
     <div id="recent">

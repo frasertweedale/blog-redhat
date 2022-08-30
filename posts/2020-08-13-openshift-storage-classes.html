@@ -26,12 +26,30 @@
 
 <div id="postContent">
     <h1 id="dynamic-volume-provisioning-with-openshift-storage-classes">Dynamic volume provisioning with OpenShift storage classes</h1>
-<p>For containerised applications that require persistent storage, the Kubernetes <code>PersistentVolumeClaim</code> (PVC) object provides the link between a <code>PersistentVolume</code> (PV) and the pod. When scaling such an application or even deploying it the first time, the operator (human or otherwise) has to create the PVC; the pod specification can then refer to it.</p>
-<p>For example, a <code>StatefulSet</code> object can optionally specify <code>volumeClaimTemplates</code> alongside the pod <code>template</code>. As the application creates pods, so will it create the associated PVCs according to the defined templates.</p>
-<p>But PVCs need PVs to bind to. Can these also be created on the fly? And if so, how can we abstract over the details of the underlying storage provider(s), which may vary from cluster to cluster? In this post I provide an overview of <em>storage classes</em>, which solve these problems.</p>
+<p>For containerised applications that require persistent storage, the
+Kubernetes <code>PersistentVolumeClaim</code> (PVC) object provides the link
+between a <code>PersistentVolume</code> (PV) and the pod. When scaling such
+an application or even deploying it the first time, the operator
+(human or otherwise) has to create the PVC; the pod specification
+can then refer to it.</p>
+<p>For example, a <code>StatefulSet</code> object can optionally specify
+<code>volumeClaimTemplates</code> alongside the pod <code>template</code>. As the
+application creates pods, so will it create the associated PVCs
+according to the defined templates.</p>
+<p>But PVCs need PVs to bind to. Can these also be created on the fly?
+And if so, how can we abstract over the details of the underlying
+storage provider(s), which may vary from cluster to cluster? In
+this post I provide an overview of <em>storage classes</em>, which solve
+these problems.</p>
 <h2 id="creating-volumes">Creating volumes <a href="#creating-volumes" class="section">§</a></h2>
-<p>A cluster can provide a variety of types of volumes: Ceph, NFS, <code>hostPath</code>, iSCSI and several more. Storage types of the infrastructure the cluster is deployed in may also be available, e.g. AWS EBS, Azure Disk, GCE PersistentDisk (PD), Cinder (OpenStack), etc.</p>
-<p>Creating a <code>PersistentVolume</code> requires knowing about what volume types are supported, and possibly additional details about that storage type. For example, to create a PV based on a GCE PD:</p>
+<p>A cluster can provide a variety of types of volumes: Ceph, NFS,
+<code>hostPath</code>, iSCSI and several more. Storage types of the
+infrastructure the cluster is deployed in may also be available,
+e.g. AWS EBS, Azure Disk, GCE PersistentDisk (PD), Cinder
+(OpenStack), etc.</p>
+<p>Creating a <code>PersistentVolume</code> requires knowing about what volume
+types are supported, and possibly additional details about that
+storage type. For example, to create a PV based on a GCE PD:</p>
 <div class="sourceCode" id="cb1"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
 <span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> PersistentVolume</span></span>
 <span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="fu">metadata</span><span class="kw">:</span></span>
@@ -58,14 +76,26 @@
 <li>knowing that the cluster provides the GCE PD volume type</li>
 <li>knowing the name and region/zones of the PD to use</li>
 </ul>
-<p>Having to know these details and encoding them into an application’s deployment manifests imposes a greater burden on administrators, or necessitates more complex operators, or results in a less portable application. Or some combination of those outcomes.</p>
+<p>Having to know these details and encoding them into an application’s
+deployment manifests imposes a greater burden on administrators, or
+necessitates more complex operators, or results in a less portable
+application. Or some combination of those outcomes.</p>
 <h2 id="storage-classes">Storage classes <a href="#storage-classes" class="section">§</a></h2>
-<p>What we really want is to abstract over the storage implementations. We want to able to specify some high-level characteristics of the storage (e.g. block or file, fast or slow?). This is what <em>storage classes</em> provide. Then when we create a PVC, we can specify the desired capacity and class, and the cluster should <em>dynamically provision</em> an appropriate volume. As a result, applications are simpler to deploy and more portable.</p>
+<p>What we really want is to abstract over the storage implementations.
+We want to able to specify some high-level characteristics of the
+storage (e.g. block or file, fast or slow?). This is what <em>storage
+classes</em> provide. Then when we create a PVC, we can specify the
+desired capacity and class, and the cluster should <em>dynamically
+provision</em> an appropriate volume. As a result, applications are
+simpler to deploy and more portable.</p>
 <p>To see the storage classes available in a cluster:</p>
 <pre><code>ftweedal% oc get storageclass
 NAME                 PROVISIONER            RECLAIMPOLICY   VOLUMEBINDINGMODE      ALLOWVOLUMEEXPANSION   AGE
 standard (default)   kubernetes.io/cinder   Delete          WaitForFirstConsumer   true                   28d</code></pre>
-<p>This cluster has only one storage class, called <code>standard</code>. It is also the default storage class for this cluster. To use dynamic provisioning, in the PVC spec instead of <code>volumeName</code> specify <code>storageClassName</code>:</p>
+<p>This cluster has only one storage class, called <code>standard</code>. It is
+also the default storage class for this cluster. To use dynamic
+provisioning, in the PVC spec instead of <code>volumeName</code> specify
+<code>storageClassName</code>:</p>
 <div class="sourceCode" id="cb3"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
 <span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> PersistentVolumeClaim</span></span>
 <span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="fu">metadata</span><span class="kw">:</span></span>
@@ -77,7 +107,8 @@ standard (default)   kubernetes.io/cinder   Delete          WaitForFirstConsumer
 <span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">requests</span><span class="kw">:</span></span>
 <span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">storage</span><span class="kw">:</span><span class="at"> 10Gi</span></span>
 <span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">storageClassName</span><span class="kw">:</span><span class="at"> standard</span></span></code></pre></div>
-<p>If you want to use the default storage class, you can even omit the <code>storageClassName</code> field:</p>
+<p>If you want to use the default storage class, you can even omit the
+<code>storageClassName</code> field:</p>
 <div class="sourceCode" id="cb4"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
 <span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> PersistentVolumeClaim</span></span>
 <span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a><span class="fu">metadata</span><span class="kw">:</span></span>
@@ -89,12 +120,16 @@ standard (default)   kubernetes.io/cinder   Delete          WaitForFirstConsumer
 <span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">requests</span><span class="kw">:</span></span>
 <span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">storage</span><span class="kw">:</span><span class="at"> 10Gi</span></span></code></pre></div>
 <h2 id="dynamic-provisioning-in-action">Dynamic provisioning in action <a href="#dynamic-provisioning-in-action" class="section">§</a></h2>
-<p>Let’s see what actually happens when we use dynamic provisioning. We will observe what objects are created and how their status changes as we create, use and delete a PVC that uses the default storage class.</p>
+<p>Let’s see what actually happens when we use dynamic provisioning.
+We will observe what objects are created and how their status
+changes as we create, use and delete a PVC that uses the default
+storage class.</p>
 <p>First let’s see what PVs exist:</p>
 <pre><code>ftweedal% oc get pv
 NAME                                       CAPACITY   ACCESS MODES   RECLAIM POLICY   STATUS    CLAIM                                             STORAGECLASS   REASON    AGE
 pvc-d3bc7c81-8a24-4318-a914-296dbdc5ec3f   100Gi      RWO            Delete           Bound     openshift-image-registry/image-registry-storage   standard                 7d22h</code></pre>
-<p>There is one PV, with a 100Gi capacity. It is used for the image registry.</p>
+<p>There is one PV, with a 100Gi capacity. It is used for the image
+registry.</p>
 <p>Now, lets create <code>pvc-test</code> as specified above:</p>
 <pre><code>ftweedal% oc create -f deploy/pvc-test.yaml
 persistentvolumeclaim/pvc-test created
@@ -109,8 +144,11 @@ pvc-d3bc7c81-8a24-4318-a914-296dbdc5ec3f   100Gi      RWO            Delete     
 
 ftweedal% oc get pvc pvc-test -o yaml |grep storageClassName
 storageClassName: standard</code></pre>
-<p>The PVC <code>pvc-test</code> was created and has status <code>pending</code>. No new PV has been created yet. Finally note that the PVC has <code>storageClassName: standard</code> (which is the cluster default).</p>
-<p>Now lets create a pod that uses <code>pvc-test</code>, mounting it at <code>/data</code>. The pod spec is:</p>
+<p>The PVC <code>pvc-test</code> was created and has status <code>pending</code>. No new
+PV has been created yet. Finally note that the PVC has
+<code>storageClassName: standard</code> (which is the cluster default).</p>
+<p>Now lets create a pod that uses <code>pvc-test</code>, mounting it at
+<code>/data</code>. The pod spec is:</p>
 <div class="sourceCode" id="cb7"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
 <span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Pod</span></span>
 <span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a><span class="fu">metadata</span><span class="kw">:</span></span>
@@ -129,7 +167,8 @@ storageClassName: standard</code></pre>
 <span id="cb7-16"><a href="#cb7-16" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> data</span></span>
 <span id="cb7-17"><a href="#cb7-17" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">persistentVolumeClaim</span><span class="kw">:</span></span>
 <span id="cb7-18"><a href="#cb7-18" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="fu">claimName</span><span class="kw">:</span><span class="at"> pvc-test</span></span></code></pre></div>
-<p>After creating the pod we will write a file under <code>/data</code>, delete then re-create the pod, and observe that the file we wrote persists.</p>
+<p>After creating the pod we will write a file under <code>/data</code>, delete
+then re-create the pod, and observe that the file we wrote persists.</p>
 <pre><code>ftweedal% oc create -f deploy/pod-test.yaml
 pod/pod-test created
 
@@ -146,7 +185,8 @@ hello world
 
 ftweedal% oc delete pod pod-test
 pod &quot;pod-test&quot; deleted</code></pre>
-<p>This confirms that the PVC works as intended. Let’s check the status of the PVC and PVs to see what happened behind the scenes:</p>
+<p>This confirms that the PVC works as intended. Let’s check the
+status of the PVC and PVs to see what happened behind the scenes:</p>
 <pre><code>ftweedal% oc get pvc pvc-test
 NAME       STATUS    VOLUME                                     CAPACITY   ACCESS MODES   STORAGECLASS   AGE
 pvc-test   Bound     pvc-26d82d50-8e66-4938-bdee-f28ff2bcb49c   10Gi       RWO            standard       16m
@@ -155,8 +195,12 @@ ftweedal% oc get pv
 NAME                                       CAPACITY   ACCESS MODES   RECLAIM POLICY   STATUS    CLAIM                                             STORAGECLASS   REASON    AGE
 pvc-26d82d50-8e66-4938-bdee-f28ff2bcb49c   10Gi       RWO            Delete           Bound     ftweedal-operator/pvc-test                        standard                 4m53s
 pvc-d3bc7c81-8a24-4318-a914-296dbdc5ec3f   100Gi      RWO            Delete           Bound     openshift-image-registry/image-registry-storage   standard                 7d23h</code></pre>
-<p>Before creating the pod <code>pvc-test</code> had status <code>Pending</code>. Now it is <code>Bound</code> to the volume <code>pvc-26d82d50-8e66-4938-bdee-f28ff2bcb49c</code> which was dynamically provisioned with capacity 10Gi as required by <code>pvc-test</code>.</p>
-<p>Finally as we delete <code>pvc-test</code>, observe the automatic deletion of the dynamically provisioned volume:</p>
+<p>Before creating the pod <code>pvc-test</code> had status <code>Pending</code>. Now it
+is <code>Bound</code> to the volume
+<code>pvc-26d82d50-8e66-4938-bdee-f28ff2bcb49c</code> which was dynamically
+provisioned with capacity 10Gi as required by <code>pvc-test</code>.</p>
+<p>Finally as we delete <code>pvc-test</code>, observe the automatic deletion of
+the dynamically provisioned volume:</p>
 <pre><code>ftweedal% oc delete pvc pvc-test
 persistentvolumeclaim &quot;pvc-test&quot; deleted
 
@@ -165,8 +209,22 @@ NAME                                       CAPACITY   ACCESS MODES   RECLAIM POL
 pvc-d3bc7c81-8a24-4318-a914-296dbdc5ec3f   100Gi      RWO            Delete           Bound     openshift-image-registry/image-registry-storage   standard                 7d23h</code></pre>
 <p><code>pvc-26d82d50-8e66-4938-bdee-f28ff2bcb49c</code> went away, as expected.</p>
 <h2 id="conclusion">Conclusion <a href="#conclusion" class="section">§</a></h2>
-<p>As we work toward operationalising FreeIPA in OpenShift, I am interested in how we can use storage classes to make for a smooth deployment across different environments and especially those for which OpenShift Dedicated is available.</p>
-<p>I also need to learn more about the best practices or common idioms for representing in storage classes the application suitability (e.g. file versus block storage) or performance characteristics of supported volume types in a cluster. To make it a bit more concrete, consider that for performance reasons we might require low-latency/high-throughput block storage for the 389 DS LDAP database storage. How can we express this abstract requirement such that we get a satisfactory result across a variety of “clouds” with no administrator effort? Hopefully storage classes are the answer. But if they are not the whole solution, from what I have learned so far I have a strong feeling that they will be a bit part of the solution.</p>
+<p>As we work toward operationalising FreeIPA in OpenShift, I am
+interested in how we can use storage classes to make for a smooth
+deployment across different environments and especially those for
+which OpenShift Dedicated is available.</p>
+<p>I also need to learn more about the best practices or common idioms
+for representing in storage classes the application suitability
+(e.g. file versus block storage) or performance characteristics of
+supported volume types in a cluster. To make it a bit more
+concrete, consider that for performance reasons we might require
+low-latency/high-throughput block storage for the 389 DS LDAP
+database storage. How can we express this abstract requirement such
+that we get a satisfactory result across a variety of “clouds” with
+no administrator effort? Hopefully storage classes are the answer.
+But if they are not the whole solution, from what I have learned so
+far I have a strong feeling that they will be a bit part of the
+solution.</p>
 </div>
 <div id="postFooter">
     <div id="recent">

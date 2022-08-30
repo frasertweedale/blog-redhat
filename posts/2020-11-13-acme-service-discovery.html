@@ -26,19 +26,57 @@
 
 <div id="postContent">
     <h1 id="acme-service-discovery">ACME Service Discovery</h1>
-<p>Automated Certificate Management Environment (ACME) is a protocol for automated identifer validation certificate issuance. Over the past five years it gained widespread adoption thanks to <a href="https://letsencrypt.org/">Let's Encrypt</a>, the first publicly trusted CA that implemented it. ACME is supported by a plethora of server programs and service providers, Let’s Encrypt has now issued over <a href="https://letsencrypt.org/2020/02/27/one-billion-certs.html">1 billion certificates</a> and together with the ACME protocol itself is largely responsible for pushing the adoption of TLS from around 50% of page loads five years ago to well over 80% today. This is an amazing result!</p>
-<p>So it’s no surprise that the ACME ecosystem is growing. Some other publicly trusted CAs now support the ACME protocol. Enterprise CAs are learning how to speak ACME. This includes <a href="https://www.dogtagpki.org/wiki/ACME">Dogtag</a>, and by extension FreeIPA. The upcoming FreeIPA 4.9 release will support ACME (I <a href="2020-05-06-ipa-acme-intro.html">blogged about this</a> a few months ago).</p>
-<p>Having proved itself good for DNS certificates, <a href="https://tools.ietf.org/html/rfc8738">RFC 8738</a> introduced supported for IP addresses. Work to support email addresses (for S/MIME), <code>.onion</code> addresses (Tor services), and other identifer types is underway in the IETF <a href="https://datatracker.ietf.org/wg/acme/documents/">acme Working Group</a>. (ACME itself is defined in <a href="https://tools.ietf.org/html/rfc8555">RFC 8555</a>).</p>
-<p>The outcome of all of this is that already today, and increasingly into the future, network environments will often have access to multiple ACME servers. These servers may differ in the kinds of certificates they issue and the validation methods (also called “challenge types”) they support. Also, it is desirable that a client (e.g. a printer or an IoT “thing”) would be able to opportunistically and automatically locate a suitable ACME server to acquire certificates without any operator (human or otherwise) intervention (and Let’s Encrypt or other public ACME servers may not be accessible in some environments).</p>
+<p>Automated Certificate Management Environment (ACME) is a protocol
+for automated identifer validation certificate issuance. Over the
+past five years it gained widespread adoption thanks to <a href="https://letsencrypt.org/">Let's
+Encrypt</a>, the first publicly trusted CA that implemented it. ACME
+is supported by a plethora of server programs and service providers,
+Let’s Encrypt has now issued over <a href="https://letsencrypt.org/2020/02/27/one-billion-certs.html">1 billion certificates</a> and
+together with the ACME protocol itself is largely responsible for
+pushing the adoption of TLS from around 50% of page loads five years
+ago to well over 80% today. This is an amazing result!</p>
+<p>So it’s no surprise that the ACME ecosystem is growing. Some other
+publicly trusted CAs now support the ACME protocol. Enterprise CAs
+are learning how to speak ACME. This includes <a href="https://www.dogtagpki.org/wiki/ACME">Dogtag</a>, and by
+extension FreeIPA. The upcoming FreeIPA 4.9 release will support
+ACME (I <a href="2020-05-06-ipa-acme-intro.html">blogged about this</a> a few months ago).</p>
+<p>Having proved itself good for DNS certificates, <a href="https://tools.ietf.org/html/rfc8738">RFC 8738</a>
+introduced supported for IP addresses. Work to support email
+addresses (for S/MIME), <code>.onion</code> addresses (Tor services), and
+other identifer types is underway in the IETF <a href="https://datatracker.ietf.org/wg/acme/documents/">acme Working Group</a>.
+(ACME itself is defined in <a href="https://tools.ietf.org/html/rfc8555">RFC 8555</a>).</p>
+<p>The outcome of all of this is that already today, and increasingly
+into the future, network environments will often have access to
+multiple ACME servers. These servers may differ in the kinds of
+certificates they issue and the validation methods (also called
+“challenge types”) they support. Also, it is desirable that a
+client (e.g. a printer or an IoT “thing”) would be able to
+opportunistically and automatically locate a suitable ACME server to
+acquire certificates without any operator (human or otherwise)
+intervention (and Let’s Encrypt or other public ACME servers may not
+be accessible in some environments).</p>
 <p>So, what’s an ACME client to do?</p>
 <h2 id="internet-draft">Internet-Draft <a href="#internet-draft" class="section">§</a></h2>
-<p>I have <a href="https://datatracker.ietf.org/doc/draft-tweedale-acme-discovery/">published an Internet-Draft</a> defining a service discovery protocol for ACME. <em>Internet-Draft</em> is <a href="https://www.ietf.org/">IETF</a> jargon for a work-in-progress document that might one day become an <a href="https://www.ietf.org/standards/rfcs/">RFC</a>. An outline of how ACME Service Discovery works follows.</p>
-<p>ACME Service Discovery is a profile of <em>DNS-based Service Discovery (DNS-SD)</em> (<a href="https://tools.ietf.org/html/rfc6763">RFC 6763</a>). Given a <em>parent domain</em>, <em>Service Instance Names</em> are listed by the PTR records of <code>_acme-server._tcp.$PARENT</code>. For example, the <code>corp.example.</code> parent domain advertises two service instances called <code>CorpCA</code> and <code>C4A</code>:</p>
+<p>I have <a href="https://datatracker.ietf.org/doc/draft-tweedale-acme-discovery/">published an Internet-Draft</a> defining a service discovery
+protocol for ACME. <em>Internet-Draft</em> is <a href="https://www.ietf.org/">IETF</a> jargon for a
+work-in-progress document that might one day become an <a href="https://www.ietf.org/standards/rfcs/">RFC</a>. An
+outline of how ACME Service Discovery works follows.</p>
+<p>ACME Service Discovery is a profile of <em>DNS-based Service Discovery
+(DNS-SD)</em> (<a href="https://tools.ietf.org/html/rfc6763">RFC 6763</a>). Given a <em>parent domain</em>, <em>Service Instance
+Names</em> are listed by the PTR records of
+<code>_acme-server._tcp.$PARENT</code>. For example, the <code>corp.example.</code>
+parent domain advertises two service instances called <code>CorpCA</code> and
+<code>C4A</code>:</p>
 <pre><code>$ORIGIN corp.example.
 
 _acme-server._tcp PTR CorpCA._acme-server._tcp
 _acme-server._tcp PTR C4A._acme-server._tcp</code></pre>
-<p>Each Service Instance Name owns an SRV and TXT record that together describe the location, priority and capabilities of the server, as well as the path to the ACME directory object. Continuing with the example, <code>CorpCA</code> has the higher priority and supports the <code>ip</code> and <code>dns</code> identifer types, whereas <code>C4A</code> has a lower priority and only supports <code>dns</code> identifiers:</p>
+<p>Each Service Instance Name owns an SRV and TXT record that together
+describe the location, priority and capabilities of the server, as
+well as the path to the ACME directory object. Continuing with the
+example, <code>CorpCA</code> has the higher priority and supports the <code>ip</code>
+and <code>dns</code> identifer types, whereas <code>C4A</code> has a lower priority
+and only supports <code>dns</code> identifiers:</p>
 <pre><code>$ORIGIN corp.example.
 
 CorpCA._acme-server._tcp SRV 10 0 443 ca
@@ -46,10 +84,26 @@ CorpCA._acme-server._tcp TXT &quot;path=/acme&quot; &quot;i=ip,dns&quot;
 
 C4A._acme-server._tcp    SRV 20 0 443 certs4all.example.
 C4A._acme-server._tcp    TXT &quot;path=/acme/v2&quot; &quot;i=dns&quot;</code></pre>
-<p>ACME clients are assumed to know (or deduce) one or more candidate parent domains. Possible sources for the candidate parent domain(s) are the DNS search domains, host FQDN or Kerberos realm. The client performs ACME Service Discovery on each parent domain, selecting and probing eligible service instances, until they find one that works. The probe step involves constructing a URL from the SRV target and port and TXT <code>path</code> attribute, performing an HTTP GET request for that resource, and checking that the response is a valid ACME directory object. In the example above, the directory URL for <code>CorpCA</code> is <code>https://ca.corp.example/acme</code>.</p>
-<p>And that’s the main idea! There’s a fair bit more detail in the Internet-Draft but I won’t belabour it all here.</p>
+<p>ACME clients are assumed to know (or deduce) one or more candidate
+parent domains. Possible sources for the candidate parent domain(s)
+are the DNS search domains, host FQDN or Kerberos realm. The client
+performs ACME Service Discovery on each parent domain, selecting and
+probing eligible service instances, until they find one that works.
+The probe step involves constructing a URL from the SRV target and
+port and TXT <code>path</code> attribute, performing an HTTP GET request for
+that resource, and checking that the response is a valid ACME
+directory object. In the example above, the directory URL for
+<code>CorpCA</code> is <code>https://ca.corp.example/acme</code>.</p>
+<p>And that’s the main idea! There’s a fair bit more detail in the
+Internet-Draft but I won’t belabour it all here.</p>
 <h2 id="enabling-acme-service-discovery-in-freeipa">Enabling ACME Service Discovery in FreeIPA <a href="#enabling-acme-service-discovery-in-freeipa" class="section">§</a></h2>
-<p>To enable ACME Service Discovery in a FreeIPA environment using the integrated DNS service, add the PTR, SRV and TXT records for each service instance. This requires a <a href="https://github.com/freeipa/freeipa/pull/5239">recently merged patch</a> to allow PTR records to be created in arbitrary zones (PTR records were previously limited to <code>.arpa</code> reverse zones). The fix should be included in FreeIPA 4.9 and will also be backported to the 4.8.x branch.</p>
+<p>To enable ACME Service Discovery in a FreeIPA environment using the
+integrated DNS service, add the PTR, SRV and TXT records for each
+service instance. This requires a <a href="https://github.com/freeipa/freeipa/pull/5239">recently merged patch</a> to allow
+PTR records to be created in arbitrary zones (PTR records were
+previously limited to <code>.arpa</code> reverse zones). The fix should be
+included in FreeIPA 4.9 and will also be backported to the 4.8.x
+branch.</p>
 <p>The following DNS records advertise the FreeIPA CA itself:</p>
 <pre><code>% ipa dnsrecord-add ipa.local ipa._acme-server._tcp \
     --srv-priority 10 --srv-weight 0 \
@@ -64,10 +118,17 @@ C4A._acme-server._tcp    TXT &quot;path=/acme/v2&quot; &quot;i=dns&quot;</code><
   Record name: _acme-server._tcp
   PTR record: ipa._acme-server._tcp.ipa.local.</code></pre>
 <p>The procedure to advertise additional ACME servers is similar.</p>
-<p>If the ACME Service Discovery proposal gets traction we would ideally create these records to advertise the FreeIPA CA automatically (when it is enabled).</p>
+<p>If the ACME Service Discovery proposal gets traction we would
+ideally create these records to advertise the FreeIPA CA
+automatically (when it is enabled).</p>
 <h2 id="certbot-plugin">Certbot plugin <a href="#certbot-plugin" class="section">§</a></h2>
-<p>I wrote a <a href="https://certbot.eff.org/">Certbot</a> plugin to experiment with service discovery. It lives in a private branch at <a href="https://github.com/frasertweedale/certbot/tree/feature/discovery">https://github.com/frasertweedale/certbot/tree/feature/discovery</a>. I will probably submit a pull request soon, to invite feedback about the implementation and the service disovery proposal itself.</p>
-<p>To install Certbot and the plugin under <code>~/.local/</code> (command output omitted):</p>
+<p>I wrote a <a href="https://certbot.eff.org/">Certbot</a> plugin to experiment with service discovery. It
+lives in a private branch at
+<a href="https://github.com/frasertweedale/certbot/tree/feature/discovery">https://github.com/frasertweedale/certbot/tree/feature/discovery</a>. I
+will probably submit a pull request soon, to invite feedback about
+the implementation and the service disovery proposal itself.</p>
+<p>To install Certbot and the plugin under <code>~/.local/</code> (command
+output omitted):</p>
 <pre><code># git clone https://github.com/certbot/certbot -b feature/discovery
 # cd certbot/certbot
 # pip install --user .
@@ -93,13 +154,16 @@ Description: Place files in webroot directory
 Interfaces: IAuthenticator, IPlugin
 Entry point: webroot = certbot._internal.plugins.webroot:Authenticator
 - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -</code></pre>
-<p>Now register an account with the ACME server. Note the <code>--discovery</code> option:</p>
+<p>Now register an account with the ACME server. Note the
+<code>--discovery</code> option:</p>
 <pre><code># certbot --discovery register \
   --email ftweedal@redhat.com \
   --agree-tos --no-eff-email
 Saving debug log to /var/log/letsencrypt/letsencrypt.log
 Account registered.</code></pre>
-<p>If service discovery fails, it will fail silently and use Let’s Encrypt (Certbot’s default). <code>--discovery=force</code> suppresses this fallback behaviour; if service discovery fails Certbot will abort.</p>
+<p>If service discovery fails, it will fail silently and use Let’s
+Encrypt (Certbot’s default). <code>--discovery=force</code> suppresses this
+fallback behaviour; if service discovery fails Certbot will abort.</p>
 <p>Next request the certificate:</p>
 <pre><code># certbot --discovery certonly \
     --domain $(hostname) --standalone
@@ -124,15 +188,22 @@ IMPORTANT NOTES:
 
    Donating to ISRG / Let's Encrypt:   https://letsencrypt.org/donate
    Donating to EFF:                    https://eff.org/donate-le</code></pre>
-<p>We can check that the certificate was issued by the FreeIPA CA, not Let’s Encrypt:</p>
+<p>We can check that the certificate was issued by the FreeIPA CA, not
+Let’s Encrypt:</p>
 <pre><code># openssl x509 -issuer -noout  \
     &lt; /etc/letsencrypt/live/f33-0.ipa.local/fullchain.pem
 issuer=O = IPA.LOCAL 202011061623, CN = Certificate Authority</code></pre>
-<p>You do have to supply the <code>--discovery</code> option to both the <code>register</code> and <code>certonly</code> commands (otherwise <code>certonly</code> will try to use Let’s Encrypt). Fortunately, for <em>renewal</em> (the <code>renew</code> command) Certbot does remember which server issued the certificate, and uses the same server for renewal.</p>
-<p>What happens when service discovery fails? I’ll disable the ACME service on the FreeIPA server:</p>
+<p>You do have to supply the <code>--discovery</code> option to both the
+<code>register</code> and <code>certonly</code> commands (otherwise <code>certonly</code> will
+try to use Let’s Encrypt). Fortunately, for <em>renewal</em> (the
+<code>renew</code> command) Certbot does remember which server issued the
+certificate, and uses the same server for renewal.</p>
+<p>What happens when service discovery fails? I’ll disable the ACME
+service on the FreeIPA server:</p>
 <pre><code>% sudo ipa-acme-manage disable
 The ipa-acme-manage command was successful</code></pre>
-<p>Then, running <code>certbot register</code> again, this time with <code>--discovery=force</code> to prevent fallback to Let’s Encrypt:</p>
+<p>Then, running <code>certbot register</code> again, this time with
+<code>--discovery=force</code> to prevent fallback to Let’s Encrypt:</p>
 <pre><code># certbot --discovery=force register \
   --email ftweedal@redhat.com \
   --agree-tos --no-eff-email
@@ -143,7 +214,8 @@ Certbot can obtain and install HTTPS/TLS/SSL certificates.  By default,
 it will attempt to use a webserver both for obtaining and installing the
 certificate.
 certbot: error: service discovery failed (see /tmp/tmp6qq8pnks for info)</code></pre>
-<p>The log file contains a transcript of the service discovery plugin’s activity:</p>
+<p>The log file contains a transcript of the service discovery plugin’s
+activity:</p>
 <pre><code># cat /tmp/tmp6qq8pnks
 [INFO] processing parent domain ipa.local.
 [INFO] enumerating service instances for _acme-server._tcp.ipa.local.
@@ -154,12 +226,37 @@ certbot: error: service discovery failed (see /tmp/tmp6qq8pnks for info)</code><
 [INFO]   (&lt;DNS IN SRV rdata: 10 0 443 ipa-ca.ipa.local.&gt;, (b'path=/acme/directory', b'i=dns'))
 [INFO] GET https://ipa-ca.ipa.local/acme/directory
 [WARNING] failed to reach server: &lt;Response [503]&gt;</code></pre>
-<p>We can see that the plugin found the service instance and requested the directory resource, but got a 503 response (as expected). So, when service discovery fails the plugin gives you some useful log output to debug the issue.</p>
-<p>The log file is only persisted when service discovery fails, otherwise it is deleted. In the current implementation we cannot write to the “normal” Certbot log file because we don’t know where that is. The discovery plugin is actually doing all its work <em>inside the argument parsing</em>. It feels like a brutal hack but it’s the only way I found (in the limited time I had) to override the <code>--server</code> option whilst keeping the implementation as a plugin, fully separate from Certbot core. A nicer implementation is possible if service discovery were to be implemented in Certbot core (this would introduce a dependency on <em>dnspython</em>).</p>
+<p>We can see that the plugin found the service instance and requested
+the directory resource, but got a 503 response (as expected). So,
+when service discovery fails the plugin gives you some useful log
+output to debug the issue.</p>
+<p>The log file is only persisted when service discovery fails,
+otherwise it is deleted. In the current implementation we cannot
+write to the “normal” Certbot log file because we don’t know where
+that is. The discovery plugin is actually doing all its work
+<em>inside the argument parsing</em>. It feels like a brutal hack but it’s
+the only way I found (in the limited time I had) to override the
+<code>--server</code> option whilst keeping the implementation as a plugin,
+fully separate from Certbot core. A nicer implementation is
+possible if service discovery were to be implemented in Certbot core
+(this would introduce a dependency on <em>dnspython</em>).</p>
 <h2 id="next-steps">Next steps <a href="#next-steps" class="section">§</a></h2>
-<p>I will present and demo this proposal during the <code>acme</code> Working Group meeting at IETF 109 (November 2020). From there I hope that it will be adopted, developed, and shepherded through to become an RFC. I will also seek feedback from Certbot developers about the proposal and my experimental implementation.</p>
-<p>I also intend to submit another Internet-Draft proposing a mechanism for servers to advertise their capabilities in the ACME directory object. This could be useful to help clients choose from multiple servers (regardless of how they find out about the servers). And I think it’s good practice. When a protocol has many possible features that a server may or may not implement, servers should declare their capabilities for the benefit of clients.</p>
-<p>Beyond that, I am starting to think about SRVName support in ACME. This would be useful in enterprise environments and on the open internet for protocols where SRV records are used to locate servers. Such protocols include Kerberos, LDAP, SIP and XMPP.</p>
+<p>I will present and demo this proposal during the <code>acme</code> Working
+Group meeting at IETF 109 (November 2020). From there I hope that
+it will be adopted, developed, and shepherded through to become an
+RFC. I will also seek feedback from Certbot developers about the
+proposal and my experimental implementation.</p>
+<p>I also intend to submit another Internet-Draft proposing a mechanism
+for servers to advertise their capabilities in the ACME directory
+object. This could be useful to help clients choose from multiple
+servers (regardless of how they find out about the servers). And I
+think it’s good practice. When a protocol has many possible
+features that a server may or may not implement, servers should
+declare their capabilities for the benefit of clients.</p>
+<p>Beyond that, I am starting to think about SRVName support in ACME.
+This would be useful in enterprise environments and on the open
+internet for protocols where SRV records are used to locate servers.
+Such protocols include Kerberos, LDAP, SIP and XMPP.</p>
 </div>
 <div id="postFooter">
     <div id="recent">

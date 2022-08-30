@@ -26,26 +26,59 @@
 
 <div id="postContent">
     <h1 id="ldap-persistent-searches-with-ldapjdk">LDAP persistent searches with ldapjdk</h1>
-<p>As part of the <a href="http://pki.fedoraproject.org/wiki/LDAP_Profile_Storage">LDAP-based profiles</a> feature I’ve been working on for the <a href="http://pki.fedoraproject.org/wiki/PKI_Main_Page">Dogtag</a>, it was necessary to implement a feature where the database is monitored for changes to the LDAP profiles. For example, when a profile is updated on a clone, that change is replicated to other clones, and those other clones have to detect that change and each instance must update its view of the profiles accordingly. This post details how the LDAP <em>persistent search</em> feature was used to implement this behaviour.</p>
-<p>A naïve approach to solving this problem would have been to unconditionally refresh all profiles at a certain interval. Slightly better would be to <em>check</em> all profiles at a certain interval and update those that have changed. Both of these methods involve some non-trivial delay between changes being replicated to the local database, and the profile subsystem reflecting those changes.</p>
-<p>A different approach was to use the LDAP persistent search capability. With this feature, once the search is running, the client receives immediate notification of changes. This advantage commended it over the polling approach as a more appropriate basis for a solution.</p>
+<p>As part of the <a href="http://pki.fedoraproject.org/wiki/LDAP_Profile_Storage">LDAP-based profiles</a> feature I’ve been working on
+for the <a href="http://pki.fedoraproject.org/wiki/PKI_Main_Page">Dogtag</a>, it was necessary to implement a feature where the
+database is monitored for changes to the LDAP profiles. For
+example, when a profile is updated on a clone, that change is
+replicated to other clones, and those other clones have to detect
+that change and each instance must update its view of the profiles
+accordingly. This post details how the LDAP <em>persistent search</em>
+feature was used to implement this behaviour.</p>
+<p>A naïve approach to solving this problem would have been to
+unconditionally refresh all profiles at a certain interval.
+Slightly better would be to <em>check</em> all profiles at a certain
+interval and update those that have changed. Both of these methods
+involve some non-trivial delay between changes being replicated to
+the local database, and the profile subsystem reflecting those
+changes.</p>
+<p>A different approach was to use the LDAP persistent search
+capability. With this feature, once the search is running, the
+client receives immediate notification of changes. This advantage
+commended it over the polling approach as a more appropriate basis
+for a solution.</p>
 <h2 id="ldapjdk-persistent-search-api">ldapjdk persistent search API <a href="#ldapjdk-persistent-search-api" class="section">§</a></h2>
-<p>A big part of the motivation for this post was the paucity of the ldapjdk documentation with respect to persistent searches. The necessary information is all there - but it is scattered across several classes, all of which play some important part in a working implementation, but none of which tells the full story.</p>
-<p>Hopefully some people will benefit from this information being brought together in one place and explained step by step. Let’s look at the classes involved one by one as we build up the solution.</p>
+<p>A big part of the motivation for this post was the paucity of the
+ldapjdk documentation with respect to persistent searches. The
+necessary information is all there - but it is scattered across
+several classes, all of which play some important part in a working
+implementation, but none of which tells the full story.</p>
+<p>Hopefully some people will benefit from this information being
+brought together in one place and explained step by step. Let’s
+look at the classes involved one by one as we build up the solution.</p>
 <h3 id="ldappersistsearchcontrol"><code>LDAPPersistSearchControl</code> <a href="#ldappersistsearchcontrol" class="section">§</a></h3>
-<p>This is the server control that activates the persistent search behaviour. It also provides static flags for specifying what kinds of updates to listen for. Its constructor takes a union of these flags and three <code>boolean</code> values:</p>
+<p>This is the server control that activates the persistent search
+behaviour. It also provides static flags for specifying what
+kinds of updates to listen for. Its constructor takes a union of
+these flags and three <code>boolean</code> values:</p>
 <dl>
 <dt><code>changesOnly</code></dt>
-<dd><p>Whether to return existing entries that match the search criteria. For our use case, we are only interested in changes.</p>
+<dd>
+<p>Whether to return existing entries that match the search criteria.
+For our use case, we are only interested in changes.</p>
 </dd>
 <dt><code>returnControls</code></dt>
-<dd><p>Whether to return entry change controls with each search result. These controls are required if you need to know what kind of change occured (add, modify, delete or modified DN).</p>
+<dd>
+<p>Whether to return entry change controls with each search result.
+These controls are required if you need to know what kind of
+change occured (add, modify, delete or modified DN).</p>
 </dd>
 <dt><code>isCritical</code></dt>
-<dd><p>Whether this control is critical to the search operation.</p>
+<dd>
+<p>Whether this control is critical to the search operation.</p>
 </dd>
 </dl>
-<p>The <code>LDAPPersistSearchControl</code> object used for our persistent search is constructed in the following way:</p>
+<p>The <code>LDAPPersistSearchControl</code> object used for our persistent
+search is constructed in the following way:</p>
 <div class="sourceCode" id="cb1"><pre class="sourceCode java"><code class="sourceCode java"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span> op <span class="op">=</span> LDAPPersistSearchControl<span class="op">.</span><span class="fu">ADD</span></span>
 <span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    <span class="op">|</span> LDAPPersistSearchControl<span class="op">.</span><span class="fu">MODIFY</span></span>
 <span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    <span class="op">|</span> LDAPPersistSearchControl<span class="op">.</span><span class="fu">DELETE</span></span>
@@ -53,14 +86,27 @@
 <span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>LDAPPersistSearchControl persistCtrl <span class="op">=</span></span>
 <span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>    <span class="kw">new</span> <span class="fu">LDAPPersistSearchControl</span><span class="op">(</span>op<span class="op">,</span> <span class="kw">true</span><span class="op">,</span> <span class="kw">true</span><span class="op">,</span> <span class="kw">true</span><span class="op">);</span></span></code></pre></div>
 <h3 id="ldapsearchconstraints"><code>LDAPSearchConstraints</code> <a href="#ldapsearchconstraints" class="section">§</a></h3>
-<p>The <code>LDAPSearchConstraints</code> object sets various controls and parameters for an LDAP search, persistent or otherwise. In our case, we need to attach the <code>LDAPPersistSearchControl</code> to the constraints, as well as disable the timeout of the search, and set the results batch size to <code>1</code> so that no buffering of results will occur at the server:</p>
+<p>The <code>LDAPSearchConstraints</code> object sets various controls and
+parameters for an LDAP search, persistent or otherwise. In our
+case, we need to attach the <code>LDAPPersistSearchControl</code> to the
+constraints, as well as disable the timeout of the search, and set
+the results batch size to <code>1</code> so that no buffering of results will
+occur at the server:</p>
 <div class="sourceCode" id="cb2"><pre class="sourceCode java"><code class="sourceCode java"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>LDAPSearchConstraints cons <span class="op">=</span> conn<span class="op">.</span><span class="fu">getSearchConstraints</span><span class="op">();</span></span>
 <span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>cons<span class="op">.</span><span class="fu">setServerControls</span><span class="op">(</span>persistCtrl<span class="op">);</span></span>
 <span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>cons<span class="op">.</span><span class="fu">setBatchSize</span><span class="op">(</span><span class="dv">1</span><span class="op">);</span></span>
 <span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>cons<span class="op">.</span><span class="fu">setServerTimeLimit</span><span class="op">(</span><span class="dv">0</span> <span class="co">/* seconds */</span><span class="op">);</span></span></code></pre></div>
 <h3 id="ldapsearchresults"><code>LDAPSearchResults</code> <a href="#ldapsearchresults" class="section">§</a></h3>
-<p>Executing the <code>search</code> method of an <code>LDAPConnection</code> (here named <code>conn</code>), yields an <code>LDAPSearchResults</code> object. This is the same whether or the search was a persistent search according to the <code>LDAPSearchConstraints</code>. The different between persistent and non-persistent searches is in how results are retrieved from the results object: if the search is persistent, the <code>hasMoreElement</code> method will block until the next result is received from the server (or the search times out, the connection dies, et cetera).</p>
-<p>Let’s see what it looks like to actually execute the persistent search and process its results:</p>
+<p>Executing the <code>search</code> method of an <code>LDAPConnection</code> (here named
+<code>conn</code>), yields an <code>LDAPSearchResults</code> object. This is the same
+whether or the search was a persistent search according to the
+<code>LDAPSearchConstraints</code>. The different between persistent and
+non-persistent searches is in how results are retrieved from the
+results object: if the search is persistent, the <code>hasMoreElement</code>
+method will block until the next result is received from the server
+(or the search times out, the connection dies, et cetera).</p>
+<p>Let’s see what it looks like to actually execute the persistent
+search and process its results:</p>
 <div class="sourceCode" id="cb3"><pre class="sourceCode java"><code class="sourceCode java"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>LDAPConnection conn <span class="op">=</span> <span class="kw">...</span> <span class="co">/* an open LDAPConnection */</span></span>
 <span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>LDAPSearchResults results <span class="op">=</span> conn<span class="op">.</span><span class="fu">search</span><span class="op">(</span></span>
@@ -75,11 +121,21 @@
 <span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a>    LDAPEntry entry <span class="op">=</span> results<span class="op">.</span><span class="fu">next</span><span class="op">();</span></span>
 <span id="cb3-13"><a href="#cb3-13" aria-hidden="true" tabindex="-1"></a>    <span class="co">/* ... process result ... */</span></span>
 <span id="cb3-14"><a href="#cb3-14" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
-<p>We see that apart from the use of the <code>LDAPSearchConstraints</code> to specify a persistent search and the blocking behaviour of <code>LDAPSearchResults.hasMoreElements</code>, performing a persistent search is the same as performing a regular search.</p>
+<p>We see that apart from the use of the <code>LDAPSearchConstraints</code> to
+specify a persistent search and the blocking behaviour of
+<code>LDAPSearchResults.hasMoreElements</code>, performing a persistent
+search is the same as performing a regular search.</p>
 <p>Let us next examine what happens inside that <code>while</code> loop.</p>
 <h3 id="ldapentrychangecontrol"><code>LDAPEntryChangeControl</code> <a href="#ldapentrychangecontrol" class="section">§</a></h3>
-<p>Do you recall the <code>returnControls</code> parameter for <code>LDAPPersistSearchControl</code>? If <code>true</code>, it ensures that each entry returned by the persistent search is accompanied by a control that indicates the type of change that affected the entry. We need to know this information so that we can update the <em>profile subsystem</em> in the appropriate way (<em>was this profile added, updated, or deleted?</em>)</p>
-<p>Let’s look at how we do this. We are inside the <code>while</code> loop from above, starting exactly where we left off:</p>
+<p>Do you recall the <code>returnControls</code> parameter for
+<code>LDAPPersistSearchControl</code>? If <code>true</code>, it ensures that each
+entry returned by the persistent search is accompanied by a control
+that indicates the type of change that affected the entry. We need
+to know this information so that we can update the <em>profile
+subsystem</em> in the appropriate way (<em>was this profile added, updated,
+or deleted?</em>)</p>
+<p>Let’s look at how we do this. We are inside the <code>while</code> loop from
+above, starting exactly where we left off:</p>
 <div class="sourceCode" id="cb4"><pre class="sourceCode java"><code class="sourceCode java"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>LDAPEntry entry <span class="op">=</span> results<span class="op">.</span><span class="fu">next</span><span class="op">();</span></span>
 <span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>LDAPEntryChangeControl changeControl <span class="op">=</span> <span class="kw">null</span><span class="op">;</span></span>
 <span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> <span class="op">(</span>LDAPControl control <span class="op">:</span> results<span class="op">.</span><span class="fu">getResponseControls</span><span class="op">())</span> <span class="op">{</span></span>
@@ -114,13 +170,38 @@
 <span id="cb4-32"><a href="#cb4-32" aria-hidden="true" tabindex="-1"></a>    <span class="co">/* shouldn't happen; log a warning and continue */</span></span>
 <span id="cb4-33"><a href="#cb4-33" aria-hidden="true" tabindex="-1"></a>    CMS<span class="op">.</span><span class="fu">debug</span><span class="op">(</span><span class="st">&quot;Profile change monitor: no LDAPEntryChangeControl in result.&quot;</span><span class="op">);</span></span>
 <span id="cb4-34"><a href="#cb4-34" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
-<p>The first thing that has to be done is to retrieve from the <code>LDAPSearchResults</code> object the <code>LDAPEntryChangeControl</code> for the most recent search result. To do this we call <code>results.getResponseControls()</code>, which returns an <code>LDAPControl[]</code>. Each search result can arrive with multiple change controls, but we are specifically interested in the <code>LDAPEntryChangeControl</code> so we iterate over the <code>LDAPControl[]</code> until we find what we want, then <code>break</code>.</p>
-<p>Next we ensure that we did in fact find the <code>LDAPEntryChangeControl</code>. This <em>should</em> always hold in our implementation but the code should handle the failure case anyway - we just log a warning and move on.</p>
-<p>Finally, we call <code>changeControl.getChangeType()</code> and dispatch to the appropriate behaviour according to its value.</p>
+<p>The first thing that has to be done is to retrieve from the
+<code>LDAPSearchResults</code> object the <code>LDAPEntryChangeControl</code> for the
+most recent search result. To do this we call
+<code>results.getResponseControls()</code>, which returns an
+<code>LDAPControl[]</code>. Each search result can arrive with multiple
+change controls, but we are specifically interested in the
+<code>LDAPEntryChangeControl</code> so we iterate over the <code>LDAPControl[]</code>
+until we find what we want, then <code>break</code>.</p>
+<p>Next we ensure that we did in fact find the
+<code>LDAPEntryChangeControl</code>. This <em>should</em> always hold in our
+implementation but the code should handle the failure case anyway - we just log a warning and move on.</p>
+<p>Finally, we call <code>changeControl.getChangeType()</code> and dispatch to
+the appropriate behaviour according to its value.</p>
 <h2 id="interaction-with-the-profile-subsystem">Interaction with the profile subsystem <a href="#interaction-with-the-profile-subsystem" class="section">§</a></h2>
-<p>Up to this point, we have seen how to use the ldapjdk API to execute a persistent LDAP search and process its results. Of course, this is just part of the story - the search somehow needs to be run in a way that doesn’t impede the regular operation of the Dogtag PKI, and needs to safely interact with the <em>profile subsystem</em>. Because the persistent search involves blocking calls, the procedure needs to run in its own <em>thread</em>.</p>
-<p>Because this persistent search only concerns the <code>ProfileSubsystem</code> class, it was possible to completely encapsulate it within this class such that no changes to its API (including constructors) were necessary. An <em>inner class</em> <code>Monitor</code>, which extends <code>Thread</code>, actually runs the search. In this way, the code we saw above is neatly segregated from the rest of the <code>ProfileSubsystem</code> class, and there are no visibility issues when calling the <code>readProfile</code> and <code>forgetProfile</code> methods of the other class.</p>
-<p>The following simplified code conveys the essence of the complete implementation:</p>
+<p>Up to this point, we have seen how to use the ldapjdk API to execute
+a persistent LDAP search and process its results. Of course, this
+is just part of the story - the search somehow needs to be run in a
+way that doesn’t impede the regular operation of the Dogtag PKI, and
+needs to safely interact with the <em>profile subsystem</em>. Because the
+persistent search involves blocking calls, the procedure needs to
+run in its own <em>thread</em>.</p>
+<p>Because this persistent search only concerns the
+<code>ProfileSubsystem</code> class, it was possible to completely
+encapsulate it within this class such that no changes to its API
+(including constructors) were necessary. An <em>inner class</em>
+<code>Monitor</code>, which extends <code>Thread</code>, actually runs the search. In
+this way, the code we saw above is neatly segregated from the rest
+of the <code>ProfileSubsystem</code> class, and there are no visibility
+issues when calling the <code>readProfile</code> and <code>forgetProfile</code>
+methods of the other class.</p>
+<p>The following simplified code conveys the essence of the complete
+implementation:</p>
 <div class="sourceCode" id="cb5"><pre class="sourceCode java"><code class="sourceCode java"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="kw">public</span> <span class="kw">class</span> ProfileSubsystem <span class="kw">implements</span> IProfileSubsystem <span class="op">{</span></span>
 <span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>    <span class="kw">public</span> <span class="dt">void</span> <span class="fu">init</span><span class="op">(</span><span class="kw">...</span><span class="op">)</span> <span class="op">{</span></span>
 <span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>        <span class="co">// Read profiles from LDAP into the subsystem.</span></span>
@@ -161,12 +242,42 @@
 <span id="cb5-38"><a href="#cb5-38" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
 <span id="cb5-39"><a href="#cb5-39" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
 <span id="cb5-40"><a href="#cb5-40" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
-<p>So, what’s going on here? First of all, it must be emphasised that this example is simplified. For example, I have omitted details of how the monitor thread is stopped when the subsystem is shut down or reinitialised.</p>
-<p>The monitor thread is started by the <code>init</code> method, once the existing profiles have been read into the profile subsystem. Executing the persistent search and handling results is the one job this the monitor has to do, so it can block without affecting any other part of the system. When it receives results, it calls the <code>readProfile</code> and <code>forgetProfiles</code> methods of the outer class - the <code>ProfileSubsystem</code> - to keep it up to date with the contents of the database.</p>
-<p>Other parts of the system access the <code>ProfileSubsystem</code> as well, so consideration had to be given to synchronisation and making sure that changes to the contents of the <code>ProfileSubsystem</code> are done safely. In the end, the only method that was made <code>synchronized</code> was <code>createProfile</code>, which is also called by the REST interface. The behaviour of the handful of other methods that could be called simultaneously should be fine by virtue of the fact that the internal data structures used are themselves synchronised and idempotent. Hopefully I have not overlooked something important!</p>
+<p>So, what’s going on here? First of all, it must be emphasised that
+this example is simplified. For example, I have omitted details of
+how the monitor thread is stopped when the subsystem is shut down or
+reinitialised.</p>
+<p>The monitor thread is started by the <code>init</code> method, once the
+existing profiles have been read into the profile subsystem.
+Executing the persistent search and handling results is the one job
+this the monitor has to do, so it can block without affecting any
+other part of the system. When it receives results, it calls the
+<code>readProfile</code> and <code>forgetProfiles</code> methods of the outer class - the <code>ProfileSubsystem</code> - to keep it up to date with the contents
+of the database.</p>
+<p>Other parts of the system access the <code>ProfileSubsystem</code> as well,
+so consideration had to be given to synchronisation and making sure
+that changes to the contents of the <code>ProfileSubsystem</code> are done
+safely. In the end, the only method that was made <code>synchronized</code>
+was <code>createProfile</code>, which is also called by the REST interface.
+The behaviour of the handful of other methods that could be called
+simultaneously should be fine by virtue of the fact that the
+internal data structures used are themselves synchronised and
+idempotent. Hopefully I have not overlooked something important!</p>
 <h2 id="conclusion">Conclusion <a href="#conclusion" class="section">§</a></h2>
-<p>LDAP persistent searches can be used to receive immediate notification of changes that occur in an LDAP database. They support all the parameters of regular LDAP searches. ldapjdk’s API provides persistent search capabilities including the ability to discern what kind of change occurred for each result.</p>
-<p>The ldapjdk <code>LDAPSearchResults.hasMoreElements()</code> method blocks each time it is called until a result has been received from the server. Because of this, it will usually be necessary to execute persistent searches asynchronously. Java threads can be employed to do this, but the usual “gotchas” of threading apply - threads must be stopped safely and the safety of methods that could be called from multiple places at the same time must be assessed. The <code>synchronized</code> keyword can be used to ensure serialisation of calls to methods that would otherwise be unsafe under these conditions.</p>
+<p>LDAP persistent searches can be used to receive immediate
+notification of changes that occur in an LDAP database. They
+support all the parameters of regular LDAP searches. ldapjdk’s API
+provides persistent search capabilities including the ability to
+discern what kind of change occurred for each result.</p>
+<p>The ldapjdk <code>LDAPSearchResults.hasMoreElements()</code> method blocks
+each time it is called until a result has been received from the
+server. Because of this, it will usually be necessary to execute
+persistent searches asynchronously. Java threads can be employed to
+do this, but the usual “gotchas” of threading apply - threads must
+be stopped safely and the safety of methods that could be called
+from multiple places at the same time must be assessed. The
+<code>synchronized</code> keyword can be used to ensure serialisation of
+calls to methods that would otherwise be unsafe under these
+conditions.</p>
 </div>
 <div id="postFooter">
     <div id="recent">

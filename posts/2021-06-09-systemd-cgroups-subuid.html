@@ -26,37 +26,67 @@
 
 <div id="postContent">
     <h1 id="systemd-cgroups-and-subuid-ranges">systemd, cgroups and subuid ranges</h1>
-<p>In my <a href="2021-05-27-oci-runtime-spec-runc.html">previous post</a> I experimented with <code>runc</code> as a way of understanding the behaviour of OCI runtimes. I ended up focusing on cgroup creation and the interaction between <code>runc</code> and <em>systemd</em>. The experiment revealed a critical deficiency: when using user namespaces the container’s cgroup is not owned by the user executing the container process. As a result, <em>systemd</em>-based workloads cannot run.</p>
-<p><code>runc</code> creates cgroups via systemd’s <em>transient unit API</em>. Could a container runtime use this API to control the cgroup ownership? Let’s find out.</p>
+<p>In my <a href="2021-05-27-oci-runtime-spec-runc.html">previous post</a> I experimented with <code>runc</code> as a way of
+understanding the behaviour of OCI runtimes. I ended up focusing on
+cgroup creation and the interaction between <code>runc</code> and <em>systemd</em>.
+The experiment revealed a critical deficiency: when using user
+namespaces the container’s cgroup is not owned by the user executing
+the container process. As a result, <em>systemd</em>-based workloads
+cannot run.</p>
+<p><code>runc</code> creates cgroups via systemd’s <em>transient unit API</em>. Could
+a container runtime use this API to control the cgroup ownership?
+Let’s find out.</p>
 <h2 id="how-runc-talks-to-systemd">How <code>runc</code> talks to <em>systemd</em> <a href="#how-runc-talks-to-systemd" class="section">§</a></h2>
-<p>The <em>Open Container Initiative (OCI)</em> <a href="https://github.com/opencontainers/runtime-spec">runtime spec</a> defines a low-level container runtime interface. OCI runtimes must create the Linux namespaces specified by an OCI config, including the cgroup namespace.</p>
-<p><code>runc</code> uses the systemd D-Bus API to ask systemd to create a cgroup scope for the container. Then it creates a cgroup namespace with the new cgroup scope as the root. We can see that <code>runc</code> invokes the <code>StartTransientUnit</code> API method with a name for the new unit, and a list of properties (<a href="https://github.com/opencontainers/runc/blob/v1.0.0-rc95/vendor/github.com/coreos/go-systemd/v22/dbus/methods.go#L198-L200">source code</a>):</p>
+<p>The <em>Open Container Initiative (OCI)</em> <a href="https://github.com/opencontainers/runtime-spec">runtime spec</a> defines a
+low-level container runtime interface. OCI runtimes must create the
+Linux namespaces specified by an OCI config, including the cgroup
+namespace.</p>
+<p><code>runc</code> uses the systemd D-Bus API to ask systemd to create a cgroup
+scope for the container. Then it creates a cgroup namespace with
+the new cgroup scope as the root. We can see that <code>runc</code> invokes
+the <code>StartTransientUnit</code> API method with a name for the new unit,
+and a list of properties
+(<a href="https://github.com/opencontainers/runc/blob/v1.0.0-rc95/vendor/github.com/coreos/go-systemd/v22/dbus/methods.go#L198-L200">source code</a>):</p>
 <div class="sourceCode" id="cb1"><pre class="sourceCode go"><code class="sourceCode go"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="co">// .../go-systemd/v22/dbus/methods.go</span></span>
 <span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="kw">func</span> <span class="op">(</span>c <span class="op">*</span>Conn<span class="op">)</span> StartTransientUnitContext<span class="op">(</span></span>
 <span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>  ctx context<span class="op">.</span>Context<span class="op">,</span> name <span class="dt">string</span><span class="op">,</span> mode <span class="dt">string</span><span class="op">,</span></span>
 <span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>  properties <span class="op">[]</span>Property<span class="op">,</span> ch <span class="kw">chan</span><span class="op">&lt;-</span> <span class="dt">string</span><span class="op">)</span> <span class="op">(</span><span class="dt">int</span><span class="op">,</span> <span class="dt">error</span><span class="op">)</span> <span class="op">{</span></span>
-<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>  <span class="kw">return</span> c<span class="op">.</span>startJob<span class="op">(</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>  <span class="cf">return</span> c<span class="op">.</span>startJob<span class="op">(</span></span>
 <span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>    ctx<span class="op">,</span> ch<span class="op">,</span></span>
 <span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;org.freedesktop.systemd1.Manager.StartTransientUnit&quot;</span><span class="op">,</span></span>
 <span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>    name<span class="op">,</span> mode<span class="op">,</span> properties<span class="op">,</span> <span class="bu">make</span><span class="op">([]</span>PropertyCollection<span class="op">,</span> <span class="dv">0</span><span class="op">))</span></span>
 <span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
 <p>Most of the unit configuration is passed as properties.</p>
 <h2 id="the-user-property">The <code>User=</code> property <a href="#the-user-property" class="section">§</a></h2>
-<p><a href="https://www.freedesktop.org/software/systemd/man/systemd.exec.html#User="><code>systemd.exec(5)</code></a> describes the properties that configure a systemd unit (including transient units). Among the properties are <code>User=</code> and <code>Group=</code>:</p>
+<p><a href="https://www.freedesktop.org/software/systemd/man/systemd.exec.html#User="><code>systemd.exec(5)</code></a> describes the properties that
+configure a systemd unit (including transient units). Among the
+properties are <code>User=</code> and <code>Group=</code>:</p>
 <blockquote>
-<p>Set the UNIX user or group that the processes are executed as, respectively. Takes a single user or group name, or a numeric ID as argument.</p>
+<p>Set the UNIX user or group that the processes are executed as,
+respectively. Takes a single user or group name, or a numeric ID
+as argument.</p>
 </blockquote>
-<p>This sounds promising. Further searching turned up a systemd documentation page entitled <a href="https://systemd.io/CGROUP_DELEGATION/">Control Group APIs and Delegation</a>. That document states:</p>
+<p>This sounds promising. Further searching turned up a systemd
+documentation page entitled <a href="https://systemd.io/CGROUP_DELEGATION/">Control Group APIs and
+Delegation</a>. That document states:</p>
 <blockquote>
-<p>By turning on the <code>Delegate=</code> property for a scope or service you get a few guarantees: … If your service makes use of the <code>User=</code> functionality, then the sub-tree will be <code>chown()</code>ed to the indicated user so that it can correctly create cgroups below it.</p>
+<p>By turning on the <code>Delegate=</code> property for a scope or service you
+get a few guarantees: … If your service makes use of the <code>User=</code>
+functionality, then the sub-tree will be <code>chown()</code>ed to the
+indicated user so that it can correctly create cgroups below it.</p>
 </blockquote>
-<p><code>runc</code> already supplies <code>Delegate=true</code>. The <code>User=</code> property seems to be exactly what we need.</p>
+<p><code>runc</code> already supplies <code>Delegate=true</code>. The <code>User=</code> property seems
+to be exactly what we need.</p>
 <h2 id="determining-the-uid">Determining the UID <a href="#determining-the-uid" class="section">§</a></h2>
-<p>The OCI configuration specifies the <a href="https://github.com/opencontainers/runtime-spec/blob/master/config.md#posix-platform-user"><code>user</code></a> that will execute the container process (in the <strong>container’s user namespace</strong>). It also specifies <a href><code>uidMappings</code></a> between the host and container user namespaces. For example:</p>
+<p>The OCI configuration specifies the <a href="https://github.com/opencontainers/runtime-spec/blob/master/config.md#posix-platform-user"><code>user</code></a> that will
+execute the container process (in the <strong>container’s user
+namespace</strong>). It also specifies <a href><code>uidMappings</code></a>
+between the host and container user namespaces. For example:</p>
 <pre class="shell"><code>% jq -c '.process.user, .linux.uidMappings' &lt; config.json
 {&quot;uid&quot;:0,&quot;gid&quot;:0}
 [{&quot;containerID&quot;:0,&quot;hostID&quot;:100000,&quot;size&quot;:65536}]</code></pre>
-<p><code>runc</code> has all the data it needs to compute the appropriate value for the <code>User=</code> property. The algorithm, expressed as Python is:</p>
+<p><code>runc</code> has all the data it needs to compute the appropriate value
+for the <code>User=</code> property. The algorithm, expressed as Python is:</p>
 <div class="sourceCode" id="cb3"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>uid <span class="op">=</span> config[<span class="st">&quot;process&quot;</span>][<span class="st">&quot;user&quot;</span>][<span class="st">&quot;uid&quot;</span>]</span>
 <span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> <span class="bu">map</span> <span class="kw">in</span> config[<span class="st">&quot;linux&quot;</span>][<span class="st">&quot;uidMappings&quot;</span>]:</span>
@@ -70,9 +100,14 @@
 <span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a><span class="cf">else</span>:</span>
 <span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a>    <span class="cf">raise</span> <span class="pp">RuntimeError</span>(<span class="st">&quot;user.uid is not mapped&quot;</span>)</span></code></pre></div>
 <h2 id="testing-with-systemd-run">Testing with <code>systemd-run</code> <a href="#testing-with-systemd-run" class="section">§</a></h2>
-<p><code>systemd-run(1)</code> uses the transient unit API to run programs via transient scope or service units. You can use the <code>--property</code>/<code>-p</code> option to pass additional properties. I used <code>systemd-run</code> to observe how systemd handles the <code>Delegate=true</code> and <code>User=</code> properties.</p>
+<p><code>systemd-run(1)</code> uses the transient unit API to run programs via
+transient scope or service units. You can use the <code>--property</code>/<code>-p</code>
+option to pass additional properties. I used <code>systemd-run</code> to
+observe how systemd handles the <code>Delegate=true</code> and <code>User=</code>
+properties.</p>
 <h3 id="create-and-inspect-transient-unit">Create and inspect transient unit <a href="#create-and-inspect-transient-unit" class="section">§</a></h3>
-<p>First I will do a basic test, talking to my user account’s service manager:</p>
+<p>First I will do a basic test, talking to my user account’s service
+manager:</p>
 <pre class="shell"><code>% id -u
 1000
 
@@ -102,7 +137,9 @@ drwxr-xr-x. 2 1000 1000 0 Jun  9 11:31 /sys/fs/cgroup/user.slice/user-1000.slice
 <li>the unit has is own <code>CGroup</code></li>
 <li>the cgroup is owned by user <code>1000</code></li>
 </ul>
-<p>As I try different ways of invoking <code>systemd-run</code>, I will repeat this pattern of unit creation, inspection and cgroup ownership checks.</p>
+<p>As I try different ways of invoking <code>systemd-run</code>, I will repeat
+this pattern of unit creation, inspection and cgroup ownership
+checks.</p>
 <h3 id="specify-user-user-service-manager">Specify <code>User=</code> (user service manager) <a href="#specify-user-user-service-manager" class="section">§</a></h3>
 <p>Next I explicity specify <code>User=1000</code>:</p>
 <pre class="shell"><code>% systemd-run --user -p User=1000 sleep 300
@@ -122,8 +159,15 @@ Jun 09 11:38:50 f33-1.ipa.local systemd[11432]: run-r651ff7d0d1214037b70def6d569
 Jun 09 11:38:50 f33-1.ipa.local systemd[11432]: run-r651ff7d0d1214037b70def6d5694dcd6.service: Failed at step GROUP spawning /bin/sleep: Operation not permitted
 Jun 09 11:38:50 f33-1.ipa.local systemd[863]: run-r651ff7d0d1214037b70def6d5694dcd6.service: Main process exited, code=exited, status=216/GROUP
 Jun 09 11:38:50 f33-1.ipa.local systemd[863]: run-r651ff7d0d1214037b70def6d5694dcd6.service: Failed with result 'exit-code'.</code></pre>
-<p>This unit failed to execute, because the user service manager does not have permission to determine supplementary groups. Without going into too much detail, this is because the user systemd instance lacks the <code>CAP_SETGID</code> capability required by the <code>setgroups(2)</code> system call used by <code>initgroups(3)</code>.</p>
-<p>There doesn’t seem to be a way around this. For the rest of my testing I’ll talk to the system service manager. That’s okay, because <code>runc</code> on OpenShift also talks to the system service manager.</p>
+<p>This unit failed to execute, because the user service manager does
+not have permission to determine supplementary groups. Without
+going into too much detail, this is because the user systemd
+instance lacks the <code>CAP_SETGID</code> capability required by the
+<code>setgroups(2)</code> system call used by <code>initgroups(3)</code>.</p>
+<p>There doesn’t seem to be a way around this. For the rest of my
+testing I’ll talk to the system service manager. That’s okay,
+because <code>runc</code> on OpenShift also talks to the system service
+manager.</p>
 <h3 id="specify-user-system-service-manager">Specify <code>User=</code> (system service manager) <a href="#specify-user-system-service-manager" class="section">§</a></h3>
 <pre class="shell"><code>% sudo systemd-run -p User=1000 sleep 300
 Running as unit: run-r94725453119e4003af336d7294984085.service
@@ -148,9 +192,11 @@ drwxr-xr-x. 2 0 0 0 Jun  9 11:50 /sys/fs/cgroup/system.slice/run-r94725453119e40
 % ps -o uid,pid,cmd --pid 11517
   UID     PID CMD
  1000   11517 /usr/bin/sleep 300</code></pre>
-<p>The process is running as user <code>1000</code>, but the cgroup is owned by <code>root</code>.</p>
+<p>The process is running as user <code>1000</code>, but the cgroup is owned by
+<code>root</code>.</p>
 <h3 id="specify-delegatetrue">Specify <code>Delegate=true</code> <a href="#specify-delegatetrue" class="section">§</a></h3>
-<p>We need to specify <code>Delegate=true</code> to tell systemd to delegate the cgroup to the specified <code>User</code>:</p>
+<p>We need to specify <code>Delegate=true</code> to tell systemd to delegate the
+cgroup to the specified <code>User</code>:</p>
 <pre class="shell"><code>% sudo systemd-run -p Delegate=true -p User=1000 sleep 300
 Running as unit: run-r518dbc963502423c9c67b1c72d3d4c12.service
 
@@ -170,21 +216,33 @@ Jun 09 11:59:34 f33-1.ipa.local systemd[1]: Started /usr/bin/sleep 300.
 
 % ls -nld /sys/fs/cgroup/system.slice/run-r518dbc963502423c9c67b1c72d3d4c12.service
 drwxr-xr-x. 2 1000 1000 0 Jun  9 11:59 /sys/fs/cgroup/system.slice/run-r518dbc963502423c9c67b1c72d3d4c12.service</code></pre>
-<p>systemd <code>chown()</code>ed the cgroup to the specified <code>User</code>. Note that very few of the cgroup controls in the cgroup directory are writable by user <code>1000</code>:</p>
+<p>systemd <code>chown()</code>ed the cgroup to the specified <code>User</code>. Note that
+very few of the cgroup controls in the cgroup directory are
+writable by user <code>1000</code>:</p>
 <pre class="shell"><code>% ls -nl /sys/fs/cgroup/system.slice/run-r518dbc963502423c9c67b1c72d3d4c12.service \
     |grep 1000 
 -rw-r--r--. 1 1000 1000 0 Jun  9 11:59 cgroup.procs
 -rw-r--r--. 1 1000 1000 0 Jun  9 11:59 cgroup.subtree_control
 -rw-r--r--. 1 1000 1000 0 Jun  9 11:59 cgroup.threads</code></pre>
-<p>So the process cannot adjust its root cgroup’s <code>memory.max</code>, <code>pids.max</code>, <code>cpu.weight</code> and so on. It <em>can</em> create cgroup subtrees, manage resources within them, and move processes and threads among those subtrees and its root cgroup.</p>
+<p>So the process cannot adjust its root cgroup’s <code>memory.max</code>,
+<code>pids.max</code>, <code>cpu.weight</code> and so on. It <em>can</em> create cgroup
+subtrees, manage resources within them, and move processes and
+threads among those subtrees and its root cgroup.</p>
 <h3 id="arbitrary-uids">Arbitrary UIDs <a href="#arbitrary-uids" class="section">§</a></h3>
-<p>So far I have specified <code>User=1000</code>. User <code>1000</code> is a “known user”. That is, the Name Service Switch (see <code>nss(5)</code>) returns information about the user (name, home directory, shell, etc):</p>
+<p>So far I have specified <code>User=1000</code>. User <code>1000</code> is a “known user”.
+That is, the Name Service Switch (see <code>nss(5)</code>) returns information
+about the user (name, home directory, shell, etc):</p>
 <pre class="shell"><code>% getent passwd $(id -u)
 ftweedal:x:1000:1000:ftweedal:/home/ftweedal:/bin/zsh</code></pre>
-<p>However, when executing containers with user namespaces, we usually map the namespace UIDs to unprivileged host UIDs from a <em>subordinate ID</em> range. Subordinate UIDs and GID ranges are currently defined in <code>/etc/subuid</code> and <code>/etc/subgid</code> respectively. The subuid range for user <code>1000</code> is:</p>
+<p>However, when executing containers with user namespaces, we usually
+map the namespace UIDs to unprivileged host UIDs from a <em>subordinate
+ID</em> range. Subordinate UIDs and GID ranges are currently defined in
+<code>/etc/subuid</code> and <code>/etc/subgid</code> respectively. The subuid range for
+user <code>1000</code> is:</p>
 <pre class="shell"><code>% grep $(id -un) /etc/subuid
 ftweedal:100000:65536</code></pre>
-<p>User <code>1000</code> has been allocated the range <code>100000</code>–<code>165535</code>. So let’s try <code>systemd-run</code> with <code>User=100000</code>:</p>
+<p>User <code>1000</code> has been allocated the range <code>100000</code>–<code>165535</code>. So
+let’s try <code>systemd-run</code> with <code>User=100000</code>:</p>
 <pre class="shell"><code>% sudo systemd-run -p Delegate=true -p User=100000 sleep 300
 Running as unit: run-r1498304af7df406c9698da5c683ea79e.service
 
@@ -204,23 +262,41 @@ Jun 09 12:32:43 f33-1.ipa.local systemd[1]: run-r1498304af7df406c9698da5c683ea79
 Jun 09 12:32:43 f33-1.ipa.local systemd[1]: run-r1498304af7df406c9698da5c683ea79e.service: Failed with result 'exit-code'.</code></pre>
 <p>It failed. Cutting the noise, the cause is:</p>
 <pre><code>Failed to determine user credentials: No such process</code></pre>
-<p>The string <code>No such process</code> is a bit misleading. It is the string associated with the <code>ESRCH</code> error value (see <code>errno(3)</code>). Here it indicates that <code>getpwuid(3)</code> did not find a user record for uid <code>100000</code>. systemd unconditionally fails in this scenario. And this is a problem for us because without intervention, subordinate UIDs do not have associated user records.</p>
+<p>The string <code>No such process</code> is a bit misleading. It is the string
+associated with the <code>ESRCH</code> error value (see <code>errno(3)</code>). Here it
+indicates that <code>getpwuid(3)</code> did not find a user record for uid
+<code>100000</code>. systemd unconditionally fails in this scenario. And this
+is a problem for us because without intervention, subordinate UIDs
+do not have associated user records.</p>
 <h3 id="arbitrary-uids-with-passwd-entry">Arbitrary UIDs (with <code>passwd</code> entry) <a href="#arbitrary-uids-with-passwd-entry" class="section">§</a></h3>
-<p>So let’s make NSS return something for user <code>100000</code>. There are several ways we could do this, including adding it to <code>/etc/passwd</code>, or creating an NSS module that generates passwd records for ranges declared in <code>/etc/subuid</code>.</p>
-<p>Another way is to use <a href="https://www.freedesktop.org/software/systemd/man/nss-systemd.html">systemd’s NSS module</a>, which returns passwd records for containers created by <a href="https://www.freedesktop.org/software/systemd/man/systemd-machined.html"><code>systemd-machined</code></a>. And that’s what I did. Given the root filesystem for a container in <code>./rootfs</code>, <a href="https://www.freedesktop.org/software/systemd/man/systemd-nspawn.html"><code>systemd-nspawn</code></a> creates the container. The <code>--private-users=100000</code> option tells it to create a user namespace mapping to the host UID <code>100000</code> with default size 65536:</p>
+<p>So let’s make NSS return something for user <code>100000</code>. There are
+several ways we could do this, including adding it to <code>/etc/passwd</code>,
+or creating an NSS module that generates passwd records for ranges
+declared in <code>/etc/subuid</code>.</p>
+<p>Another way is to use <a href="https://www.freedesktop.org/software/systemd/man/nss-systemd.html">systemd’s NSS module</a>, which
+returns passwd records for containers created by
+<a href="https://www.freedesktop.org/software/systemd/man/systemd-machined.html"><code>systemd-machined</code></a>. And that’s what I did.
+Given the root filesystem for a container in <code>./rootfs</code>,
+<a href="https://www.freedesktop.org/software/systemd/man/systemd-nspawn.html"><code>systemd-nspawn</code></a> creates the container. The
+<code>--private-users=100000</code> option tells it to create a user namespace
+mapping to the host UID <code>100000</code> with default size 65536:</p>
 <pre class="shell"><code>% sudo systemd-nspawn --directory rootfs --private-users=100000 /bin/sh
 Spawning container rootfs on /home/ftweedal/go/src/github.com/opencontainers/runc/rootfs.
 Press ^] three times within 1s to kill container.
 Selected user namespace base 100000 and range 65536.
 sh-5.0#</code></pre>
-<p>On the host we can see the “machine” via <a href="https://www.freedesktop.org/software/systemd/man/machinectl.html"><code>machinectl(1)</code></a>. We also observe that NSS now returns results for UIDs in the mapped host range.</p>
+<p>On the host we can see the “machine” via
+<a href="https://www.freedesktop.org/software/systemd/man/machinectl.html"><code>machinectl(1)</code></a>. We also observe that NSS now returns
+results for UIDs in the mapped host range.</p>
 <pre class="shell"><code>% getent passwd 100000 165535  
 vu-rootfs-0:x:100000:65534:UID 0 of Container rootfs:/:/usr/sbin/nologin
 
 % getent passwd 100000 165534
 vu-rootfs-0:x:100000:65534:UID 0 of Container rootfs:/:/usr/sbin/nologin
 vu-rootfs-65534:x:165534:65534:UID 65534 of Container rootfs:/:/usr/sbin/nologin</code></pre>
-<p>The <code>passwd</code> records are constructed on demand by <a href="https://www.freedesktop.org/software/systemd/man/nss-systemd.html"><code>nss-systemd(8)</code></a> using data registered by <code>systemd-machined</code>.</p>
+<p>The <code>passwd</code> records are constructed on demand by
+<a href="https://www.freedesktop.org/software/systemd/man/nss-systemd.html"><code>nss-systemd(8)</code></a> using data registered by
+<code>systemd-machined</code>.</p>
 <p>Now let’s try <code>systemd-run</code> again:</p>
 <pre class="shell"><code>% sudo systemd-run -p Delegate=true -p User=100000 sleep 300
 Running as unit: run-r076a82c36fcd4934b13bba47fcc8462e.service
@@ -248,9 +324,15 @@ drwxr-xr-x. 2 100000 65534 0 Jun  9 14:14 /sys/fs/cgroup/system.slice/run-r076a8
 
 % id -un 65534
 nobody</code></pre>
-<p>Now the cgroup is owned by <code>100000</code>. But the group ID (<code>gid</code>) under which the process runs, and the group owner of the cgroup, is <code>65534</code>. This is the host’s <code>nobody</code> account.</p>
+<p>Now the cgroup is owned by <code>100000</code>. But the group ID (<code>gid</code>) under
+which the process runs, and the group owner of the cgroup, is
+<code>65534</code>. This is the host’s <code>nobody</code> account.</p>
 <h3 id="specify-group">Specify <code>Group=</code> <a href="#specify-group" class="section">§</a></h3>
-<p>In a user-namespaced container, ordinarily you would want both the user <em>and</em> the group of the container process to be mapped into the user namespace. Likewise, you would expect the cgroup to be owned by a known (in the namespace) user. Setting the <code>Group=</code> property should achieve this.</p>
+<p>In a user-namespaced container, ordinarily you would want both the
+user <em>and</em> the group of the container process to be mapped into the
+user namespace. Likewise, you would expect the cgroup to be owned
+by a known (in the namespace) user. Setting the <code>Group=</code> property
+should achieve this.</p>
 <pre class="shell"><code>% sudo systemd-run -p Delegate=true -p User=100000 -p Group=100000 sleep 300      
 Running as unit: run-re610d14cc0584a37a3d4099268df75d8.service
 
@@ -278,19 +360,55 @@ drwxr-xr-x. 2 100000 100000 0 Jun  9 14:24 /sys/fs/cgroup/system.slice/run-re610
 <h2 id="discussion-and-next-steps">Discussion and next steps <a href="#discussion-and-next-steps" class="section">§</a></h2>
 <p>In summary, the findings from this investigation are:</p>
 <ul>
-<li><p>systemd changes the cgroup ownership of transient units according to the <code>User=</code> and <code>Group=</code> properties, if and only if <code>Delegate=true</code>.</p></li>
-<li><p>systemd currently requires <code>User=</code> and <code>Group=</code> to refer to known (via NSS) users and groups.</p></li>
-<li><p>Unprivileged user systemd service manager instances lack the privileges to set supplementary groups for the container process. This is not a problem for the OpenShift use case, because it uses the system service manager.</p></li>
+<li><p>systemd changes the cgroup ownership of transient units according
+to the <code>User=</code> and <code>Group=</code> properties, if and only if
+<code>Delegate=true</code>.</p></li>
+<li><p>systemd currently requires <code>User=</code> and <code>Group=</code> to refer to known
+(via NSS) users and groups.</p></li>
+<li><p>Unprivileged user systemd service manager instances lack the
+privileges to set supplementary groups for the container process.
+This is not a problem for the OpenShift use case, because it uses
+the system service manager.</p></li>
 </ul>
-<p>As to the second point, I am curious why systemd behaves this way. It does makes sense to query NSS to find out the shell, home directory, and login name for setting up the execution environment. But if there is no <code>passwd</code> record, why not synthesise one with conservative defaults? Running processes as anonymous UIDs has a valid use case—increasingly so, as adoption of user namespaces increases. I <a href="https://github.com/systemd/systemd/issues/19781">filed an RFE (systemd#19781)</a> against systemd to suggest relaxing this restriction, and inquire whether this is a Bad Idea for some reason I don’t yet understand.</p>
-<p>There are some alternative approaches that don’t require changing systemd:</p>
+<p>As to the second point, I am curious why systemd behaves this way.
+It does makes sense to query NSS to find out the shell, home
+directory, and login name for setting up the execution environment.
+But if there is no <code>passwd</code> record, why not synthesise one with
+conservative defaults? Running processes as anonymous UIDs has a
+valid use case—increasingly so, as adoption of user namespaces
+increases. I <a href="https://github.com/systemd/systemd/issues/19781">filed an RFE (systemd#19781)</a> against
+systemd to suggest relaxing this restriction, and inquire whether
+this is a Bad Idea for some reason I don’t yet understand.</p>
+<p>There are some alternative approaches that don’t require changing
+systemd:</p>
 <ul>
-<li><p>Use <code>systemd-machined</code> to register a machine. It provides the <code>org.freedesktop.machine1.Manager.RegisterMachine</code> D-Bus method for this purpose. But <code>systemd-machined</code> is not used (or even present) on OpenShift cluster nodes.</p></li>
-<li><p>Implement, ship and configure an NSS module that synthesises <code>passwd</code> records for user subordinate ID ranges. The <em>shadow</em> project has <a href="https://github.com/shadow-maint/shadow/pull/321">defined an NSS interface</a> for subid ranges. <em>libsubid</em>, part of <em>shadow</em>, will provide abstract subid range lookups (forward and reverse). So a <em>libsubid</em>-based solution to this should be possible. Unfortunately, <em>libsubid</em> is not yet widely available as a shared library.</p>
-<p>As an example, synthetic user records could have a username like <code>subuid-{username}-{uid}</code>. The home directory and shell would be <code>/</code> and <code>/sbin/nologin</code>, like the records synthesised by <code>nss-systemd</code>.</p></li>
-<li><p>Update the container runtime (<code>runc</code>) to <code>chown</code> the cgroup <em>after systemd creates it</em>. In fact, this is what <code>systemd-nspawn</code> does. This approach is nice because the only component to change is <code>runc</code>—which had to change anyway, to add the logic to determine the cgroup owner UID. To the best of my knowledge, on OpenShift <code>runc</code> gets executed as <code>root</code> (on the node), so it should have the permissions required to do this. Unless SELinux prevents it.</p></li>
+<li><p>Use <code>systemd-machined</code> to register a machine. It provides the
+<code>org.freedesktop.machine1.Manager.RegisterMachine</code> D-Bus method
+for this purpose. But <code>systemd-machined</code> is not used (or even
+present) on OpenShift cluster nodes.</p></li>
+<li><p>Implement, ship and configure an NSS module that synthesises
+<code>passwd</code> records for user subordinate ID ranges. The <em>shadow</em>
+project has <a href="https://github.com/shadow-maint/shadow/pull/321">defined an NSS interface</a> for subid
+ranges. <em>libsubid</em>, part of <em>shadow</em>, will provide abstract subid
+range lookups (forward and reverse). So a <em>libsubid</em>-based
+solution to this should be possible. Unfortunately, <em>libsubid</em> is
+not yet widely available as a shared library.</p>
+<p>As an example, synthetic user records could have a username like
+<code>subuid-{username}-{uid}</code>. The home directory and shell would be
+<code>/</code> and <code>/sbin/nologin</code>, like the records synthesised by
+<code>nss-systemd</code>.</p></li>
+<li><p>Update the container runtime (<code>runc</code>) to <code>chown</code> the cgroup <em>after
+systemd creates it</em>. In fact, this is what <code>systemd-nspawn</code> does.
+This approach is nice because the only component to change is
+<code>runc</code>—which had to change anyway, to add the logic to determine
+the cgroup owner UID. To the best of my knowledge, on OpenShift
+<code>runc</code> gets executed as <code>root</code> (on the node), so it should have
+the permissions required to do this. Unless SELinux prevents it.</p></li>
 </ul>
-<p>Of these three options, modifying <code>runc</code> to <code>chown</code> the cgroup directory seems the most promising. While I wait for feedback on <a href="https://github.com/systemd/systemd/issues/19781">systemd#19781</a>, I will start hacking on <code>runc</code> and testing my modifications.</p>
+<p>Of these three options, modifying <code>runc</code> to <code>chown</code> the cgroup
+directory seems the most promising. While I wait for feedback on
+<a href="https://github.com/systemd/systemd/issues/19781">systemd#19781</a>, I will start hacking on <code>runc</code> and testing my
+modifications.</p>
 </div>
 <div id="postFooter">
     <div id="recent">

@@ -27,14 +27,37 @@
 <div id="postContent">
     <h1 id="simple-java-to-c-bindings-via-jna">Simple Java to C bindings via JNA</h1>
 <p>This post is an introduction to <em>JNI</em>, an FFI system for Java.</p>
-<p>Most languages offer a way to bind to (use) shared libraries, which are often written in C (Rust is becoming popular too). The general name for such a facility is <a href="https://en.wikipedia.org/wiki/Foreign_function_interface"><em>foreign function interface</em></a> (<em>FFI</em>). FFIs facilitate code reuse, and use of operating system-level functions that would not otherwise be possible.</p>
-<p>There are two significant FFI systems for Java. The older is <a href="https://docs.oracle.com/en/java/javase/14/docs/specs/jni/index.html"><em>Java Native Interface</em></a> (<em>JNI</em>)—an official Java standard. The <a href="https://github.com/dogtagpki/jss"><em>JSS</em></a> Java binding to the <a href="https://developer.mozilla.org/en-US/docs/Mozilla/Projects/NSS"><em>NSS</em></a> cryptography and security library makes heavy use of JNI. The main drawbacks of JNI are that it involves writing C, and is boilerplate-heavy.</p>
-<p><a href="https://github.com/java-native-access/jna"><em>Java Native Access</em></a> (<em>JNA</em>) offers a more lightweight approach. You import JNA as a library and define your binding as a native Java object. There is only a small amount of boilerplate to import the JNA packages, open the shared library, and declare Java method signatures for the functions you want to use. JNA performs <a href="https://github.com/java-native-access/jna/blob/5.6.0/www/Mappings.md">automatic conversion</a> between native Java and C types.</p>
-<p>If you are familiar with Python, you might recognise that the JNA approach is similar to <a href="https://cffi.readthedocs.io/en/latest/"><em>cffi</em></a>. In fact, JNA and cffi use the same underlying FFI library, <a href="https://sourceware.org/libffi/"><em>libffi</em></a>.</p>
+<p>Most languages offer a way to bind to (use) shared libraries, which
+are often written in C (Rust is becoming popular too). The general
+name for such a facility is <a href="https://en.wikipedia.org/wiki/Foreign_function_interface"><em>foreign function interface</em></a> (<em>FFI</em>).
+FFIs facilitate code reuse, and use of operating system-level
+functions that would not otherwise be possible.</p>
+<p>There are two significant FFI systems for Java. The older is <a href="https://docs.oracle.com/en/java/javase/14/docs/specs/jni/index.html"><em>Java
+Native Interface</em></a> (<em>JNI</em>)—an official Java standard. The
+<a href="https://github.com/dogtagpki/jss"><em>JSS</em></a> Java binding to the <a href="https://developer.mozilla.org/en-US/docs/Mozilla/Projects/NSS"><em>NSS</em></a> cryptography and
+security library makes heavy use of JNI. The main drawbacks of JNI
+are that it involves writing C, and is boilerplate-heavy.</p>
+<p><a href="https://github.com/java-native-access/jna"><em>Java Native Access</em></a> (<em>JNA</em>) offers a more lightweight
+approach. You import JNA as a library and define your binding as a
+native Java object. There is only a small amount of boilerplate to
+import the JNA packages, open the shared library, and declare Java
+method signatures for the functions you want to use. JNA performs
+<a href="https://github.com/java-native-access/jna/blob/5.6.0/www/Mappings.md">automatic conversion</a> between native Java and C types.</p>
+<p>If you are familiar with Python, you might recognise that the JNA
+approach is similar to <a href="https://cffi.readthedocs.io/en/latest/"><em>cffi</em></a>. In fact, JNA and cffi use
+the same underlying FFI library, <a href="https://sourceware.org/libffi/"><em>libffi</em></a>.</p>
 <h2 id="using-jna-in-dogtag">Using JNA in Dogtag <a href="#using-jna-in-dogtag" class="section">§</a></h2>
-<p>To simplify and speed up <a href="https://www.freeipa.org/">FreeIPA</a> startup, I needed to implement systemd notification support in <a href="https://www.dogtagpki.org/">Dogtag PKI</a>. Dogtag (when so configured) should call <a href="https://www.freedesktop.org/software/systemd/man/sd_notify.html"><code>sd_notify(3)</code></a> to notify the system service manager when it has started up and is ready to service requests.</p>
-<p>Dogtag already uses JNI in a few places (as does some of its dependencies, including JSS). But I was not keen to use JNI, with all its complexity, for this small use case. A colleague pointed me to JNA, and I decided to give it a go.</p>
-<p>The resulting code is so small I’ll just include it all here, with commentary. (I made some changes for clarity; you can review the actual patch in the <a href="https://github.com/dogtagpki/pki/pull/569/files">pull request</a>).</p>
+<p>To simplify and speed up <a href="https://www.freeipa.org/">FreeIPA</a> startup, I needed to implement
+systemd notification support in <a href="https://www.dogtagpki.org/">Dogtag PKI</a>. Dogtag (when so
+configured) should call <a href="https://www.freedesktop.org/software/systemd/man/sd_notify.html"><code>sd_notify(3)</code></a> to notify the system service
+manager when it has started up and is ready to service requests.</p>
+<p>Dogtag already uses JNI in a few places (as does some of its
+dependencies, including JSS). But I was not keen to use JNI, with
+all its complexity, for this small use case. A colleague pointed me
+to JNA, and I decided to give it a go.</p>
+<p>The resulting code is so small I’ll just include it all here, with
+commentary. (I made some changes for clarity; you can review the
+actual patch in the <a href="https://github.com/dogtagpki/pki/pull/569/files">pull request</a>).</p>
 <div class="sourceCode" id="cb1"><pre class="sourceCode java"><code class="sourceCode java"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="kw">package</span><span class="im"> com</span><span class="op">.</span><span class="im">netscape</span><span class="op">.</span><span class="im">cmscore</span><span class="op">.</span><span class="im">systemd</span><span class="op">;</span></span>
 <span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="kw">import</span> <span class="im">com</span><span class="op">.</span><span class="im">sun</span><span class="op">.</span><span class="im">jna</span><span class="op">.</span><span class="im">Library</span><span class="op">;</span></span>
@@ -46,13 +69,20 @@
 <span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    <span class="kw">public</span> <span class="dt">int</span> <span class="fu">sd_booted</span><span class="op">();</span></span>
 <span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    <span class="kw">public</span> <span class="dt">int</span> <span class="fu">sd_notify</span><span class="op">(</span><span class="dt">int</span> unset_env<span class="op">,</span> <span class="bu">String</span> state<span class="op">);</span></span>
 <span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
-<p>Declare an interface to the shared library by extending <code>sun.jna.Native</code>. Method signatures must match the native function signatures, according to the <a href="https://github.com/java-native-access/jna/blob/5.6.0/www/Mappings.md">type mappings</a>.</p>
+<p>Declare an interface to the shared library by extending
+<code>sun.jna.Native</code>. Method signatures must match the native
+function signatures, according to the <a href="https://github.com/java-native-access/jna/blob/5.6.0/www/Mappings.md">type mappings</a>.</p>
 <div class="sourceCode" id="cb3"><pre class="sourceCode java"><code class="sourceCode java"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>Systemd systemd <span class="op">=</span> <span class="kw">null</span><span class="op">;</span></span>
 <span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="kw">public</span> <span class="dt">void</span> <span class="fu">init</span><span class="op">()</span> <span class="op">{</span></span>
 <span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>    systemd <span class="op">=</span> Native<span class="op">.</span><span class="fu">load</span><span class="op">(</span><span class="st">&quot;systemd&quot;</span><span class="op">,</span> Systemd<span class="op">.</span><span class="fu">class</span><span class="op">);</span></span>
 <span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
-<p><code>init()</code> gets called by initialisation code. <code>Native.load()</code> loads <code>libsystemd.so</code> and initialises the foreign library proxy with respect to the <code>Systemd</code> interface. The proxy object is assigned to the instance variable <code>systemd</code>. An alternative approach is to assign the proxy object to a static variable in the interface definition (<a href="https://github.com/java-native-access/jna/blob/5.6.0/www/GettingStarted.md#getting-started-with-jna">example</a>).</p>
+<p><code>init()</code> gets called by initialisation code. <code>Native.load()</code> loads
+<code>libsystemd.so</code> and initialises the foreign library proxy with
+respect to the <code>Systemd</code> interface. The proxy object is assigned to
+the instance variable <code>systemd</code>. An alternative approach is to
+assign the proxy object to a static variable in the interface
+definition (<a href="https://github.com/java-native-access/jna/blob/5.6.0/www/GettingStarted.md#getting-started-with-jna">example</a>).</p>
 <div class="sourceCode" id="cb4"><pre class="sourceCode java"><code class="sourceCode java"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="dt">boolean</span> <span class="fu">notify</span><span class="op">(</span><span class="bu">String</span> status<span class="op">)</span> <span class="op">{</span></span>
 <span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> <span class="op">(!</span>systemd<span class="op">.</span><span class="fu">sd_booted</span><span class="op">())</span> <span class="op">{</span></span>
 <span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> <span class="kw">true</span><span class="op">;</span></span>
@@ -68,12 +98,30 @@
 <span id="cb4-13"><a href="#cb4-13" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
 <span id="cb4-14"><a href="#cb4-14" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
 <span id="cb4-15"><a href="#cb4-15" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
-<p><code>notify()</code> makes two foreign calls. First it calls <a href="https://www.freedesktop.org/software/systemd/man/sd_booted.html"><code>sd_booted(3)</code></a> to see if the system was booted using systemd. If not, we return (successfully). If the program <em>is</em> running under systemd it calls <a href="https://www.freedesktop.org/software/systemd/man/sd_notify.html"><code>sd_notify(3)</code></a>, logging an error on failure.</p>
-<p>That’s pretty much all there is to it. This is much, <em>much</em> nicer than JNI.</p>
+<p><code>notify()</code> makes two foreign calls. First it calls
+<a href="https://www.freedesktop.org/software/systemd/man/sd_booted.html"><code>sd_booted(3)</code></a> to see if the system was booted using
+systemd. If not, we return (successfully). If the program <em>is</em>
+running under systemd it calls <a href="https://www.freedesktop.org/software/systemd/man/sd_notify.html"><code>sd_notify(3)</code></a>, logging
+an error on failure.</p>
+<p>That’s pretty much all there is to it. This is much, <em>much</em> nicer
+than JNI.</p>
 <h2 id="discussion">Discussion <a href="#discussion" class="section">§</a></h2>
-<p>The adoption of JNA in Dogtag—which already (and still) uses JNI—was not without debate. But JNA is mature, widely available and supported in Dogtag’s target platforms (Fedora and RHEL). In the end, it was agreed that JNA is a nice approach. If JNA becomes problematic for any reason we can reimplement the binding to use JNI instead. The patch was accepted.</p>
-<p>As the Dogtag experience demonstrates, where multiple FFI systems are available it is not necessarily an either/or choice. JNI and JNA now happily coexist in the Dogtag database. It would be nice to gradually migrate Dogtag away from JNI and use JNA exclusively, but this is not a priority.</p>
-<p>There are more advanced topics that were not covered in this post. These include callbacks, custom type mapping and dealing with C <code>struct</code> and <code>union</code> types. The <a href="https://github.com/java-native-access/jna/tree/5.6.0#using-the-library">in-tree documentation</a> provides guidance on these and other advanced topics.</p>
+<p>The adoption of JNA in Dogtag—which already (and still) uses JNI—was
+not without debate. But JNA is mature, widely available and
+supported in Dogtag’s target platforms (Fedora and RHEL). In the
+end, it was agreed that JNA is a nice approach. If JNA becomes
+problematic for any reason we can reimplement the binding to use JNI
+instead. The patch was accepted.</p>
+<p>As the Dogtag experience demonstrates, where multiple FFI systems
+are available it is not necessarily an either/or choice. JNI and
+JNA now happily coexist in the Dogtag database. It would be nice to
+gradually migrate Dogtag away from JNI and use JNA exclusively, but
+this is not a priority.</p>
+<p>There are more advanced topics that were not covered in this post.
+These include callbacks, custom type mapping and dealing with C
+<code>struct</code> and <code>union</code> types. The <a href="https://github.com/java-native-access/jna/tree/5.6.0#using-the-library">in-tree
+documentation</a> provides guidance on these and other
+advanced topics.</p>
 </div>
 <div id="postFooter">
     <div id="recent">

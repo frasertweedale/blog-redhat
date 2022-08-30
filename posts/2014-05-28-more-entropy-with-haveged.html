@@ -26,16 +26,53 @@
 
 <div id="postContent">
     <h1 id="more-entropy-with-haveged">More entropy with <code>haveged</code></h1>
-<p>When a system’s entropy pool is depleted, reads from <code>/dev/random</code> will block. For applications that require lots of entropy, in environments where little entropy is available, long delays can result.</p>
-<p>A side-note: on Linux, information about the amount of entropy available can be found under <code>/proc/sys/kernel/random/</code>, along with other parameters of the kernel entropy device and a UUID source. Be aware that other systems may not have this interface.</p>
-<p>So if you <em>are</em> running out of entropy, what can you do? The <a href="http://www.issihosts.com/haveged/">haveged</a> program exists to remedy this problem. It implements a variant of the <a href="http://www.irisa.fr/caps/projects/hipsor/">HAVEGE</a> (<strong>HA</strong>rdware <strong>V</strong>olatile <strong>E</strong>ntropy <strong>G</strong>athering and <strong>E</strong>xpansion) algorithm. In brief, HAVEGE leverages the fact that modern processors have thousands of bits of volatile internal state that affect how long it takes to execute particular routines. The nondeterminism in the time taken to execute a particular routine, also known as <em>flutter</em>, can be determined by reading the hardware clock counter. Using this entropy to seed a PRNG, HAVEGE can provide orders of magnitude more entropy than the standard Linux entropy device.</p>
+<p>When a system’s entropy pool is depleted, reads from <code>/dev/random</code>
+will block. For applications that require lots of entropy, in
+environments where little entropy is available, long delays can
+result.</p>
+<p>A side-note: on Linux, information about the amount of entropy
+available can be found under <code>/proc/sys/kernel/random/</code>, along
+with other parameters of the kernel entropy device and a UUID
+source. Be aware that other systems may not have this interface.</p>
+<p>So if you <em>are</em> running out of entropy, what can you do? The
+<a href="http://www.issihosts.com/haveged/">haveged</a> program exists to remedy this problem. It implements a
+variant of the <a href="http://www.irisa.fr/caps/projects/hipsor/">HAVEGE</a> (<strong>HA</strong>rdware <strong>V</strong>olatile <strong>E</strong>ntropy
+<strong>G</strong>athering and <strong>E</strong>xpansion) algorithm. In brief, HAVEGE
+leverages the fact that modern processors have thousands of bits of
+volatile internal state that affect how long it takes to execute
+particular routines. The nondeterminism in the time taken to
+execute a particular routine, also known as <em>flutter</em>, can be
+determined by reading the hardware clock counter. Using this
+entropy to seed a PRNG, HAVEGE can provide orders of magnitude more
+entropy than the standard Linux entropy device.</p>
 <p>Let’s install <code>haveged</code> and see it in action:</p>
 <pre><code>sudo yum install -y haveged
 sudo systemctl start haveged.service</code></pre>
-<p>That’s all there is to it. This runs <code>/usr/sbin/haveged -w 1024 -v 1 --Foreground</code>. The <code>-w</code> argument specifies the <em>write wakeup threshold</em>. When <code>/dev/random</code> has fewer than this many bits of entropy available, processes writing to the entropy pool are awakened. <code>haveged</code> wakes up, produces some entropy and feeds it to Linux for other applications to use.</p>
-<p>The availability and quality of entropy can be tested using the <code>rngtest</code> tool, available in the <code>rng-tools</code> package. Compare running <code>cat /dev/random | rngtest -c 1000</code> both with and without <code>haveged</code> working to feed <code>/dev/random</code>. You should find that <code>haveged</code> does a good job of ensuring ample entropy is available for programs.</p>
-<p><a href="http://www.issihosts.com/haveged/history.html#other">Another solution</a> to low entropy on Linux is <code>rngd</code>, which works similarly to <code>haveged</code> but reads entropy from hardware RNGs. Of course, you need a hardware RNG for <code>rngd</code> to be effective. The default location for a hardware RNG is <code>/dev/hwrandom</code>; <code>rngd</code> uses this device by default but can be configured to use any device that provides the Linux <code>/dev/random</code> ioctl API. Some Linux distributions (including recent releases of Fedora) ship with <code>rngd</code> enabled by default.</p>
-<p>Let it again be noted that the entropy devices provided by other operating systems may (read: <em>do</em>) operate differently from the Linux entropy device, and some have native support for hardware RNGs when present, so while the approach to entropy replenishment shared by <code>haveged</code> and <code>rngd</code> works well for Linux, it may be incorrect or simply unnecessary for other systems.</p>
+<p>That’s all there is to it. This runs <code>/usr/sbin/haveged -w 1024 -v 1 --Foreground</code>. The <code>-w</code> argument specifies the <em>write wakeup
+threshold</em>. When <code>/dev/random</code> has fewer than this many bits of
+entropy available, processes writing to the entropy pool are
+awakened. <code>haveged</code> wakes up, produces some entropy and feeds it
+to Linux for other applications to use.</p>
+<p>The availability and quality of entropy can be tested using the
+<code>rngtest</code> tool, available in the <code>rng-tools</code> package. Compare
+running <code>cat /dev/random | rngtest -c 1000</code> both with and without
+<code>haveged</code> working to feed <code>/dev/random</code>. You should find that
+<code>haveged</code> does a good job of ensuring ample entropy is available
+for programs.</p>
+<p><a href="http://www.issihosts.com/haveged/history.html#other">Another solution</a> to low entropy on Linux is <code>rngd</code>, which works
+similarly to <code>haveged</code> but reads entropy from hardware RNGs. Of
+course, you need a hardware RNG for <code>rngd</code> to be effective. The
+default location for a hardware RNG is <code>/dev/hwrandom</code>; <code>rngd</code>
+uses this device by default but can be configured to use any device
+that provides the Linux <code>/dev/random</code> ioctl API. Some Linux
+distributions (including recent releases of Fedora) ship with
+<code>rngd</code> enabled by default.</p>
+<p>Let it again be noted that the entropy devices provided by other
+operating systems may (read: <em>do</em>) operate differently from the
+Linux entropy device, and some have native support for hardware RNGs
+when present, so while the approach to entropy replenishment shared
+by <code>haveged</code> and <code>rngd</code> works well for Linux, it may be
+incorrect or simply unnecessary for other systems.</p>
 </div>
 <div id="postFooter">
     <div id="recent">

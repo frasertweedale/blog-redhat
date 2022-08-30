@@ -26,38 +26,74 @@
 
 <div id="postContent">
     <h1 id="removing-the-ca-from-a-freeipa-deployment">Removing the CA from a FreeIPA deployment</h1>
-<p>FreeIPA can be deployed with or without a CA. By default a CA is installed; we call this a <em>CA-ful</em> deployment. But if you provide third party signed certificates for the HTTP, LDAP and (optionally) Kerberos KDC, then you can create a <em>CA-less</em> deployment.</p>
-<p>It is possible and supported to promote a CA-less deployment to CA-ful via the <code>ipa-ca-install</code> command. But the opposite is not true. There is no supported way to remove the CA from a CA-ful deployment. Nevertheless this is sometimes desired, for example to comply with a corporate security policy.</p>
-<p>In this post I will explore how to mutate an existing FreeIPA deployment from CA-ful to CA-less.</p>
+<p>FreeIPA can be deployed with or without a CA. By default a CA is
+installed; we call this a <em>CA-ful</em> deployment. But if you provide
+third party signed certificates for the HTTP, LDAP and (optionally)
+Kerberos KDC, then you can create a <em>CA-less</em> deployment.</p>
+<p>It is possible and supported to promote a CA-less deployment to
+CA-ful via the <code>ipa-ca-install</code> command. But the opposite is not
+true. There is no supported way to remove the CA from a CA-ful
+deployment. Nevertheless this is sometimes desired, for example to
+comply with a corporate security policy.</p>
+<p>In this post I will explore how to mutate an existing FreeIPA
+deployment from CA-ful to CA-less.</p>
 <h2 id="deployment-overview">Deployment overview <a href="#deployment-overview" class="section">§</a></h2>
-<p>The deployment I used for this exercise has two servers: <code>f30-0.ipa.local</code> and <code>f30-1.ipa.local</code>. Both have the CA role installed. The CA subject DN is <code>CN=Doomed CA,O=IPA.LOCAL</code>. There is no KRA installed. Kerberos PKINIT is disabled.</p>
-<p>Both servers are running builds of the FreeIPA <code>master</code> branch from October 2019, on Fedora 30. There should be no substantial differences in the procedure for official builds in recent versions of Fedora, RHEL 8 or RHEL 7.</p>
-<p>The external CA that will sign the HTTP and LDAP service certificates is <code>CN=Certificate Authority,O=ACME Corporation</code>.</p>
+<p>The deployment I used for this exercise has two servers:
+<code>f30-0.ipa.local</code> and <code>f30-1.ipa.local</code>. Both have the CA role
+installed. The CA subject DN is <code>CN=Doomed CA,O=IPA.LOCAL</code>.
+There is no KRA installed. Kerberos PKINIT is disabled.</p>
+<p>Both servers are running builds of the FreeIPA <code>master</code> branch
+from October 2019, on Fedora 30. There should be no substantial
+differences in the procedure for official builds in recent versions
+of Fedora, RHEL 8 or RHEL 7.</p>
+<p>The external CA that will sign the HTTP and LDAP service
+certificates is <code>CN=Certificate Authority,O=ACME Corporation</code>.</p>
 <h2 id="success-criteria">Success criteria <a href="#success-criteria" class="section">§</a></h2>
-<p>Simply uninstalling the Dogtag CA on all CA replicas is not enough. We want all servers to migrate away from certificate that were issued by the internal CA. Specific goals include:</p>
+<p>Simply uninstalling the Dogtag CA on all CA replicas is not enough.
+We want all servers to migrate away from certificate that were
+issued by the internal CA. Specific goals include:</p>
 <ul>
-<li>Replace HTTP, LDAP and (if Kerberos PKINIT enabled) KDC certificates with certificates issued by an external CA, on all replicas.</li>
+<li>Replace HTTP, LDAP and (if Kerberos PKINIT enabled) KDC
+certificates with certificates issued by an external CA, on all
+replicas.</li>
 <li>Actually uninstall the Dogtag CA on all CA replicas.</li>
-<li>Cause IPA servers and clients to behave as if the deployment is (and always was) CA-less. In particular, programs like <code>ipa-server-upgrade</code> and <code>ipa-certupdate</code> must work.</li>
-<li>Replica installation succeeds in the modified deployment (third-party service certificates must be supplied, of course).</li>
-<li>Be able to promote the deployment to CA-ful again via the <code>ipa-ca-install</code> command.</li>
+<li>Cause IPA servers and clients to behave as if the deployment is
+(and always was) CA-less. In particular, programs like
+<code>ipa-server-upgrade</code> and <code>ipa-certupdate</code> must work.</li>
+<li>Replica installation succeeds in the modified deployment
+(third-party service certificates must be supplied, of course).</li>
+<li>Be able to promote the deployment to CA-ful again via the
+<code>ipa-ca-install</code> command.</li>
 </ul>
 <h2 id="removing-the-internal-ca">Removing the internal CA <a href="#removing-the-internal-ca" class="section">§</a></h2>
-<p>There are two main approaches one could take. The first is to remove the CA role from existing CA replicas. The second is to install replicas without the CA role, then remove the CA replicas from the topology. In both cases some of the steps (e.g. installing externally-signed service certificates) will be the same. This post describes the first approach (it seems like less work overall).</p>
+<p>There are two main approaches one could take. The first is to
+remove the CA role from existing CA replicas. The second is to
+install replicas without the CA role, then remove the CA replicas
+from the topology. In both cases some of the steps (e.g. installing
+externally-signed service certificates) will be the same. This post
+describes the first approach (it seems like less work overall).</p>
 <h3 id="add-external-ca-to-trust-store">Add external CA to trust store <a href="#add-external-ca-to-trust-store" class="section">§</a></h3>
-<p>First add the external root CA certificate to the FreeIPA trust store:</p>
+<p>First add the external root CA certificate to the FreeIPA trust
+store:</p>
 <pre><code>[root@f30-0 ~]# ipa-cacert-manage install /root/extca.pem
 Installing CA certificate, please wait
 Verified CN=Certificate Authority,O=ACME Corporation
 CA certificate successfully installed
 The ipa-cacert-manage command was successful</code></pre>
-<p>Then run <code>ipa-certupdate</code> to add the new certificate to system certificate databases, <strong>on every replica</strong> (not just CA replicas):</p>
+<p>Then run <code>ipa-certupdate</code> to add the new certificate to system
+certificate databases, <strong>on every replica</strong> (not just CA replicas):</p>
 <pre><code>[root@f30-0 ~]# ipa-certupdate
 Systemwide CA database updated.
 Systemwide CA database updated.
 The ipa-certupdate command was successful</code></pre>
 <h3 id="replacing-service-certificates">Replacing service certificates <a href="#replacing-service-certificates" class="section">§</a></h3>
-<p>Next run <code>ipa-server-certinstall</code> to replace the HTTP and LDAP service certificates issued by the internal CA with externally-signed certificates. Do this <strong>for every server</strong> (only <code>f30-0.ipa.local</code> is shown below). <code>/root/dmpass</code> contains the <code>Directory Manager</code> password. <code>/root/httpd.pin</code> and <code>/root/ldap.pin</code> contain the passwords for the HTTP and LDAP private keys.</p>
+<p>Next run <code>ipa-server-certinstall</code> to replace the HTTP and LDAP
+service certificates issued by the internal CA with
+externally-signed certificates. Do this <strong>for every server</strong> (only
+<code>f30-0.ipa.local</code> is shown below). <code>/root/dmpass</code> contains the
+<code>Directory Manager</code> password. <code>/root/httpd.pin</code> and
+<code>/root/ldap.pin</code> contain the passwords for the HTTP and LDAP
+private keys.</p>
 <pre><code>[root@f30-0 ~]# ipa-server-certinstall \
     --dirman-pass $(cat /root/dmpass) \
     --http /root/httpd.pem --pin $(cat /root/httpd.pin)
@@ -79,7 +115,8 @@ Restarting ipa-custodia Service
 Restarting pki-tomcatd Service
 Restarting ipa-otpd Service
 ipa: INFO: The ipactl command was successful</code></pre>
-<p>Verify that Apache is presenting the externally-signed service certificate:</p>
+<p>Verify that Apache is presenting the externally-signed service
+certificate:</p>
 <pre><code>[root@f30-0 ~]# echo \
    | openssl s_client -connect $(hostname):443 &gt;/dev/null
 depth=1 O = ACME Corporation, CN = Certificate Authority
@@ -88,7 +125,8 @@ depth=0 O = ACME Corporation, CN = f30-0.ipa.local
 verify return:1
 DONE</code></pre>
 <h3 id="delete-ca-role-configuration">Delete CA role configuration <a href="#delete-ca-role-configuration" class="section">§</a></h3>
-<p>FreeIPA uses role entries to track which servers have which features (CA, KRA, DNS, etc.) enabled. Search for the entries to delete:</p>
+<p>FreeIPA uses role entries to track which servers have which features
+(CA, KRA, DNS, etc.) enabled. Search for the entries to delete:</p>
 <pre><code>[root@f30-0 ~]# ldapsearch -Y GSSAPI -QLLL \
     -b cn=masters,cn=ipa,cn=etc,dc=ipa,dc=local \
     '(cn=CA)'
@@ -114,13 +152,15 @@ ipaConfigString: enabledService</code></pre>
 
 [root@f30-0 ~]# ldapdelete -Y GSSAPI -Q \
     cn=CA,cn=f30-1.ipa.local,cn=masters,cn=ipa,cn=etc,dc=ipa,dc=local</code></pre>
-<p>At this point, any command that attempts to communicate with the CA will fail with a message that the CA is not configured:</p>
+<p>At this point, any command that attempts to communicate with the CA will
+fail with a message that the CA is not configured:</p>
 <pre><code>[root@f30-0 ~]# ipa ca-find
 ipa: ERROR: CA is not configured
 [root@f30-0 ~]# ipa cert-show 5
 ipa: ERROR: CA is not configured</code></pre>
 <h3 id="uninstalling-dogtag">Uninstalling Dogtag <a href="#uninstalling-dogtag" class="section">§</a></h3>
-<p>Issue the <code>pkidestroy</code> command <strong>on each CA replica</strong> to uninstall the Dogtag CA:</p>
+<p>Issue the <code>pkidestroy</code> command <strong>on each CA replica</strong> to uninstall
+the Dogtag CA:</p>
 <pre><code>[root@f30-0 ~]# pkidestroy -i pki-tomcat -s CA                                                                                 
 Uninstallation log: /var/log/pki/pki-ca-destroy.20191023173820.log                      
 Loading deployment configuration from /var/lib/pki/pki-tomcat/ca/registry/ca/deployment.cfg.
@@ -132,18 +172,27 @@ WARNING: pkihelper      Directory '/etc/pki/pki-tomcat/alias' is either missing 
 Uninstallation complete.        </code></pre>
 <p>The warnings can be ignored.</p>
 <h3 id="remove-service-configuration-from-state-file">Remove service configuration from state file <a href="#remove-service-configuration-from-state-file" class="section">§</a></h3>
-<p>Some processes read from the deployment state file at <code>/var/lib/ipa/sysrestore/sysrestore.state</code> to decide whether the CA is installed. <strong>On every CA replica</strong> delete the following lines from this file:</p>
+<p>Some processes read from the deployment state file at
+<code>/var/lib/ipa/sysrestore/sysrestore.state</code> to decide whether the
+CA is installed. <strong>On every CA replica</strong> delete the following lines
+from this file:</p>
 <pre><code>[pki-tomcatd]
 installed = True</code></pre>
 <h3 id="removing-or-retaining-trust-in-the-deleted-ca">Removing (or retaining) trust in the deleted CA <a href="#removing-or-retaining-trust-in-the-deleted-ca" class="section">§</a></h3>
-<p>If there are no more certificates in use that were issued by the (now removed) internal CA, we can remove it from the LDAP trust store:</p>
+<p>If there are no more certificates in use that were issued by the
+(now removed) internal CA, we can remove it from the LDAP trust
+store:</p>
 <pre><code>% ldapdelete -Y GSSAPI -Q \
     &quot;cn=IPA.LOCAL IPA CA,cn=certificates,cn=ipa,cn=etc,dc=ipa,dc=local&quot;</code></pre>
-<p>Otherwise if we still need to trust the old IPA CA, we can rename it. This step is necessary because the name <code>{REALM} IPA CA</code> indicates that this is the internal CA (which it no longer is).</p>
+<p>Otherwise if we still need to trust the old IPA CA, we can rename
+it. This step is necessary because the name <code>{REALM} IPA CA</code>
+indicates that this is the internal CA (which it no longer is).</p>
 <pre><code>% ldapmodrdn -Y GSSAPI -Q -r \
     &quot;cn=IPA.LOCAL IPA CA,cn=certificates,cn=ipa,cn=etc,dc=ipa,dc=local&quot; \
     &quot;cn=CN\=Doomed CA\,O\=IPA.LOCAL&quot;</code></pre>
-<p>We also have to remove the <code>{REALM} IPA CA</code> certificate from the FreeIPA 389 DS certificate databases <strong>on every replica</strong>. Leaving it as-is will impede future reinstallation of the CA:</p>
+<p>We also have to remove the <code>{REALM} IPA CA</code> certificate from the
+FreeIPA 389 DS certificate databases <strong>on every replica</strong>. Leaving
+it as-is will impede future reinstallation of the CA:</p>
 <pre><code>[root@f30-0 ~]# certutil -d /etc/dirsrv/slapd-IPA-LOCAL \
                     -D -n 'IPA.LOCAL IPA CA'
 
@@ -157,16 +206,23 @@ dn: cn=ipa,cn=cas,cn=ca,dc=ipa,dc=local
 
 [root@f30-0 ~]# ldapdelete -Y GSSAPI -Q \
      cn=ipa,cn=cas,cn=ca,dc=ipa,dc=local</code></pre>
-<p>Unless you have created additional (sub-)CAs via the <code>ipa ca-add</code> command there will be only one entry (<code>cn=ipa</code>).</p>
+<p>Unless you have created additional (sub-)CAs via the <code>ipa ca-add</code>
+command there will be only one entry (<code>cn=ipa</code>).</p>
 <h3 id="remove-certmonger-tracking-requests">Remove Certmonger tracking requests <a href="#remove-certmonger-tracking-requests" class="section">§</a></h3>
-<p>Certmonger tracking requests for the Dogtag system certificates and IPA RA agent certificate should be removed <strong>on each server</strong>. The easiest way to achieve this is with a small Python script:</p>
+<p>Certmonger tracking requests for the Dogtag system certificates and
+IPA RA agent certificate should be removed <strong>on each server</strong>. The
+easiest way to achieve this is with a small Python script:</p>
 <pre><code>[root@f30-0 ~]# python3 &lt;&lt;EOF
 from ipaserver.install.cainstance import CAInstance
 ca = CAInstance()
 ca.stop_tracking_certificates()
 EOF</code></pre>
 <h2 id="testing-the-outcome">Testing the outcome <a href="#testing-the-outcome" class="section">§</a></h2>
-<p>We already confirmed that the <code>ipa</code> subcommands (i.e. commands that query the IPA API) fail gracefully with a message that the CA role is not installed. But there are other commands to check. In particular we want to test <code>ipa-certupdate</code>, <code>ipa-server-upgrade</code>, and client and replica installation.</p>
+<p>We already confirmed that the <code>ipa</code> subcommands (i.e. commands
+that query the IPA API) fail gracefully with a message that the CA
+role is not installed. But there are other commands to check. In
+particular we want to test <code>ipa-certupdate</code>,
+<code>ipa-server-upgrade</code>, and client and replica installation.</p>
 <pre><code>[root@f30-0 ~]# ipa-certupdate
 Systemwide CA database updated.
 Systemwide CA database updated.
@@ -176,7 +232,9 @@ Upgrading IPA:. Estimated time: 1 minute 30 seconds
 ...
 The IPA services were upgraded                                      
 The ipa-server-upgrade command was successful                       </code></pre>
-<p>So far so good. I used a third host, <code>f30-2.ipa.local</code>, to test client and replica installation. I don’t have the required DNS records so I had to specify the domain and server.</p>
+<p>So far so good. I used a third host, <code>f30-2.ipa.local</code>, to test
+client and replica installation. I don’t have the required DNS
+records so I had to specify the domain and server.</p>
 <pre><code>[root@f30-2 ~]# ipa-client-install --server f30-0.ipa.local --domain ipa.local
 This program will set up FreeIPA client.
 Version 4.9.0.dev201910230357+gitc6769ad12
@@ -225,7 +283,8 @@ Configured /etc/ssh/sshd_config
 Configuring ipa.local as NIS domain.
 Client configuration complete.
 The ipa-client-install command was successful</code></pre>
-<p>Client installation succeeded. We can see that external CA certificate was retrieved. I proceeded with replica installation:</p>
+<p>Client installation succeeded. We can see that external CA
+certificate was retrieved. I proceeded with replica installation:</p>
 <pre><code>[root@f30-2 ~]# kinit admin                                                     
 Password for admin@IPA.LOCAL: XXXXXXX
 
@@ -247,8 +306,16 @@ Finalize replication settings
 Restarting the KDC
 The ipa-replica-install command was successful</code></pre>
 <h2 id="reinstating-the-internal-ca">Reinstating the internal CA <a href="#reinstating-the-internal-ca" class="section">§</a></h2>
-<p>If you want to once again have a CA-ful FreeIPA deployment, use the <code>ipa-ca-install</code> command to install the CA. There is one critical constraint: <strong>the new CA must not have the same Subject DN as the previous CA</strong>. This is to avoid a recurrence of the same issuer/serial combination, which is a big no-no both for security and because errors are likely to arise.</p>
-<p>So let’s install the CA again. To play it safe I’ll use the newly-installed replica <code>f30-2.ipa.local</code>. Just in case there is some “residue” left on the other servers that would prevent reinstallation of the CA role.</p>
+<p>If you want to once again have a CA-ful FreeIPA deployment, use the
+<code>ipa-ca-install</code> command to install the CA. There is one critical
+constraint: <strong>the new CA must not have the same Subject DN as the
+previous CA</strong>. This is to avoid a recurrence of the same
+issuer/serial combination, which is a big no-no both for security
+and because errors are likely to arise.</p>
+<p>So let’s install the CA again. To play it safe I’ll use the
+newly-installed replica <code>f30-2.ipa.local</code>. Just in case there is
+some “residue” left on the other servers that would prevent
+reinstallation of the CA role.</p>
 <pre><code>[root@f30-2 ~]# ipa-ca-install \
       --ca-subject &quot;CN=Restored CA,O=IPA.LOCAL&quot;
 Directory Manager (existing master) password:                                   
@@ -290,11 +357,22 @@ Configuring certificate server (pki-tomcatd). Estimated time: 3 minutes
   [28/29]: adding 'ipa' CA entry
   [29/29]: configuring certmonger renewal for lightweight CAs
 Done configuring certificate server (pki-tomcatd).</code></pre>
-<p>The installation completed without error. The deployment is CA-ful again, but it is a different CA from before.</p>
+<p>The installation completed without error. The deployment is CA-ful
+again, but it is a different CA from before.</p>
 <h2 id="issues-encountered">Issues encountered <a href="#issues-encountered" class="section">§</a></h2>
-<p>I encountered a significant issue when reinstalling the CA. If there are multiple trusted CAs (including the old internal CA) in <code>/etc/ipa/ca.crt</code>, then if the issuer of the 389 DS service certificate is not the first certificate in that file Dogtag installation will fail. This is because the wrong CA certificate is imported into Dogtag’s NSSDB and the issuer of the LDAP certificate is <em>not</em> imported. As a consequence, Dogtag cannot verify the LDAP certificate and cannot communicate with the database. Installation fails.</p>
+<p>I encountered a significant issue when reinstalling the CA. If
+there are multiple trusted CAs (including the old internal CA) in
+<code>/etc/ipa/ca.crt</code>, then if the issuer of the 389 DS service
+certificate is not the first certificate in that file Dogtag
+installation will fail. This is because the wrong CA certificate is
+imported into Dogtag’s NSSDB and the issuer of the LDAP certificate
+is <em>not</em> imported. As a consequence, Dogtag cannot verify the LDAP
+certificate and cannot communicate with the database. Installation
+fails.</p>
 <p>This issue is tracked in <a href="https://pagure.io/freeipa/issue/8103">upstream ticket 8103</a>.</p>
-<p>I also encountered problems when reinstalling a CA on the servers from which it had been uninstalled. A <em>duplicate entry</em> error occurs when setting up the LDAP database:</p>
+<p>I also encountered problems when reinstalling a CA on the servers
+from which it had been uninstalled. A <em>duplicate entry</em> error
+occurs when setting up the LDAP database:</p>
 <pre><code>[root@f30-1 ~]# ipa-ca-install
 Directory Manager (existing master) password:
 
@@ -309,12 +387,27 @@ Run /usr/sbin/ipa-server-install --uninstall to clean up.
 
 Unexpected error - see /var/log/ipareplica-ca-install.log for details:
 DuplicateEntry: This entry already exists</code></pre>
-<p>This can probably be averted with additional cleanup steps. I did not investigate further because installation of the CA role on a <em>new replica</em> did succeed. That seems good enough to me.</p>
+<p>This can probably be averted with additional cleanup steps. I did
+not investigate further because installation of the CA role on a
+<em>new replica</em> did succeed. That seems good enough to me.</p>
 <h2 id="conclusion">Conclusion <a href="#conclusion" class="section">§</a></h2>
-<p>In this post I explored how to demote a CA-ful FreeIPA deployment to a CA-less deployment. The procedure has many steps. Even in a CA-less deployment TLS is still required for secure communication between components. So one important step is to install externally-signed service certificates for the web server, directory server and (if used) the KDC certificates. But there are several other steps required to remove the CA from an existing deployment.</p>
-<p>The procedure is not officially supported. If you need to perform this operation make a snapshot of your deployment so you can roll back if anything goes wrong, or verify everything in a test environment first (or both!)</p>
-<p>If you need to move from a CA-ful to a CA-less deployment, an alternative approach would be to create a new, CA-less deployment and migrate your data across. Neither approach is very attractive, to be fair.</p>
-<p>As a final observation, the procedure has several steps that are similar or identical to the steps for <a href="2018-05-31-replacing-lost-ca.html">replacing a lost CA</a>.</p>
+<p>In this post I explored how to demote a CA-ful FreeIPA deployment to
+a CA-less deployment. The procedure has many steps. Even in a
+CA-less deployment TLS is still required for secure communication
+between components. So one important step is to install
+externally-signed service certificates for the web server, directory
+server and (if used) the KDC certificates. But there are several
+other steps required to remove the CA from an existing deployment.</p>
+<p>The procedure is not officially supported. If you need to perform
+this operation make a snapshot of your deployment so you can roll
+back if anything goes wrong, or verify everything in a test
+environment first (or both!)</p>
+<p>If you need to move from a CA-ful to a CA-less deployment, an
+alternative approach would be to create a new, CA-less deployment
+and migrate your data across. Neither approach is very attractive,
+to be fair.</p>
+<p>As a final observation, the procedure has several steps that are
+similar or identical to the steps for <a href="2018-05-31-replacing-lost-ca.html">replacing a lost CA</a>.</p>
 </div>
 <div id="postFooter">
     <div id="recent">

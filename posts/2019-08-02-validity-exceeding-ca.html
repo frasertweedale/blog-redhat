@@ -26,20 +26,51 @@
 
 <div id="postContent">
     <h1 id="certificates-need-not-be-limited-to-the-cas-validity-period">Certificates need not be limited to the CA’s validity period</h1>
-<p>All X.509 certificates have a <code>notBefore</code> and <code>notAfter</code> date. These define the <em>validity period</em> of the certificate. When we talk about certificate <em>expiry</em>, we are talking about the <code>notAfter</code> date. The question often arises: can a certificate’s <code>notAfter</code> date exceed the <code>notAfter</code> date of the issuer’s certificate?</p>
-<p>The naïve intuition says, <em>surely a certificate’s validity period cannot exceed the CA’s</em>. But let’s think it through, and look at what these fields actually mean. According to <a href="https://tools.ietf.org/html/rfc5280#section-4.1.2.5">RFC 5280 §4.1.2.5</a>:</p>
+<p>All X.509 certificates have a <code>notBefore</code> and <code>notAfter</code> date.
+These define the <em>validity period</em> of the certificate. When we talk
+about certificate <em>expiry</em>, we are talking about the <code>notAfter</code>
+date. The question often arises: can a certificate’s <code>notAfter</code>
+date exceed the <code>notAfter</code> date of the issuer’s certificate?</p>
+<p>The naïve intuition says, <em>surely a certificate’s validity period
+cannot exceed the CA’s</em>. But let’s think it through, and look at
+what these fields actually mean. According to <a href="https://tools.ietf.org/html/rfc5280#section-4.1.2.5">RFC 5280
+§4.1.2.5</a>:</p>
 <pre><code>The certificate validity period is the time interval
 during which the CA warrants that it will maintain
 information about the status of the certificate.</code></pre>
-<p>The whole section makes no mention of the issuer’s <code>notAfter</code> date or validity period. It only says that the CA must maintain status (i.e. revocation) information about the issued certificate until (at least) the <code>notAfter</code> date.</p>
-<p>But what if the CA certificate expires before an issued certificate? One of two things happens:</p>
+<p>The whole section makes no mention of the issuer’s <code>notAfter</code> date
+or validity period. It only says that the CA must maintain status
+(i.e. revocation) information about the issued certificate until (at
+least) the <code>notAfter</code> date.</p>
+<p>But what if the CA certificate expires before an issued certificate?
+One of two things happens:</p>
 <ol type="1">
-<li>The CA certificate got renewed and the verifier has a copy of the new certificate. The certificate being verified is within its validity period and so is the CA certificate, so there is a certificate path and everything is fine.</li>
-<li>The CA certificate was not renewed (or the verifier doesn’t have the renewed certificate). The certificate being verified is within its validity period, but the issuer certificate is <em>not</em>. So there is no certificate path; the certificate being verified cannot not be trusted.</li>
+<li>The CA certificate got renewed and the verifier has a copy of the
+new certificate. The certificate being verified is within its
+validity period and so is the CA certificate, so there is a
+certificate path and everything is fine.</li>
+<li>The CA certificate was not renewed (or the verifier doesn’t have
+the renewed certificate). The certificate being verified is
+within its validity period, but the issuer certificate is <em>not</em>.
+So there is no certificate path; the certificate being verified
+cannot not be trusted.</li>
 </ol>
-<p>So it is fine for issued certificate to have expiry dates beyond that of the CA.</p>
-<p>In fact, clamping the <code>notAfter</code> of issued certificates to the <code>notAfter</code> of the CA can cause operational challenges. At the same time as the CA needs renewal, so do potentially many issued certificates! You may end up with certificates with short validity periods if the CA certificate is renewed close to its <code>notAfter</code> time, and a flood of renewals to perform at the same time.</p>
-<p>There is one situation where it is required to clamp the <code>notAfter</code> of issued certificates to the issuer <code>notAfter</code>. This is when it is known that the issuer, including its CRL and OCSP facilities, will be decommissioned shortly after the expiry of the issuer certificate. Otherwise, in light of the potential operational hazards, I recommend issuing certificates with whatever validity period is appropriate for the application, regardless of when the issuer certificate expires.</p>
+<p>So it is fine for issued certificate to have expiry dates beyond
+that of the CA.</p>
+<p>In fact, clamping the <code>notAfter</code> of issued certificates to the
+<code>notAfter</code> of the CA can cause operational challenges. At the
+same time as the CA needs renewal, so do potentially many issued
+certificates! You may end up with certificates with short validity
+periods if the CA certificate is renewed close to its <code>notAfter</code>
+time, and a flood of renewals to perform at the same time.</p>
+<p>There is one situation where it is required to clamp the
+<code>notAfter</code> of issued certificates to the issuer <code>notAfter</code>.
+This is when it is known that the issuer, including its CRL and OCSP
+facilities, will be decommissioned shortly after the expiry of the
+issuer certificate. Otherwise, in light of the potential
+operational hazards, I recommend issuing certificates with whatever
+validity period is appropriate for the application, regardless of
+when the issuer certificate expires.</p>
 </div>
 <div id="postFooter">
     <div id="recent">

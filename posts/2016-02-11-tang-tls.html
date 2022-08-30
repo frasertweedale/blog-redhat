@@ -26,25 +26,58 @@
 
 <div id="postContent">
     <h1 id="introduction-to-tang-and-clevis">Introduction to Tang and Clevis</h1>
-<p>In this post I continue the discussion of network-bound decryption and introduce <em>Tang</em> and <em>Clevis</em>, new unlock tools that supersede <em>Deo</em> (which was covered <a href="2015-09-09-deo-tls.html">in an earlier post</a>).</p>
+<p>In this post I continue the discussion of network-bound decryption
+and introduce <em>Tang</em> and <em>Clevis</em>, new unlock tools that supersede
+<em>Deo</em> (which was covered <a href="2015-09-09-deo-tls.html">in an earlier post</a>).</p>
 <h2 id="deo-is-dead.-long-live-tang.">Deo is dead. Long live Tang. <a href="#deo-is-dead.-long-live-tang." class="section">§</a></h2>
-<p>Nathaniel McCallum discovered a key encryption protocol based on ElGamal with a desirable security characteristic: <em>no one but the party decrypting the secret can learn the secret</em>. It was reviewed and refined into <em>McCallum-Relyea (MR) exchange</em>. With Deo, the server decrypted (thus <em>learned</em>) the key and sent it back to the client (through an encrypted channel). McCallum-Relyea exchange avoids this. A new protocol based on MR was developed, called <em>Tang</em>.</p>
-<p>Another perceived drawback of Deo was its use of X.509 certificates for TLS and for encryption, making it complex to deploy. The Tang protocol is simpler and avoids X.509.</p>
-<p>I will avoid going into the details of the cryptography or the protocol in this post, but will include links at the end.</p>
+<p>Nathaniel McCallum discovered a key encryption protocol based on
+ElGamal with a desirable security characteristic: <em>no one but the
+party decrypting the secret can learn the secret</em>. It was reviewed
+and refined into <em>McCallum-Relyea (MR) exchange</em>. With Deo, the
+server decrypted (thus <em>learned</em>) the key and sent it back to the
+client (through an encrypted channel). McCallum-Relyea exchange
+avoids this. A new protocol based on MR was developed, called
+<em>Tang</em>.</p>
+<p>Another perceived drawback of Deo was its use of X.509 certificates
+for TLS and for encryption, making it complex to deploy. The Tang
+protocol is simpler and avoids X.509.</p>
+<p>I will avoid going into the details of the cryptography or the
+protocol in this post, but will include links at the end.</p>
 <h2 id="clevis">Clevis <a href="#clevis" class="section">§</a></h2>
-<p>Using Tang to bind data to a network is great, but there are many other things we might want to bind our data to, such as passwords, TPM, biometrics, Bluetooth LE beacons, et cetera. It would also be nice to define policies - possibly nested - about how many of what data binders must succeed in order to decrypt or “unlock” a secret. The point here is that unlock policy should be driven by business or and/or user needs, not by technology. The technology must enable but not constrain the policy.</p>
-<p>Enter <em>Clevis</em>, the pluggable client-side unlock framework. Plugins, which are called <em>pins</em>, implement different kinds of bindings. Clevis comes with a handful a pins including <code>pwd</code> (password) and <code>https</code> (PUT and GET the secret; a kind of escrow). The <code>tang</code> pin is provided by Tang to avoid circular dependencies.</p>
-<p>The <code>sss</code> pin provides a way to “nest” pins, and also provides <em>k of n</em> threshold unlocking. “SSS” stands for <a href="https://en.wikipedia.org/wiki/Shamir's_Secret_Sharing">Shamir's Secret Sharing</a>, the algorithm that makes this possible.</p>
-<p>LUKS volume decryption, which was implemented in Deo, has not yet been implemented in Clevis, but it is a high priority.</p>
-<p>By the way, if you were wondering about the terminology, a <em>clevis</em>, <em>clevis pin</em> and <em>tang</em> together form a kind of shackle.</p>
+<p>Using Tang to bind data to a network is great, but there are many
+other things we might want to bind our data to, such as passwords,
+TPM, biometrics, Bluetooth LE beacons, et cetera. It would also be
+nice to define policies - possibly nested - about how many of what
+data binders must succeed in order to decrypt or “unlock” a secret.
+The point here is that unlock policy should be driven by business or
+and/or user needs, not by technology. The technology must enable
+but not constrain the policy.</p>
+<p>Enter <em>Clevis</em>, the pluggable client-side unlock framework.
+Plugins, which are called <em>pins</em>, implement different kinds of
+bindings. Clevis comes with a handful a pins including <code>pwd</code>
+(password) and <code>https</code> (PUT and GET the secret; a kind of escrow).
+The <code>tang</code> pin is provided by Tang to avoid circular dependencies.</p>
+<p>The <code>sss</code> pin provides a way to “nest” pins, and also provides <em>k
+of n</em> threshold unlocking. “SSS” stands for <a href="https://en.wikipedia.org/wiki/Shamir's_Secret_Sharing">Shamir's Secret
+Sharing</a>, the algorithm that makes this possible.</p>
+<p>LUKS volume decryption, which was implemented in Deo, has not yet
+been implemented in Clevis, but it is a high priority.</p>
+<p>By the way, if you were wondering about the terminology, a <em>clevis</em>,
+<em>clevis pin</em> and <em>tang</em> together form a kind of shackle.</p>
 <p><img src="../images/clevis.jpg" alt="image" /></p>
 <h2 id="tls-private-key-decryption">TLS private key decryption <a href="#tls-private-key-decryption" class="section">§</a></h2>
-<p>Let’s revisit the TLS private key decryption use case from my earlier Deo post, and update the solution to use Clevis and Tang.</p>
-<p>Recall the encryption command, which required the user to input the TLS private key’s passphrase, then encrypted it with Deo, storing it at a location determined by convention:</p>
+<p>Let’s revisit the TLS private key decryption use case from my
+earlier Deo post, and update the solution to use Clevis and Tang.</p>
+<p>Recall the encryption command, which required the user to input the
+TLS private key’s passphrase, then encrypted it with Deo, storing it
+at a location determined by convention:</p>
 <pre><code># (stty -echo; read LINE; echo -n &quot;$LINE&quot;) \
   | deo encrypt -a /etc/ipa/ca.pem deo.ipa.local \
   &gt; /etc/httpd/deo.d/f22-4.ipa.local:443</code></pre>
-<p>We will continue to use the same file storage convention. Clevis, unlike Tang, does not receive a secret to be encrypted but instead generates one and tells us what it is. Let’s run <code>clevis provision</code> with the Tang pin and see what it gives us:</p>
+<p>We will continue to use the same file storage convention. Clevis,
+unlike Tang, does not receive a secret to be encrypted but instead
+generates one and tells us what it is. Let’s run <code>clevis provision</code>
+with the Tang pin and see what it gives us:</p>
 <pre><code># clevis provision -P '{&quot;type&quot;: &quot;tang&quot;, &quot;host&quot;: &quot;f23-1.ipa.local&quot;}' \
   -O /etc/httpd/tang.d/f22-4.ipa.local:443
 
@@ -57,17 +90,28 @@ The server advertised the following signing keys:
 
 Do you wish to trust the keys? [yn] y
 709DAFCBC8ACF879D1AC386798783C7E</code></pre>
-<p>Breaking down the command, the <code>-P</code> argument is a JSON <code>tang</code> pin configuration object, specifying the Tang server’s <code>host</code> name. The argument to <code>-O</code> specifies the output filename.</p>
-<p>The program prints the signing key(s) and asks if we want to trust them. Tang is a <em>trust on first use (TOFU)</em> protocol. Out-of-band validation is possible but not yet implemented (there is a <a href="https://github.com/npmccallum/clevis/issues/2">ticket for DNSSEC support</a>).</p>
-<p>Having trusted the keys, the program performs the Tang encryption, saves the metadata in the specified output file, and finally prints the secret: <code>709DAFCBC8ACF879D1AC386798783C7E</code>.</p>
-<p>We now need to update the passphrase on the TLS private key with the secret that Clevis generated:</p>
+<p>Breaking down the command, the <code>-P</code> argument is a JSON <code>tang</code>
+pin configuration object, specifying the Tang server’s <code>host</code>
+name. The argument to <code>-O</code> specifies the output filename.</p>
+<p>The program prints the signing key(s) and asks if we want to trust
+them. Tang is a <em>trust on first use (TOFU)</em> protocol. Out-of-band
+validation is possible but not yet implemented (there is a <a href="https://github.com/npmccallum/clevis/issues/2">ticket
+for DNSSEC support</a>).</p>
+<p>Having trusted the keys, the program performs the Tang encryption,
+saves the metadata in the specified output file, and finally prints
+the secret: <code>709DAFCBC8ACF879D1AC386798783C7E</code>.</p>
+<p>We now need to update the passphrase on the TLS private key with
+the secret that Clevis generated:</p>
 <pre><code># openssl rsa -aes128 &lt; key.pem &gt; newkey.pem &amp;&amp; mv newkey.pem key.pem
 Enter pass phrase:
 writing RSA key
 Enter PEM pass phrase:
 Verifying - Enter PEM pass phrase:</code></pre>
-<p>OpenSSL first asked for the <em>original</em> passphrase to decrypt the private key, then asks (twice) for a new passphrase, which shall be the secret Clevis told us.</p>
-<p>Now we must change the helper script that unlocks the private key. Recall the definition of the Deo helper:</p>
+<p>OpenSSL first asked for the <em>original</em> passphrase to decrypt the
+private key, then asks (twice) for a new passphrase, which shall be
+the secret Clevis told us.</p>
+<p>Now we must change the helper script that unlocks the private key.
+Recall the definition of the Deo helper:</p>
 <pre><code>#!/bin/sh
 DEO_FILE=&quot;/etc/httpd/deo.d/$1&quot;
 [ -f &quot;$DEO_FILE&quot; ] &amp;&amp; deo decrypt &lt; &quot;$DEO_FILE&quot; &amp;&amp; echo &amp;&amp; exit
@@ -77,10 +121,26 @@ exec /bin/systemd-ask-password &quot;Enter SSL pass phrase for $1 ($2) : &quot;<
 CLEVIS_FILE=&quot;/etc/httpd/clevis.d/$1&quot;
 [ -f &quot;$CLEVIS_FILE&quot; ] &amp;&amp; clevis acquire -I &quot;$CLEVIS_FILE&quot; &amp;&amp; echo &amp;&amp; exit
 exec /bin/systemd-ask-password &quot;Enter SSL pass phrase for $1 ($2) : &quot;</code></pre>
-<p>The <code>clevis acquire -I "$CLEVIS_FILE"</code> invocation is the only substantive change. Now we can finally <code>systemctl restart httpd</code> and observe that the key is decrypted automatically, without prompting the operator.</p>
-<p>What are the possible downsides to this approach? First, due to limitations in Apache’s passphrase acquisition at present it is possible only to use Clevis pins that do not interact with the user or write to standard output. Second, the secret is no longer controlled by the user doing the provisioning - the TLS private key must be re-encrypted under the new passphrase generated by Clevis, and if the Tang server is unavailable, that is the passphrase that must be entered at the fallback prompt. A lot more work needs to be done to make Clevis a suitable general solution for key decryption in Apache or other network servers, but for this simple case, Clevis and Tang work very well, as long as the Tang server is available.</p>
+<p>The <code>clevis acquire -I "$CLEVIS_FILE"</code> invocation is the only
+substantive change. Now we can finally <code>systemctl restart httpd</code>
+and observe that the key is decrypted automatically, without
+prompting the operator.</p>
+<p>What are the possible downsides to this approach? First, due to
+limitations in Apache’s passphrase acquisition at present it is
+possible only to use Clevis pins that do not interact with the user
+or write to standard output. Second, the secret is no longer
+controlled by the user doing the provisioning - the TLS private key
+must be re-encrypted under the new passphrase generated by Clevis,
+and if the Tang server is unavailable, that is the passphrase that
+must be entered at the fallback prompt. A lot more work needs to be
+done to make Clevis a suitable general solution for key decryption
+in Apache or other network servers, but for this simple case, Clevis
+and Tang work very well, as long as the Tang server is available.</p>
 <h2 id="conclusion">Conclusion <a href="#conclusion" class="section">§</a></h2>
-<p>This has been a <em>very</em> quick and shallow introduction to Clevis and Tang. For a deeper overview and demonstration of Tang server deployment and more advances Clevis policies, I recommend watching Nathaniel McCallum’s <a href="https://youtu.be/p_M0YEE-esA?t=40">talk from DevConf.cz 2016</a>.</p>
+<p>This has been a <em>very</em> quick and shallow introduction to Clevis and
+Tang. For a deeper overview and demonstration of Tang server
+deployment and more advances Clevis policies, I recommend watching
+Nathaniel McCallum’s <a href="https://youtu.be/p_M0YEE-esA?t=40">talk from DevConf.cz 2016</a>.</p>
 <p>Other useful links:</p>
 <ul>
 <li><a href="https://github.com/npmccallum/clevis">https://github.com/npmccallum/clevis</a></li>

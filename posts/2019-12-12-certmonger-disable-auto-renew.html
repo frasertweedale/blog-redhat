@@ -26,21 +26,38 @@
 
 <div id="postContent">
     <h1 id="disabling-certmonger-auto-renewal">Disabling Certmonger auto-renewal</h1>
-<p>A customer recently asked how to disable Certmonger auto-renewal of some FreeIPA system certificates. Their organisation’s security policy prohibited auto-renewal. (This is not a good idea in general, but this was a very security-conscious organisation so I’ll assume they have good reasons).</p>
-<p>One way to achieve this is to remove the Certmonger tracking requests via <code>getcert stop-tracking</code>. But when it comes time to renew the certificate, this makes life hard. The Certmonger tracking requests are set up to:</p>
+<p>A customer recently asked how to disable Certmonger auto-renewal of
+some FreeIPA system certificates. Their organisation’s security
+policy prohibited auto-renewal. (This is not a good idea in
+general, but this was a very security-conscious organisation so I’ll
+assume they have good reasons).</p>
+<p>One way to achieve this is to remove the Certmonger tracking
+requests via <code>getcert stop-tracking</code>. But when it comes time to
+renew the certificate, this makes life hard. The Certmonger
+tracking requests are set up to:</p>
 <ul>
 <li>Use the correct renewal helpers to issue the certificate properly</li>
 <li>Store the certificate in the correct place</li>
-<li>Copy the certificate to particular LDAP entries to ensure the FreeIPA system continues to function</li>
+<li>Copy the certificate to particular LDAP entries to ensure the
+FreeIPA system continues to function</li>
 </ul>
-<p>Removing the tracking request means that you have to do all the above tasks yourself. And the steps differ depending on the certificate being renewed. There are many ways to mess up.</p>
-<p>A better approach is to keep the Certmonger tracking requests defined, but disable auto-renewal. It is not obvious that you can even do this, let alone <em>how</em> to do it. And that is why I wrote this post. The command is:</p>
+<p>Removing the tracking request means that you have to do all the
+above tasks yourself. And the steps differ depending on the
+certificate being renewed. There are many ways to mess up.</p>
+<p>A better approach is to keep the Certmonger tracking requests
+defined, but disable auto-renewal. It is not obvious that you can
+even do this, let alone <em>how</em> to do it. And that is why I wrote
+this post. The command is:</p>
 <pre><code># getcert start-tracking -i $REQUEST_ID --no-renew</code></pre>
-<p>Don’t let the name <code>start-tracking</code> trick you. If you supply <code>-i $REQUEST_ID</code> this command will modify the existing request. With auto-renewal disabled, to renew the certificate you must manually trigger it via:</p>
+<p>Don’t let the name <code>start-tracking</code> trick you. If you supply <code>-i $REQUEST_ID</code> this command will modify the existing request. With
+auto-renewal disabled, to renew the certificate you must manually
+trigger it via:</p>
 <pre><code># getcert resubmit -i $REQUEST_ID</code></pre>
 <p>If you want to reenable auto-renewal, use the <code>--renew</code> flag:</p>
 <pre><code># getcert start-tracking -i $REQUEST_ID --renew</code></pre>
-<p>The following transcript deals with the IPA RA agent certificate tracking request. We first disable auto-renewal, then manually renew the certificate, and finally reenable auto-renewal.</p>
+<p>The following transcript deals with the IPA RA agent certificate tracking
+request. We first disable auto-renewal, then manually renew the
+certificate, and finally reenable auto-renewal.</p>
 <pre><code># getcert list -i 20191206060652                                                                                                                        [6/38]
 Number of certificates and requests being tracked: 9.           
 Request ID '20191206060652':                                                          
@@ -82,7 +99,12 @@ Request &quot;20191206060652&quot; modified.
 
 # getcert list -i 20191206060652 |grep auto-renew
         auto-renew: yes</code></pre>
-<p>A final note. I used the long form <code>--[no-]renew</code> options. I prefer long options because they are usually easier for readers (including <em>future me</em>) to understand. But <code>getcert-start-tracking(1)</code> and other Certmonger man pages don’t even mention the long options. The corresponding short options are <code>-r</code> (enable auto-renew) and <code>-R</code> (disable auto-renew).</p>
+<p>A final note. I used the long form <code>--[no-]renew</code> options. I
+prefer long options because they are usually easier for readers
+(including <em>future me</em>) to understand. But
+<code>getcert-start-tracking(1)</code> and other Certmonger man pages don’t
+even mention the long options. The corresponding short options are
+<code>-r</code> (enable auto-renew) and <code>-R</code> (disable auto-renew).</p>
 </div>
 <div id="postFooter">
     <div id="recent">
