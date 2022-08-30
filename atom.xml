@@ -84,23 +84,23 @@ our own implementation. I couldn’t find a general way to do that
 via the JAX-RS API. It does seem that you can do it using RESTEasy
 classes directly:</p>
 <ol type="1">
-<li><p>Implement the custom <code>HeaderDelegate&lt;MediaType&gt;</code>. To avoid
+<li>Implement the custom <code>HeaderDelegate&lt;MediaType&gt;</code>. To avoid
 unnecessary work you could extend RESTEasy’s
 <code>MediaTypeHeaderDelegate</code> and override just the
-<code>toString(MediaType)</code> method.</p></li>
-<li><p>Obtain <code>ResteasyProviderFactory.getInstance()</code>. Invoke
+<code>toString(MediaType)</code> method.</li>
+<li>Obtain <code>ResteasyProviderFactory.getInstance()</code>. Invoke
 <code>.addHeaderDelegate(MediaType.class, customInst)</code> to replace the
-<code>HeaderDelegate&lt;MediaType&gt;</code>.</p></li>
+<code>HeaderDelegate&lt;MediaType&gt;</code>.</li>
 </ol>
 <p>This approach has several disadvantages:</p>
 <ul>
-<li><p>Directly coupled to the RESTEasy implementation. May break if
+<li>Directly coupled to the RESTEasy implementation. May break if
 RESTEasy implementation details change and will not work with
-other JAX-RS implementations.</p></li>
-<li><p>Need to implement a custom <code>HeaderDelegate&lt;MediaType&gt;</code> with the
-“correct” serialisation behaviour.</p></li>
-<li><p><strong>The “correct” serialisation behaviour might break <em>other</em> clients
-with different bugs/quirks.</strong></p></li>
+other JAX-RS implementations.</li>
+<li>Need to implement a custom <code>HeaderDelegate&lt;MediaType&gt;</code> with the
+“correct” serialisation behaviour.</li>
+<li><strong>The “correct” serialisation behaviour might break <em>other</em> clients
+with different bugs/quirks.</strong></li>
 </ul>
 <p>For these reasons I rejected the first idea and sought an approach
 that avoids these disadvantages.</p>
@@ -126,13 +126,13 @@ value (which will be written <em>as is</em>).</p>
 properties of the instance without regard to string representation.
 As it should. This enables a succinct implementation where we:</p>
 <ol type="1">
-<li><p>Decalre <em>verbatim</em> <code>String</code> header values we want to see in the
-response.</p></li>
-<li><p>Parse those strings into <code>MediaType</code> values.</p></li>
-<li><p>Match the <code>Content-Type</code> value in the response against parsed
-values.</p></li>
-<li><p>Replace matched header values with the corresponding <em>verbatim</em>
-<code>String</code>.</p></li>
+<li>Decalre <em>verbatim</em> <code>String</code> header values we want to see in the
+response.</li>
+<li>Parse those strings into <code>MediaType</code> values.</li>
+<li>Match the <code>Content-Type</code> value in the response against parsed
+values.</li>
+<li>Replace matched header values with the corresponding <em>verbatim</em>
+<code>String</code>.</li>
 </ol>
 <p>The implementation is straightforward:</p>
 <div class="sourceCode" id="cb9"><pre class="sourceCode java"><code class="sourceCode java"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="at">@Provider</span></span>
@@ -179,12 +179,12 @@ the increase in complexity of the solution is tolerable.</p>
 <p>This solution works well and avoids the disadvantages of my first
 idea:</p>
 <ul>
-<li><p>Only uses official Servlet and JAX-RS classes and interfaces.
-This solution will work across all JAX-RS implementations.</p></li>
-<li><p>Does not (re)implement <code>MediaType</code> serialsation. You just declare
-the exact string values you want to see in responses.</p></li>
-<li><p>With a moderate increase in complexity, can handle different
-clients with incompatible quriks.</p></li>
+<li>Only uses official Servlet and JAX-RS classes and interfaces.
+This solution will work across all JAX-RS implementations.</li>
+<li>Does not (re)implement <code>MediaType</code> serialsation. You just declare
+the exact string values you want to see in responses.</li>
+<li>With a moderate increase in complexity, can handle different
+clients with incompatible quriks.</li>
 </ul>
 <h2 id="conclusion">Conclusion <a href="#conclusion" class="section">§</a></h2>
 <p>It’s unfortunate that this workaround was even necessary. But given
