@@ -356,7 +356,7 @@ examines when processing the `map-to-root` option.  If it is unset,
 fail to run.
 
 The consequence of this is that the user or operator creating the
-Pod must first examing the Project or Namespace object to learn what
+Pod must first examine the Project or Namespace object to learn what
 its assigned UID range is.  Then it must set the
 `spec.securityContext.runAsUser` field to the start value of that
 range.  The range assignment will certainly differ from project to
