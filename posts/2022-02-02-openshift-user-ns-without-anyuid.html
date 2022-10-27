@@ -282,7 +282,7 @@ examines when processing the <code>map-to-root</code> option. If it is unset,
 <code>CRI-O</code> will not set the mapping up properly and container(s) will
 fail to run.</p>
 <p>The consequence of this is that the user or operator creating the
-Pod must first examing the Project or Namespace object to learn what
+Pod must first examine the Project or Namespace object to learn what
 its assigned UID range is. Then it must set the
 <code>spec.securityContext.runAsUser</code> field to the start value of that
 range. The range assignment will certainly differ from project to
