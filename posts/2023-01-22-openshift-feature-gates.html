@@ -1,0 +1,192 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+    <head>
+        <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+        <title>Fraser's IdM Blog - Setting Kubernetes feature gates in OpenShift</title>
+        <link rel="stylesheet" type="text/css" href="../css/default.css" />
+    </head>
+    <body>
+        <div id="header">
+            <div id="logo">
+                <a href="../">Fraser's IdM Blog</a>
+            </div>
+            <div id="navigation">
+                <a href="../">Home</a>
+                <a href="../archive.html">Archive</a>
+            </div>
+        </div>
+
+        <div id="content">
+            <div class="info">
+    
+    Tags: <a title="All pages tagged 'openshift'." href="../tags/openshift.html">openshift</a>, <a title="All pages tagged 'kubernetes'." href="../tags/kubernetes.html">kubernetes</a>
+    
+</div>
+
+<div id="postContent">
+    <h1 id="setting-kubernetes-feature-gates-in-openshift">Setting Kubernetes feature gates in OpenShift</h1>
+<p>When Kubernetes adds a feature or changes an existing one, the new
+behaviour usually starts out hidden behind a <a href="https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/"><em>feature
+gate</em></a>. Enhancements start off in the <em>Alpha</em>
+stability class, where they are usually guarded by a feature gate
+that is <strong>off by default</strong>. If the enhancement proves stable and
+useful, after a few releases it will be promoted to <em>Beta</em>, and the
+feature gate will typically default to <strong>on</strong>, though it can still
+be disabled. The final stage of an enhancement is <em>GA (generally
+available)</em>. If an enhancement reaches this stage, its feature gate
+becomes non-operational and is <a href="https://kubernetes.io/docs/reference/using-api/deprecation-policy/">deprecated</a>, to be removed in a
+later release.</p>
+<p>So, in a real world deployment how do you enable or disable a
+feature gate? There are several “distributions” of Kubernetes and
+various ways of doing it. In this short post I’ll demonstrate how
+to set feature gates in <em>OpenShift</em>, Red Hat’s container orchestration
+platform which is built on Kubernetes.</p>
+<h2 id="the-featuregate-resource">The <code>FeatureGate</code> resource <a href="#the-featuregate-resource" class="section">§</a></h2>
+<p>OpenShift recognises a <code>FeatureGate</code> resource type. A single,
+resource of this type named <code>cluster</code> determines the feature gates
+used across the cluster. A cluster administrator can modify
+<code>FeatureGate/cluster</code> to vary the feature gates set in the cluster
+from the defaults.</p>
+<p>The <code>FeatureGate</code> resource is more than a mere list of feature gates
+to enable or disable. First, in addition to Kubernetes feature
+gates, it can also set feature gates for features in OpenShift
+itself, or other components or products in the cluster. Second, it
+can refer to named <em>feature sets</em>—groups of feature gates—as an
+alternative to explicitly listing all the feature gates to enable or
+disable.</p>
+<p>For example, the <code>TechPreviewNoUpgrade</code> feature set enables a
+collection of features that Red Hat have marked as useful and worthy
+of customer <em>testing</em>, with a view to possible promotion to full
+support in a future release. Customers do not need to enable
+individual feature gates but can instead enable all the <em>Technology
+Preview</em> features via the following <code>FeatureGate</code> spec:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> config.openshift.io/v1</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> FeatureGate</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="fu">metadata</span><span class="kw">:</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> cluster</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="fu">spec</span><span class="kw">:</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">featureSet</span><span class="kw">:</span><span class="at"> TechPreviewNoUpgrade</span></span></code></pre></div>
+<div class="note">
+<p>Unlike the more general <code>MachineConfig</code> objects, <code>FeatureGate</code>
+objects do not get composed together. Only the single object name
+<code>cluster</code> is recognised. So there is no “lightweight” way to enable
+all the feature gates from <code>TechPreviewNoUpgrade</code> plus one or two
+additional feature gates. To accomplish that, use a
+<code>CustomNoUpgrade</code> with <strong>all</strong> the desired feature gates listed.</p>
+</div>
+<h2 id="enabling-specific-feature-gates">Enabling specific feature gates <a href="#enabling-specific-feature-gates" class="section">§</a></h2>
+<p>What if the <code>TechPreviewNoUpgrade</code> feature set does not include the
+feature gate you want to enable? The <code>CustomNoUpgrade</code> feature set
+allows you to list the specific feature gates you want to enable or
+disable. The following exmaple enables the
+<code>UserNamespaceStatelessPodsSupport</code> feature gate:</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> config.openshift.io/v1</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> FeatureGate</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="fu">metadata</span><span class="kw">:</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> cluster</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a><span class="fu">spec</span><span class="kw">:</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">featureSet</span><span class="kw">:</span><span class="at"> CustomNoUpgrade</span></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">customNoUpgrade</span><span class="kw">:</span></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">enabled</span><span class="kw">:</span></span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="kw">-</span><span class="at"> UserNamespacesStatelessPodsSupport</span></span></code></pre></div>
+<h2 id="applying-featuregate-changes">Applying <code>FeatureGate</code> changes <a href="#applying-featuregate-changes" class="section">§</a></h2>
+<p>When you change <code>FeatureGate/cluster</code>, new <code>MachineConfig</code> objects
+get generated containing updated configurations of the relevant
+Kubernetes and OpenShift components (e.g. <em>kubelet</em>). Machine
+Config Operator will progressively update and restart the nodes in
+the cluster, while ensuring availability.</p>
+<p>Let’s see an example. First, observe that all <code>MachineConfigPool</code>s
+are up to date (<code>ready</code> count = machine <code>count</code>):</p>
+<pre class="shell"><code>% oc get MachineConfigPool -o json | jq --compact-output \
+    '.items[] | { name: .metadata.name \
+                , count: .status.machineCount \
+                , ready: .status.readyMachineCount}'
+{&quot;name&quot;:&quot;master&quot;,&quot;count&quot;:3,&quot;ready&quot;:3}
+{&quot;name&quot;:&quot;worker&quot;,&quot;count&quot;:3,&quot;ready&quot;:3}</code></pre>
+<p>Also observe that the <code>FeatureGate/cluster</code> object does exist, but
+its spec is empty (so the default feature gate settings are used):</p>
+<pre class="shell"><code>% oc get -o json FeatureGate/cluster | jq .spec
+{}</code></pre>
+<p>Now update the <code>FeatureGate/cluster</code> object. Assume the
+<code>CustomNoUpgrade</code> configuration shown earlier resides in a file
+named <code>featuregate-userns.yaml</code>.</p>
+<pre class="shell"><code>% oc replace -f featuregate-userns.yaml
+featuregate.config.openshift.io/cluster replaced</code></pre>
+<p>After a few moments, Machine Config Operator will observe the new
+configuration and start updating and restarting the nodes.
+Initially, all pools have zero machines in state <code>ready</code> (because
+they all need updating):</p>
+<pre class="shell"><code>% oc get MachineConfigPool -o json | jq --compact-output \
+    '.items[] | { name: .metadata.name \
+                , count: .status.machineCount \
+                , ready: .status.readyMachineCount}'
+{&quot;name&quot;:&quot;master&quot;,&quot;count&quot;:3,&quot;ready&quot;:0}
+{&quot;name&quot;:&quot;worker&quot;,&quot;count&quot;:3,&quot;ready&quot;:0}</code></pre>
+<p>After some period of time (which will vary by cluster size), all the
+nodes will have received the updated configuration and restarted.</p>
+<p>As for verifying that the updates were applied correctly, that will
+depend on which gates are being enabled or disabled. It is out of
+scope for this article. But in terms of <em>how</em> to set feature flags
+in OpenShift, I hope that this article has conveyed it clearly and
+that it will be useful to others.</p>
+<p>For further detail, see the official OpenShift <a href="https://docs.openshift.com/container-platform/4.12/nodes/clusters/nodes-cluster-enabling-features.html"><code>FeatureGate</code>
+documentation</a> and <a href="https://docs.openshift.com/container-platform/4.12/rest_api/config_apis/featuregate-config-openshift-io-v1.html"><code>FeatureGate</code> object
+schema</a>.</p>
+</div>
+<div id="postFooter">
+    <div id="recent">
+Recent posts:
+<ul>
+    
+        <li>
+            <a href="../posts/2023-01-22-openshift-feature-gates.html">Setting Kubernetes feature gates in OpenShift</a>
+        </li>
+    
+        <li>
+            <a href="../posts/2022-08-29-jax-rs-header-formatting.html">Controlling header formatting in JAX-RS applications</a>
+        </li>
+    
+        <li>
+            <a href="../posts/2022-03-24-k8s-external-dns.html">Experimenting with ExternalDNS</a>
+        </li>
+    
+        <li>
+            <a href="../posts/2022-02-02-openshift-user-ns-without-anyuid.html">Running Pods in user namespaces without privileged SCCs</a>
+        </li>
+    
+        <li>
+            <a href="../posts/2021-11-18-k8s-tcp-udp-ingress.html">Bare TCP and UDP ingress on Kubernetes</a>
+        </li>
+    
+</ul>
+
+<div id="recentLinks">
+    <a type="application/atom+xml" href="../atom.xml">Atom feed</a>
+     <!-- em space -->
+    <a href="../archive.html">All posts…</a>
+</div>
+
+</div>
+
+    <div id="license">
+    <a rel="license" href="https://creativecommons.org/licenses/by/4.0/">
+        <img alt="Creative Commons License" style="border-width:0" src="https://licensebuttons.net/l/by/4.0/88x31.png">
+    </a>
+    <br />
+    Except where otherwise noted, this work is licensed under a
+    <a rel="license" href="https://creativecommons.org/licenses/by/4.0/">
+        Creative Commons Attribution 4.0 International License
+    </a>.
+</div>
+
+</div>
+
+        </div>
+        <div class="clear"></div>
+        <div id="footer">
+            Generated by
+            <a href="https://jaspervdj.be/hakyll">Hakyll</a>
+        </div>
+    </body>
+</html>

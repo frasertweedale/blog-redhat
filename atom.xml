@@ -8,8 +8,123 @@
         <name>Fraser Tweedale</name>
         <email>frase@frase.id.au</email>
     </author>
-    <updated>2022-08-29T00:00:00Z</updated>
+    <updated>2023-01-22T00:00:00Z</updated>
     <entry>
+    <title>Setting Kubernetes feature gates in OpenShift</title>
+    <link href="https://frasertweedale.github.io/blog-redhat/posts/2023-01-22-openshift-feature-gates.html" />
+    <id>https://frasertweedale.github.io/blog-redhat/posts/2023-01-22-openshift-feature-gates.html</id>
+    <published>2023-01-22T00:00:00Z</published>
+    <updated>2023-01-22T00:00:00Z</updated>
+    <summary type="html"><![CDATA[<h1 id="setting-kubernetes-feature-gates-in-openshift">Setting Kubernetes feature gates in OpenShift</h1>
+<p>When Kubernetes adds a feature or changes an existing one, the new
+behaviour usually starts out hidden behind a <a href="https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/"><em>feature
+gate</em></a>. Enhancements start off in the <em>Alpha</em>
+stability class, where they are usually guarded by a feature gate
+that is <strong>off by default</strong>. If the enhancement proves stable and
+useful, after a few releases it will be promoted to <em>Beta</em>, and the
+feature gate will typically default to <strong>on</strong>, though it can still
+be disabled. The final stage of an enhancement is <em>GA (generally
+available)</em>. If an enhancement reaches this stage, its feature gate
+becomes non-operational and is <a href="https://kubernetes.io/docs/reference/using-api/deprecation-policy/">deprecated</a>, to be removed in a
+later release.</p>
+<p>So, in a real world deployment how do you enable or disable a
+feature gate? There are several “distributions” of Kubernetes and
+various ways of doing it. In this short post I’ll demonstrate how
+to set feature gates in <em>OpenShift</em>, Red Hat’s container orchestration
+platform which is built on Kubernetes.</p>
+<h2 id="the-featuregate-resource">The <code>FeatureGate</code> resource <a href="#the-featuregate-resource" class="section">§</a></h2>
+<p>OpenShift recognises a <code>FeatureGate</code> resource type. A single,
+resource of this type named <code>cluster</code> determines the feature gates
+used across the cluster. A cluster administrator can modify
+<code>FeatureGate/cluster</code> to vary the feature gates set in the cluster
+from the defaults.</p>
+<p>The <code>FeatureGate</code> resource is more than a mere list of feature gates
+to enable or disable. First, in addition to Kubernetes feature
+gates, it can also set feature gates for features in OpenShift
+itself, or other components or products in the cluster. Second, it
+can refer to named <em>feature sets</em>—groups of feature gates—as an
+alternative to explicitly listing all the feature gates to enable or
+disable.</p>
+<p>For example, the <code>TechPreviewNoUpgrade</code> feature set enables a
+collection of features that Red Hat have marked as useful and worthy
+of customer <em>testing</em>, with a view to possible promotion to full
+support in a future release. Customers do not need to enable
+individual feature gates but can instead enable all the <em>Technology
+Preview</em> features via the following <code>FeatureGate</code> spec:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> config.openshift.io/v1</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> FeatureGate</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="fu">metadata</span><span class="kw">:</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> cluster</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="fu">spec</span><span class="kw">:</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">featureSet</span><span class="kw">:</span><span class="at"> TechPreviewNoUpgrade</span></span></code></pre></div>
+<div class="note">
+<p>Unlike the more general <code>MachineConfig</code> objects, <code>FeatureGate</code>
+objects do not get composed together. Only the single object name
+<code>cluster</code> is recognised. So there is no “lightweight” way to enable
+all the feature gates from <code>TechPreviewNoUpgrade</code> plus one or two
+additional feature gates. To accomplish that, use a
+<code>CustomNoUpgrade</code> with <strong>all</strong> the desired feature gates listed.</p>
+</div>
+<h2 id="enabling-specific-feature-gates">Enabling specific feature gates <a href="#enabling-specific-feature-gates" class="section">§</a></h2>
+<p>What if the <code>TechPreviewNoUpgrade</code> feature set does not include the
+feature gate you want to enable? The <code>CustomNoUpgrade</code> feature set
+allows you to list the specific feature gates you want to enable or
+disable. The following exmaple enables the
+<code>UserNamespaceStatelessPodsSupport</code> feature gate:</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> config.openshift.io/v1</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> FeatureGate</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="fu">metadata</span><span class="kw">:</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> cluster</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a><span class="fu">spec</span><span class="kw">:</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">featureSet</span><span class="kw">:</span><span class="at"> CustomNoUpgrade</span></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">customNoUpgrade</span><span class="kw">:</span></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">enabled</span><span class="kw">:</span></span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="kw">-</span><span class="at"> UserNamespacesStatelessPodsSupport</span></span></code></pre></div>
+<h2 id="applying-featuregate-changes">Applying <code>FeatureGate</code> changes <a href="#applying-featuregate-changes" class="section">§</a></h2>
+<p>When you change <code>FeatureGate/cluster</code>, new <code>MachineConfig</code> objects
+get generated containing updated configurations of the relevant
+Kubernetes and OpenShift components (e.g. <em>kubelet</em>). Machine
+Config Operator will progressively update and restart the nodes in
+the cluster, while ensuring availability.</p>
+<p>Let’s see an example. First, observe that all <code>MachineConfigPool</code>s
+are up to date (<code>ready</code> count = machine <code>count</code>):</p>
+<pre class="shell"><code>% oc get MachineConfigPool -o json | jq --compact-output \
+    &#39;.items[] | { name: .metadata.name \
+                , count: .status.machineCount \
+                , ready: .status.readyMachineCount}&#39;
+{&quot;name&quot;:&quot;master&quot;,&quot;count&quot;:3,&quot;ready&quot;:3}
+{&quot;name&quot;:&quot;worker&quot;,&quot;count&quot;:3,&quot;ready&quot;:3}</code></pre>
+<p>Also observe that the <code>FeatureGate/cluster</code> object does exist, but
+its spec is empty (so the default feature gate settings are used):</p>
+<pre class="shell"><code>% oc get -o json FeatureGate/cluster | jq .spec
+{}</code></pre>
+<p>Now update the <code>FeatureGate/cluster</code> object. Assume the
+<code>CustomNoUpgrade</code> configuration shown earlier resides in a file
+named <code>featuregate-userns.yaml</code>.</p>
+<pre class="shell"><code>% oc replace -f featuregate-userns.yaml
+featuregate.config.openshift.io/cluster replaced</code></pre>
+<p>After a few moments, Machine Config Operator will observe the new
+configuration and start updating and restarting the nodes.
+Initially, all pools have zero machines in state <code>ready</code> (because
+they all need updating):</p>
+<pre class="shell"><code>% oc get MachineConfigPool -o json | jq --compact-output \
+    &#39;.items[] | { name: .metadata.name \
+                , count: .status.machineCount \
+                , ready: .status.readyMachineCount}&#39;
+{&quot;name&quot;:&quot;master&quot;,&quot;count&quot;:3,&quot;ready&quot;:0}
+{&quot;name&quot;:&quot;worker&quot;,&quot;count&quot;:3,&quot;ready&quot;:0}</code></pre>
+<p>After some period of time (which will vary by cluster size), all the
+nodes will have received the updated configuration and restarted.</p>
+<p>As for verifying that the updates were applied correctly, that will
+depend on which gates are being enabled or disabled. It is out of
+scope for this article. But in terms of <em>how</em> to set feature flags
+in OpenShift, I hope that this article has conveyed it clearly and
+that it will be useful to others.</p>
+<p>For further detail, see the official OpenShift <a href="https://docs.openshift.com/container-platform/4.12/nodes/clusters/nodes-cluster-enabling-features.html"><code>FeatureGate</code>
+documentation</a> and <a href="https://docs.openshift.com/container-platform/4.12/rest_api/config_apis/featuregate-config-openshift-io-v1.html"><code>FeatureGate</code> object
+schema</a>.</p>]]></summary>
+</entry>
+<entry>
     <title>Controlling header formatting in JAX-RS applications</title>
     <link href="https://frasertweedale.github.io/blog-redhat/posts/2022-08-29-jax-rs-header-formatting.html" />
     <id>https://frasertweedale.github.io/blog-redhat/posts/2022-08-29-jax-rs-header-formatting.html</id>
@@ -2479,320 +2594,6 @@ the permissions required to do this. Unless SELinux prevents it.</p></li>
 directory seems the most promising. While I wait for feedback on
 <a href="https://github.com/systemd/systemd/issues/19781">systemd#19781</a>, I will start hacking on <code>runc</code> and testing my
 modifications.</p>]]></summary>
-</entry>
-<entry>
-    <title>Using runc to explore the OCI Runtime Specification</title>
-    <link href="https://frasertweedale.github.io/blog-redhat/posts/2021-05-27-oci-runtime-spec-runc.html" />
-    <id>https://frasertweedale.github.io/blog-redhat/posts/2021-05-27-oci-runtime-spec-runc.html</id>
-    <published>2021-05-27T00:00:00Z</published>
-    <updated>2021-05-27T00:00:00Z</updated>
-    <summary type="html"><![CDATA[<h1 id="using-runc-to-explore-the-oci-runtime-specification">Using <code>runc</code> to explore the OCI Runtime Specification</h1>
-<p>In recent posts I explored how to use user namespaces and cgroups v2
-on OpenShift. My main objective is to run <em>systemd</em>-based workloads
-in user namespaces that map to unprivileged users on the host. This
-is a prerequisite to running <a href="https://www.freeipa.org/page/Main_Page">FreeIPA</a> <em>securely</em> in OpenShift,
-and supporting multitenancy.</p>
-<p>Independently, user namespaces and cgroups v2 already work well in
-OpenShift. But for <em>systemd</em> support there is a critical gap: the
-pod’s cgroup directory (mounted as <code>/sys/fs/cgroup/</code> in the
-container) is owned by <code>root</code>—the <em>host’s</em> UID 0, which is unmapped
-in the pod’s user namespace. As a consequence, the container’s main
-process (<code>/sbin/init</code>, which is <em>systemd</em>) cannot manage cgroups,
-and terminates.</p>
-<p>To understand how to close this gap, I needed to become familiar
-with the low-level container runtime behaviour. This post discusses
-the relationship between various container runtime components and
-demonstrates how to use <code>runc</code> directly to create and run
-containers. I also outline some possible approaches to solving the
-cgroup ownership issue.</p>
-<h2 id="podman-kubernetes-cri-cri-o-runc-oh-my">Podman, Kubernetes, CRI, CRI-O, runc, oh my! <a href="#podman-kubernetes-cri-cri-o-runc-oh-my" class="section">§</a></h2>
-<p>What actually happens when you “run a container”. Abstractly, a
-container runtime sets up a <em>sandbox</em> and runs a process in it. The
-sandbox consists of a set of namespaces (PID, UTS, mount, cgroup,
-user, network, etc), and a restricted view of a filesystem (via
-<code>chroot(2)</code> or similar mechanism).</p>
-<p>There are several different container runtimes in widespread use.
-In fact, there are several different <em>layers</em> of container runtime
-with different purposes:</p>
-<ul>
-<li><p>End-user focused container runtimes include <a href="https://podman.io/"><em>Podman</em></a> and
-<em>Docker</em>.</p></li>
-<li><p>Kubernetes defines the <a href="https://github.com/kubernetes/community/blob/master/contributors/devel/sig-node/container-runtime-interface.md">Container Runtime Interface (CRI)</a>,
-which it uses to run containers. Compliant implementations
-include <em>containerd</em> and <a href="https://github.com/cri-o/cri-o"><em>CRI-O</em></a>.</p></li>
-<li><p>The <em>Open Container Initiative (OCI)</em> <a href="https://github.com/opencontainers/runtime-spec">runtime spec</a> defines a
-low-level container runtime interface. Implementations include
-<a href="https://github.com/opencontainers/runc"><code>runc</code></a> and <a href="https://github.com/containers/crun"><em>crun</em></a>. OCI runtimes are designed to
-be used by higher-level container runtimes. They are not friendly
-for humans to use directly.</p></li>
-</ul>
-<p>Running a container usually involves a higher-level runtime <em>and</em> a
-low-level runtime. For example, Podman uses an OCI runtime; crun by
-default on Fedora but <code>runc</code> works fine too. OpenShift (which is
-built on Kubernetes) uses CRI-O, which in turn uses <code>runc</code> (CRI-O
-itself can use any OCI runtime).</p>
-<h3 id="division-of-responsibilities">Division of responsibilities <a href="#division-of-responsibilities" class="section">§</a></h3>
-<p>So, what are responsibilities of the higher-level runtime compared
-to the OCI (or other low-level) runtime? In general the high-level
-runtime is responsible for:</p>
-<ul>
-<li><p>Image management (pulling layers, preparing overlay filesystem)</p></li>
-<li><p>Determining the mounts, environment, namespaces, resource limits
-and security policies for the container</p></li>
-<li><p>Network setup for the container</p></li>
-<li><p>Metrics, accounting, etc.</p></li>
-</ul>
-<p>The steps performed by the low-level runtime include:</p>
-<ul>
-<li><p>Create and and enter required namespaces</p></li>
-<li><p><code>chroot(2)</code> or <code>pivot_root(2)</code> to the specified root filesystem
-path</p></li>
-<li><p>Create requested mounts</p></li>
-<li><p>Create cgroups and apply resource limits</p></li>
-<li><p>Adjust capabilities and apply seccomp policy</p></li>
-<li><p>Execute the container’s main process</p></li>
-</ul>
-<div class="note">
-<p>I mentioned several features specific to Linux in the list above.
-The OCI Runtime Specification also specifies Windows, Solaris and
-VM-based workloads. This post assumes a Linux workload, so many
-details are Linux-specific.</p>
-</div>
-<p>The above list is just a rough guide and not absolute. Depending on
-use case the high-level runtime might perform some of the low-level
-steps. For example, if container networking is required, Podman
-might create the network namespace, setting up devices and routing.
-Then, instead of asking the OCI runtime to create a network
-namespace, it tells the runtime to enter the existing namespace.</p>
-<h2 id="running-containers-via-runc">Running containers via <code>runc</code> <a href="#running-containers-via-runc" class="section">§</a></h2>
-<p>Because our effort is targeting OpenShift, the rest of this post
-mainly deals with <code>runc</code>.</p>
-<div class="note">
-<p>The functions demonstrated in this post were performed using <code>runc</code>
-version 1.0.0-rc95+dev, which I built from source (commit
-<code>19d75e1c</code>). The Fedora 33 and 34 repositories offer <code>runc</code> version
-1.0.0-rc93, which <strong>does not work</strong>.</p>
-</div>
-<h3 id="clone-and-build">Clone and build <a href="#clone-and-build" class="section">§</a></h3>
-<p>Install the Go compiler and <em>libseccomp</em> development headers:</p>
-<pre class="shell"><code>% sudo dnf -y --quiet install libseccomp-devel
-
-Installed:
-  golang-1.16.3-1.fc34.x86_64
-  golang-bin-1.16.3-1.fc34.x86_64
-  golang-src-1.16.3-1.fc34.noarch
-  libseccomp-devel-2.5.0-4.fc34.x86_64</code></pre>
-<p>Clone the <code>runc</code> source code and build the program:</p>
-<pre class="shell"><code>% mkdir -p ~/go/src/github.com/opencontainers
-% cd ~/go/src/github.com/opencontainers
-% git clone --quiet https://github.com/opencontainers/runc
-% cd runc
-% make --quiet
-% ./runc --version
-runc version 1.0.0-rc95+dev
-commit: v1.0.0-rc95-31-g19d75e1c
-spec: 1.0.2-dev
-go: go1.16.3
-libseccomp: 2.5.0</code></pre>
-<h3 id="prepare-root-filesystem">Prepare root filesystem <a href="#prepare-root-filesystem" class="section">§</a></h3>
-<p>I want to create a filesystem from my <em>systemd</em> based
-<a href="https://quay.io/repository/ftweedal/test-nginx"><code>test-nginx</code></a> container image. To avoid
-configuring overlay filesystems myself, I used Podman to create a
-container, then exported the whole container filesystem, via
-<code>tar(1)</code>, to a local directory:</p>
-<pre class="shell"><code>% podman create --quiet quay.io/ftweedal/test-nginx
-e97930b3…
-% mkdir rootfs
-% podman export e97930b3 | tar -xC rootfs
-% ls rootfs
-bin  dev home lib64      media opt  root sbin sys usr
-boot etc lib  lost+found mnt   proc run  srv  tmp var</code></pre>
-<h3 id="create-config.json">Create <code>config.json</code> <a href="#create-config.json" class="section">§</a></h3>
-<p>OCI runtimes read the container configuration from <code>config.json</code> in
-the <em>bundle</em> directory. (<code>runc</code> uses the current directory as the
-default bundle directory). The <code>runc spec</code> command generates a
-sample <code>config.json</code> which can serve as a starting point:</p>
-<pre class="shell"><code>% ./runc spec --rootless
-% file config.json
-config.json: JSON data
-% jq -c .process.args &lt; config.json
-[&quot;sh&quot;]</code></pre>
-<p>We can see that <code>runc</code> created the sample config. The command to
-execute is <code>sh(1)</code>. Let’s change that to <code>/sbin/init</code>:</p>
-<pre class="shell"><code>% mv config.json config.json.orig
-% jq &#39;.process.args=[&quot;/sbin/init&quot;]&#39; config.json.orig \
-    &gt; config.json</code></pre>
-<div class="notes">
-<p><code>jq(1)</code> cannot operate on JSON files in situ, so you first have to
-copy or move the input file. The <a href="https://linux.die.net/man/1/sponge"><code>sponge(1)</code></a> command,
-provided by the <em>moreutils</em> package, offers an alternative approach.</p>
-</div>
-<h3 id="run-container">Run container <a href="#run-container" class="section">§</a></h3>
-<p>Now we can try and run the container:</p>
-<pre class="shell"><code>% ./runc --systemd-cgroup run test
-Mount failed for selinuxfs on /sys/fs/selinux:  No such file or directory
-Another IMA custom policy has already been loaded, ignoring: Permission denied
-Failed to mount tmpfs at /run: Operation not permitted
-[!!!!!!] Failed to mount API filesystems.
-Freezing execution.</code></pre>
-<p>That didn’t work. systemd failed to mount a <code>tmpfs</code> (temporary,
-memory-based filesystem) at <code>/tmp</code>, and halted. The container
-itself was still running (but frozen). I was able to kill it from
-another terminal:</p>
-<pre class="shell"><code>% ./runc list --quiet
-test
-% ./runc kill test KILL
-% ./runc list --quiet</code></pre>
-<p>It turned out that in addition to the process to run, the config
-requires several changes to successfully run a <em>systemd</em>-based
-container. I will not repeat the whole process here, but I achieved
-a working config through a combination of trial-and-error, and
-comparison against OCI configurations produced by Podman. The
-following <a href="https://stedolan.github.io/jq/manual/"><code>jq(1)</code></a> program performs the required modifications:</p>
-<div class="sourceCode" id="cb8"><pre class="sourceCode numberSource json numberLines"><code class="sourceCode json"><span id="cb8-1"><a href="#cb8-1"></a><span class="er">.process.args</span> <span class="er">=</span> <span class="ot">[</span><span class="st">&quot;/sbin/init&quot;</span><span class="ot">]</span></span>
-<span id="cb8-2"><a href="#cb8-2"></a><span class="er">|</span> <span class="er">.process.env</span> <span class="er">|=</span> <span class="er">.</span> <span class="er">+</span> <span class="ot">[</span><span class="st">&quot;container=oci&quot;</span><span class="ot">]</span></span>
-<span id="cb8-3"><a href="#cb8-3"></a><span class="er">|</span> <span class="ot">[</span><span class="fu">{</span><span class="dt">&quot;containerID&quot;</span><span class="fu">:</span><span class="dv">1</span><span class="fu">,</span><span class="dt">&quot;hostID&quot;</span><span class="fu">:</span><span class="dv">100000</span><span class="fu">,</span><span class="dt">&quot;size&quot;</span><span class="fu">:</span><span class="dv">65536</span><span class="fu">}</span><span class="ot">]</span> <span class="er">as</span> <span class="er">$idmap</span></span>
-<span id="cb8-4"><a href="#cb8-4"></a><span class="er">|</span> <span class="er">.linux.uidMappings</span> <span class="er">|=</span> <span class="er">.</span> <span class="er">+</span> <span class="er">$idmap</span></span>
-<span id="cb8-5"><a href="#cb8-5"></a><span class="er">|</span> <span class="er">.linux.gidMappings</span> <span class="er">|=</span> <span class="er">.</span> <span class="er">+</span> <span class="er">$idmap</span></span>
-<span id="cb8-6"><a href="#cb8-6"></a><span class="er">|</span> <span class="er">.linux.cgroupsPath</span> <span class="er">=</span> <span class="er">&quot;user.slice:runc:test&quot;</span></span>
-<span id="cb8-7"><a href="#cb8-7"></a><span class="er">|</span> <span class="er">.linux.namespaces</span> <span class="er">|=</span> <span class="er">.</span> <span class="er">+</span> <span class="ot">[</span><span class="fu">{</span><span class="dt">&quot;type&quot;</span><span class="fu">:</span><span class="st">&quot;network&quot;</span><span class="fu">}</span><span class="ot">]</span></span>
-<span id="cb8-8"><a href="#cb8-8"></a><span class="er">|</span> <span class="er">.process.capabilities</span><span class="ot">[]</span> <span class="er">=</span></span>
-<span id="cb8-9"><a href="#cb8-9"></a>  <span class="ot">[</span> <span class="st">&quot;CAP_CHOWN&quot;</span><span class="ot">,</span> <span class="st">&quot;CAP_FOWNER&quot;</span><span class="ot">,</span> <span class="st">&quot;CAP_SETUID&quot;</span><span class="ot">,</span> <span class="st">&quot;CAP_SETGID&quot;</span><span class="ot">,</span></span>
-<span id="cb8-10"><a href="#cb8-10"></a>    <span class="st">&quot;CAP_SETPCAP&quot;</span><span class="ot">,</span> <span class="st">&quot;CAP_NET_BIND_SERVICE&quot;</span> <span class="ot">]</span></span>
-<span id="cb8-11"><a href="#cb8-11"></a><span class="er">|</span> <span class="fu">{</span><span class="dt">&quot;type&quot;</span><span class="fu">:</span> <span class="st">&quot;tmpfs&quot;</span><span class="fu">,</span></span>
-<span id="cb8-12"><a href="#cb8-12"></a>   <span class="dt">&quot;source&quot;</span><span class="fu">:</span> <span class="st">&quot;tmpfs&quot;</span><span class="fu">,</span></span>
-<span id="cb8-13"><a href="#cb8-13"></a>   <span class="dt">&quot;options&quot;</span><span class="fu">:</span> <span class="ot">[</span><span class="st">&quot;rw&quot;</span><span class="ot">,</span><span class="st">&quot;rprivate&quot;</span><span class="ot">,</span><span class="st">&quot;nosuid&quot;</span><span class="ot">,</span><span class="st">&quot;nodev&quot;</span><span class="ot">,</span><span class="st">&quot;tmpcopyup&quot;</span><span class="ot">]</span></span>
-<span id="cb8-14"><a href="#cb8-14"></a>  <span class="fu">}</span> <span class="er">as</span> <span class="er">$tmpfs</span></span>
-<span id="cb8-15"><a href="#cb8-15"></a><span class="er">|</span> <span class="er">.mounts</span> <span class="er">|=</span> <span class="ot">[</span><span class="fu">{</span><span class="dt">&quot;destination&quot;</span><span class="fu">:</span><span class="st">&quot;/var/log&quot;</span><span class="fu">}</span> <span class="er">+</span> <span class="er">$tmpfs</span><span class="ot">]</span> <span class="er">+</span> <span class="er">.</span></span>
-<span id="cb8-16"><a href="#cb8-16"></a><span class="er">|</span> <span class="er">.mounts</span> <span class="er">|=</span> <span class="ot">[</span><span class="fu">{</span><span class="dt">&quot;destination&quot;</span><span class="fu">:</span><span class="st">&quot;/tmp&quot;</span><span class="fu">}</span> <span class="er">+</span> <span class="er">$tmpfs</span><span class="ot">]</span> <span class="er">+</span> <span class="er">.</span></span>
-<span id="cb8-17"><a href="#cb8-17"></a><span class="er">|</span> <span class="er">.mounts</span> <span class="er">|=</span> <span class="ot">[</span><span class="fu">{</span><span class="dt">&quot;destination&quot;</span><span class="fu">:</span><span class="st">&quot;/run&quot;</span><span class="fu">}</span> <span class="er">+</span> <span class="er">$tmpfs</span><span class="ot">]</span> <span class="er">+</span> <span class="er">.</span></span></code></pre></div>
-<p>This program performs the following actions:</p>
-<ul>
-<li><p>Set the container process to <code>/sbin/init</code> (which is <em>systemd</em>).</p></li>
-<li><p>Set the <code>$container</code> environment variable, as <a href="https://systemd.io/CONTAINER_INTERFACE/#environment-variables">required by
-systemd</a>.</p></li>
-<li><p>Add UID and GID mappings for IDs <code>1</code>–<code>65536</code> in the container’s
-user namespace. The host range (started at <code>100000</code>) is taken
-from my user account’s assigned ranges in <code>/etc/subuid</code> and
-<code>/etc/subgid</code>. <strong>You may need a different number.</strong> The mapping
-for the container’s UID <code>0</code> to my user account already exists in
-the config.</p></li>
-<li><p>Set the container’s cgroup path. A non-absolute path is
-interpreted relative to a runtime-determined location.</p></li>
-<li><p>Tell the runtime to create a network namespace. Without this,
-the container will have no network stack and <em>nginx</em> won’t run.</p></li>
-<li><p>Set the <a href="https://linux.die.net/man/7/capabilities">capabilities</a> required by the container. <em>systemd</em>
-requires all of these capabilities, although
-<code>CAP_NET_BIND_SERVICE</code> is only required for network name
-resolution (<em>systemd-resolved</em>). And <em>nginx</em>.</p></li>
-<li><p>Tell the runtime to mount <code>tmpfs</code> filesystems at <code>/run</code>, <code>/tmp</code>
-and <code>/var/log</code>.</p></li>
-</ul>
-<p>I ran the program to modify the config, then started the container:</p>
-<pre class="shell"><code>% jq --from-file filter.jq config.json.orig &gt; config.json
-% ./runc --systemd-cgroup run test
-systemd v246.10-1.fc33 running in system mode. (+PAM …
-Detected virtualization container-other.
-Detected architecture x86-64.
-
-Welcome to Fedora 33 (Container Image)!
-
-…
-
-[  OK  ] Started The nginx HTTP and reverse proxy server.
-[  OK  ] Reached target Multi-User System.
-[  OK  ] Reached target Graphical Interface.
-         Starting Update UTMP about System Runlevel Changes.
-[  OK  ] Finished Update UTMP about System Runlevel Changes.
-
-Fedora 33 (Container Image)
-Kernel 5.11.17-300.fc34.x86_64 on an x86_64 (console)
-
-runc login:</code></pre>
-<p>OK! <em>systemd</em> initialised the system properly and started <em>nginx</em>.
-We can confirm <em>nginx</em> is running properly by running <code>curl</code> in the
-container:</p>
-<pre class="shell"><code>% ./runc exec test curl --silent --head localhost:80
-HTTP/1.1 200 OK
-Server: nginx/1.18.0
-Date: Thu, 27 May 2021 02:29:58 GMT
-Content-Type: text/html
-Content-Length: 5564
-Last-Modified: Mon, 27 Jul 2020 22:20:49 GMT
-Connection: keep-alive
-ETag: &quot;5f1f5341-15bc&quot;
-Accept-Ranges: bytes</code></pre>
-<p>At this point we cannot access <em>nginx</em> from outside the container.
-That’s fine; I don’t need to work out how to do that. Not today,
-anyhow.</p>
-<h2 id="how-runc-creates-cgroups">How <code>runc</code> creates cgroups <a href="#how-runc-creates-cgroups" class="section">§</a></h2>
-<p><code>runc</code> manages container cgroups via the host’s <em>systemd</em> service.
-Specifically, it communicates with <em>systemd</em> over DBus to create a
-<a href="https://www.freedesktop.org/wiki/Software/systemd/ControlGroupInterface/">transient scope</a> for the container. Then it binds the
-container cgroup namespace to this new scope.</p>
-<p>Observe that the inode of <code>/sys/fs/cgroup/</code> in the container is the
-same as the scope created for the container by <em>systemd</em> on the
-host:</p>
-<pre class="shell"><code>% ./runc exec test ls -aldi /sys/fs/cgroup
-64977 drwxr-xr-x. 5 root root 0 May 27 02:26 /sys/fs/cgroup
-
-% ls -aldi /sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/user.slice/runc-test.scope 
-64977 drwxr-xr-x. 5 ftweedal ftweedal 0 May 27 12:26 /sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/user.slice/runc-test.scope</code></pre>
-<p>The mapping of <code>root</code> in the container’s user namespace to
-<code>ftweedal</code> is confirmed by the UID map of the container process:</p>
-<pre class="shell"><code>% id --user ftweedal
-1000
-% ./runc list -f json | jq &#39;.[]|select(.id=&quot;test&quot;).pid&#39;
-186718
-% cat /proc/186718/uid_map
-         0       1000          1
-         1     100000      65536</code></pre>
-<h2 id="next-steps">Next steps <a href="#next-steps" class="section">§</a></h2>
-<p><em>systemd</em> is running properly in the container, but <code>root</code> in the
-container is mapped to my main user account. The container is not
-as isolated as I would like it to be. A partial sandbox escape
-could lead to the containerised process(es) messing with local
-files, or other processes owned by my user (including other
-containers).</p>
-<p>User-namespaced containers in OpenShift (via CRI-O annotations) are
-allocated non-overlapping host ID ranges. All the host IDs are
-essentially anonymous. I confirmed this in <a href="2021-03-10-openshift-user-namespace-multi-user.html">a previous blog
-post</a>. That is
-good! But the container’s cgroup is owned by the <em>host’s</em> UID 0,
-which is unmapped in the container. <em>systemd</em>-based workloads
-cannot run because the container cannot write to its cgroupfs.</p>
-<p>Therefore, the next steps in my investigation are:</p>
-<ol type="1">
-<li><p>Alter the ID mappings to use a single mapping of only “anonymous”
-users. This is a simple change to the OCI config. The host IDs
-still have to come from the user’s allocated sub-ID range.</p></li>
-<li><p>Find (or implement) a way to change the ownership of the
-container’s cgroup scope to the <strong>container’s</strong> UID 0.</p></li>
-</ol>
-<p>When using the <em>systemd</em> cgroup manager, <code>runc</code> uses the <a href="https://www.freedesktop.org/wiki/Software/systemd/ControlGroupInterface/"><em>transient
-unit API</em></a> to ask <em>systemd</em> to create a new scope for the
-container. I am still learning about this API. Perhaps there is a
-way to specify a different ownership for the new scope or service.
-If so, we should be able to avoid changes to higher-level container
-runtimes like CRI-O. That would be the best outcome.</p>
-<p>Otherwise, I will investigate whether we could use the OCI
-<code>createRuntime</code> hook to <code>chown(2)</code> the container’s cgroup scope.
-Unfortunately, the semantics of <code>createRuntime</code> is currently
-underspecified. The specification is ambiguous about whether the
-containers cgroup scope exists when this hook is executed. If this
-approach is valid, we will have to update CRI-O to add the relevant
-hook command to the OCI config.</p>
-<p>Another possible approach is for the high-level runtime to perform
-the ownership change itself. This would be done after it invokes
-the OCI runtime’s <code>create</code> command, but before it invokes <code>start</code>.
-(See also the OCI <a href="https://github.com/opencontainers/runtime-spec/blob/master/runtime.md#lifecycle">container lifecycle description</a>). However, on
-OpenShift CRI-O runs as user <code>containers</code> and the container’s cgroup
-scope is owned by <code>root</code>. So I have doubts about the viability of
-this approach, as well as the OCI hook approach.</p>
-<p>Whatever the outcome, there will certainly be more blog posts as I
-continue this long-running investigation. I still have much to
-learn as I struggle towards the goal of systemd-based workloads
-running securely on OpenShift.</p>]]></summary>
 </entry>
 
 </feed>
