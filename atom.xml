@@ -10,12 +10,12 @@
     </author>
     <updated>2023-01-22T00:00:00Z</updated>
     <entry>
-    <title>Setting Kubernetes feature gates in OpenShift</title>
+    <title>Enabling Kubernetes feature gates in OpenShift</title>
     <link href="https://frasertweedale.github.io/blog-redhat/posts/2023-01-22-openshift-feature-gates.html" />
     <id>https://frasertweedale.github.io/blog-redhat/posts/2023-01-22-openshift-feature-gates.html</id>
     <published>2023-01-22T00:00:00Z</published>
     <updated>2023-01-22T00:00:00Z</updated>
-    <summary type="html"><![CDATA[<h1 id="setting-kubernetes-feature-gates-in-openshift">Setting Kubernetes feature gates in OpenShift</h1>
+    <summary type="html"><![CDATA[<h1 id="enabling-kubernetes-feature-gates-in-openshift">Enabling Kubernetes feature gates in OpenShift</h1>
 <p>When Kubernetes adds a feature or changes an existing one, the new
 behaviour usually starts out hidden behind a <a href="https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/"><em>feature
 gate</em></a>. Enhancements start off in the <em>Alpha</em>
@@ -30,8 +30,8 @@ later release.</p>
 <p>So, in a real world deployment how do you enable or disable a
 feature gate? There are several “distributions” of Kubernetes and
 various ways of doing it. In this short post I’ll demonstrate how
-to set feature gates in <em>OpenShift</em>, Red Hat’s container orchestration
-platform which is built on Kubernetes.</p>
+to enable feature gates in <em>OpenShift</em>, Red Hat’s container
+orchestration platform which is built on Kubernetes.</p>
 <h2 id="the-featuregate-resource">The <code>FeatureGate</code> resource <a href="#the-featuregate-resource" class="section">§</a></h2>
 <p>OpenShift recognises a <code>FeatureGate</code> resource type. A single,
 resource of this type named <code>cluster</code> determines the feature gates

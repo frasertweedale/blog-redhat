@@ -3,7 +3,7 @@
 <html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
     <head>
         <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
-        <title>Fraser's IdM Blog - Setting Kubernetes feature gates in OpenShift</title>
+        <title>Fraser's IdM Blog - Enabling Kubernetes feature gates in OpenShift</title>
         <link rel="stylesheet" type="text/css" href="../css/default.css" />
     </head>
     <body>
@@ -25,7 +25,7 @@
 </div>
 
 <div id="postContent">
-    <h1 id="setting-kubernetes-feature-gates-in-openshift">Setting Kubernetes feature gates in OpenShift</h1>
+    <h1 id="enabling-kubernetes-feature-gates-in-openshift">Enabling Kubernetes feature gates in OpenShift</h1>
 <p>When Kubernetes adds a feature or changes an existing one, the new
 behaviour usually starts out hidden behind a <a href="https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/"><em>feature
 gate</em></a>. Enhancements start off in the <em>Alpha</em>
@@ -40,8 +40,8 @@ later release.</p>
 <p>So, in a real world deployment how do you enable or disable a
 feature gate? There are several “distributions” of Kubernetes and
 various ways of doing it. In this short post I’ll demonstrate how
-to set feature gates in <em>OpenShift</em>, Red Hat’s container orchestration
-platform which is built on Kubernetes.</p>
+to enable feature gates in <em>OpenShift</em>, Red Hat’s container
+orchestration platform which is built on Kubernetes.</p>
 <h2 id="the-featuregate-resource">The <code>FeatureGate</code> resource <a href="#the-featuregate-resource" class="section">§</a></h2>
 <p>OpenShift recognises a <code>FeatureGate</code> resource type. A single,
 resource of this type named <code>cluster</code> determines the feature gates
@@ -140,7 +140,7 @@ Recent posts:
 <ul>
     
         <li>
-            <a href="../posts/2023-01-22-openshift-feature-gates.html">Setting Kubernetes feature gates in OpenShift</a>
+            <a href="../posts/2023-01-22-openshift-feature-gates.html">Enabling Kubernetes feature gates in OpenShift</a>
         </li>
     
         <li>
