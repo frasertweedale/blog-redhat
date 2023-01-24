@@ -2,7 +2,7 @@
 tags: openshift, kubernetes
 ---
 
-# Setting Kubernetes feature gates in OpenShift
+# Enabling Kubernetes feature gates in OpenShift
 
 When Kubernetes adds a feature or changes an existing one, the new
 behaviour usually starts out hidden behind a [*feature
@@ -22,8 +22,8 @@ later release.
 So, in a real world deployment how do you enable or disable a
 feature gate?  There are several "distributions" of Kubernetes and
 various ways of doing it.  In this short post I'll demonstrate how
-to set feature gates in *OpenShift*, Red Hat's container orchestration
-platform which is built on Kubernetes.
+to enable feature gates in *OpenShift*, Red Hat's container
+orchestration platform which is built on Kubernetes.
 
 ## The `FeatureGate` resource
 
