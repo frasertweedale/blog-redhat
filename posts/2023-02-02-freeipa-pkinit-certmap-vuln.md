@@ -390,8 +390,8 @@ readability):
     (objectClass=ipakrbprincipal)
   )
   (|
-    (ipaKrbPrincipalAlias=alice@IPA.TEST)
-    (krbPrincipalName:caseIgnoreIA5Match:=alice@IPA.TEST)
+    (ipaKrbPrincipalAlias=admin@IPA.TEST)
+    (krbPrincipalName:caseIgnoreIA5Match:=admin@IPA.TEST)
   )
   (|
     (mail="bogus)
