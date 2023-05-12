@@ -260,6 +260,7 @@ the creation and deletion of the TXT record.
 
   [root@f31-0 ~]# certbot $CERTBOT_ARGS \
       certonly --domain $(hostname) \
+      --key-type rsa \
       --preferred-challenges dns \
       --manual --manual-public-ip-logging-ok \
       --manual-auth-hook /home/ftweedal/certbot-dns-ipa.py \

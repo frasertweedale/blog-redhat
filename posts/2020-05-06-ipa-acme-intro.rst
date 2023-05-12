@@ -221,6 +221,7 @@ case.
   [root@f31-0 ~]# certbot \
       --server https://ipa-ca.ipa.local/acme/directory \
       certonly \
+      --key-type rsa \
       --domain $(hostname) \
       --standalone
   Saving debug log to /var/log/letsencrypt/letsencrypt.log
