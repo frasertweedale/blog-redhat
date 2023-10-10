@@ -7,7 +7,7 @@ executable site
   main-is:          site.hs
   build-depends:
     base >= 4 && < 5
-    , hakyll >= 4.14.1.0
+    , hakyll >= 4.16
     , pandoc >= 2.6
     , pandoc-types >= 1.17.5
   ghc-options:      -threaded -Wall
