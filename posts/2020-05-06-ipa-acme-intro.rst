@@ -168,7 +168,8 @@ service::
 
   [root@f31-0 ~]# certbot \
       --server https://ipa-ca.ipa.local/acme/directory \
-      register -m ftweedal@redhat.com --agree-tos \
+      register -m ftweedal@redhat.com \
+      --agree-tos --no-eff-email
   Saving debug log to /var/log/letsencrypt/letsencrypt.log
 
   - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -192,8 +193,8 @@ service instead.
 
 ``-m`` gives a contact email address (this is optional).
 ``--agree-tos`` agrees to the terms of service of the ACME server.
-The "share email with EFF" prompt is only relevant when using Let's
-Encrypt and can be ignored.
+``--no-eff-email`` suppresses the "share email with EFF" prompt
+(which is only relevant when using Let's Encrypt anyway).
 
 Identifier validation and certificate issuance
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
